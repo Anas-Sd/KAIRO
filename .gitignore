@@ -22,3 +22,4 @@ download_assets.js
 task_screen.json
 task_screen.html
 stitch_screens.json
+seed_supabase.js
