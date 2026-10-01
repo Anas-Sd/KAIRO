@@ -87,6 +87,7 @@ import java.util.Locale
 
 @Composable
 fun CreateTaskDialog(
+    parentTask: com.kairo.app.data.model.Task? = null,
     onDismiss: () -> Unit,
     onConfirm: (
         title: String,
@@ -102,7 +103,8 @@ fun CreateTaskDialog(
         alarmToneTitle: String?,
         repeatType: String?,
         repeatDays: String?,
-        repeatDates: String?
+        repeatDates: String?,
+        parentId: String?
     ) -> Unit
 ) {
     val context = LocalContext.current
@@ -312,7 +314,27 @@ fun CreateTaskDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (parentTask != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .background(KairoPrimary.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = "Under: ${parentTask.title}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = KairoPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
                 // 1. Task Name Input (Mandatory)
                 OutlinedTextField(
@@ -731,7 +753,8 @@ fun CreateTaskDialog(
                                 alarmToneTitle,
                                 repeatType,
                                 repeatDays,
-                                repeatDates
+                                repeatDates,
+                                parentTask?.id
                             )
                         },
                         enabled = title.isNotBlank(),

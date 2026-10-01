@@ -12,6 +12,7 @@ import com.kairo.app.data.model.Task
 import com.kairo.app.data.model.TaskSection
 import com.kairo.app.data.model.TaskSort
 import com.kairo.app.data.repository.TaskRepository
+import com.kairo.app.data.repository.UndoAction
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,7 +34,11 @@ data class UiToggles(
     val showFilterSheet: Boolean = false,
     val showSortSheet: Boolean = false,
     val selectedTaskForDetails: Task? = null,
-    val selectedTaskForEdit: Task? = null
+    val selectedTaskForEdit: Task? = null,
+    val subtaskParentForCreate: Task? = null,
+    val taskForAdjustParent: Task? = null,
+    val taskForDeleteConfirm: Task? = null,
+    val breadcrumbStack: List<Task> = emptyList()
 )
 
 data class TasksUiState(
@@ -41,6 +46,7 @@ data class TasksUiState(
     val todayTasks: List<Task> = emptyList(),
     val upcomingTasks: List<Task> = emptyList(),
     val completedTasks: List<Task> = emptyList(),
+    val allTasks: List<Task> = emptyList(),
     val filterCriteria: FilterCriteria = FilterCriteria(),
     val activeSort: TaskSort = TaskSort.DATE_NEAR,
     val overdueExpanded: Boolean = true,
@@ -54,6 +60,11 @@ data class TasksUiState(
     val showSortSheet: Boolean = false,
     val selectedTaskForDetails: Task? = null,
     val selectedTaskForEdit: Task? = null,
+    val subtaskParentForCreate: Task? = null,
+    val taskForAdjustParent: Task? = null,
+    val taskForDeleteConfirm: Task? = null,
+    val breadcrumbStack: List<Task> = emptyList(),
+    val undoAction: UndoAction? = null,
     val isConnected: Boolean = true
 )
 
@@ -104,19 +115,15 @@ class TaskViewModel(
             }
             else -> {
                 try {
-                    val fmt = SimpleDateFormat("MMM d", Locale.getDefault())
-                    val parsed = fmt.parse(dueDateStr)
-                    if (parsed != null) {
-                        val parsedCal = Calendar.getInstance().apply {
-                            time = parsed
-                            set(Calendar.YEAR, cal.get(Calendar.YEAR))
-                            set(Calendar.HOUR_OF_DAY, 12)
-                            set(Calendar.MINUTE, 0)
-                            set(Calendar.SECOND, 0)
-                            set(Calendar.MILLISECOND, 0)
-                        }
-                        parsedCal.timeInMillis
-                    } else fallback
+                    val formats = arrayOf("dd/MM/yyyy", "yyyy-MM-dd", "MMM dd, yyyy", "dd MMM yyyy", "EEE, MMM d")
+                    var parsed: Long? = null
+                    for (fmt in formats) {
+                        try {
+                            parsed = SimpleDateFormat(fmt, Locale.getDefault()).parse(dueDateStr)?.time
+                            if (parsed != null) break
+                        } catch (_: Exception) {}
+                    }
+                    parsed ?: fallback
                 } catch (_: Exception) {
                     fallback
                 }
@@ -126,59 +133,76 @@ class TaskViewModel(
 
     private fun isOverdue(task: Task): Boolean {
         if (task.isCompleted) return false
-        if (task.section == TaskSection.OVERDUE || task.dueDate.contains("Yesterday", ignoreCase = true)) return true
-        val startOfToday = Calendar.getInstance().apply {
+        val nowCal = Calendar.getInstance()
+        val todayStart = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
-        return getEffectiveDueDateMillis(task) < startOfToday
+
+        val taskDue = getEffectiveDueDateMillis(task)
+        if (taskDue < todayStart) return true
+        if (taskDue in todayStart until (todayStart + 86400000L)) {
+            val dueTime = task.dueTime
+            if (!dueTime.isNullOrBlank()) {
+                val parts = dueTime.split(":")
+                if (parts.size == 2) {
+                    val h = parts[0].trim().toIntOrNull() ?: 0
+                    val m = parts[1].trim().toIntOrNull() ?: 0
+                    val nowH = nowCal.get(Calendar.HOUR_OF_DAY)
+                    val nowM = nowCal.get(Calendar.MINUTE)
+                    if (nowH > h || (nowH == h && nowM > m)) {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
     }
 
     private fun isToday(task: Task): Boolean {
-        if (task.isCompleted || isOverdue(task)) return false
-        if (task.section == TaskSection.TODAY || task.dueDate.contains("Today", ignoreCase = true)) return true
-
-        val dueMillis = getEffectiveDueDateMillis(task)
-        val startOfToday = Calendar.getInstance().apply {
+        if (task.isCompleted) return false
+        if (isOverdue(task)) return false
+        val todayStart = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
-        val endOfToday = startOfToday + 86400000L - 1L
-        return dueMillis in startOfToday..endOfToday
+        val taskDue = getEffectiveDueDateMillis(task)
+        return taskDue in todayStart until (todayStart + 86400000L)
     }
 
     private fun isTomorrow(task: Task): Boolean {
-        if (task.dueDate.contains("Tomorrow", ignoreCase = true)) return true
-        val tomorrowCal = Calendar.getInstance().apply {
-            add(Calendar.DAY_OF_YEAR, 1)
-        }
-        val tomorrowFmt = SimpleDateFormat("MMM d", Locale.getDefault()).format(tomorrowCal.time)
-        if (task.dueDate.contains(tomorrowFmt, ignoreCase = true)) return true
-
-        val dueMillis = getEffectiveDueDateMillis(task)
-        val startOfTomorrow = Calendar.getInstance().apply {
+        if (task.isCompleted) return false
+        val tomorrowStart = Calendar.getInstance().apply {
             add(Calendar.DAY_OF_YEAR, 1)
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
-        val endOfTomorrow = startOfTomorrow + 86400000L - 1L
-        return dueMillis in startOfTomorrow..endOfTomorrow
+        val taskDue = getEffectiveDueDateMillis(task)
+        return taskDue in tomorrowStart until (tomorrowStart + 86400000L)
     }
 
     private fun isUpcoming(task: Task): Boolean {
-        if (task.isCompleted || isOverdue(task) || isToday(task)) return false
-        return true
+        if (task.isCompleted) return false
+        val tomorrowStart = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val taskDue = getEffectiveDueDateMillis(task)
+        return taskDue >= tomorrowStart
     }
 
     private fun sortTasks(list: List<Task>, sort: TaskSort): List<Task> {
         return when (sort) {
-            TaskSort.DATE_NEAR -> list.sortedBy { getEffectiveDueDateMillis(it) }
+            TaskSort.DATE_NEAR -> list.sortedWith(compareBy({ it.position }, { getEffectiveDueDateMillis(it) }))
             TaskSort.DATE_LATE -> list.sortedByDescending { getEffectiveDueDateMillis(it) }
             TaskSort.PRIORITY_HIGH -> list.sortedByDescending { it.priority.ordinal }
             TaskSort.PRIORITY_LOW -> list.sortedBy { it.priority.ordinal }
@@ -187,14 +211,33 @@ class TaskViewModel(
         }
     }
 
+    private val _filterState = combine(_filterCriteria, _activeSort, _searchQuery) { criteria, sort, search ->
+        Triple(criteria, sort, search)
+    }
+
     val uiState: StateFlow<TasksUiState> = combine(
         repository.tasks,
-        _filterCriteria,
-        _activeSort,
-        _searchQuery,
+        repository.undoAction,
+        _filterState,
         _uiToggles
-    ) { tasks: List<Task>, criteria: FilterCriteria, sort: TaskSort, search: String, toggles: UiToggles ->
-        var list = tasks
+    ) { tasks: List<Task>, undo: UndoAction?, filterData: Triple<FilterCriteria, TaskSort, String>, toggles: UiToggles ->
+        val (criteria, sort, search) = filterData
+        val isSearchingOrFiltering = search.isNotBlank() ||
+                criteria.selectedStatuses.isNotEmpty() ||
+                criteria.selectedPriorities.isNotEmpty() ||
+                criteria.selectedDate != null
+
+        // Hierarchy scoping:
+        val scopedTasks = if (toggles.breadcrumbStack.isNotEmpty()) {
+            val currentParent = toggles.breadcrumbStack.last()
+            tasks.filter { it.parentId == currentParent.id }
+        } else if (isSearchingOrFiltering) {
+            tasks // Show all matching tasks across hierarchy when searching or filtering
+        } else {
+            tasks.filter { it.parentId == null } // Root view: show only top-level tasks
+        }
+
+        var list = scopedTasks
 
         // 1. Text Search Filter
         if (search.isNotBlank()) {
@@ -225,7 +268,7 @@ class TaskViewModel(
                 DateFilter.RANGE -> {
                     if (criteria.dateRangeStart != null && criteria.dateRangeEnd != null) {
                         val start = criteria.dateRangeStart
-                        val end = criteria.dateRangeEnd + 86400000L // inclusive of end date
+                        val end = criteria.dateRangeEnd + 86400000L
                         list.filter { task ->
                             val taskDue = getEffectiveDueDateMillis(task)
                             taskDue in start..end
@@ -248,6 +291,7 @@ class TaskViewModel(
             todayTasks = today,
             upcomingTasks = upcoming,
             completedTasks = completed,
+            allTasks = tasks,
             filterCriteria = criteria,
             activeSort = sort,
             overdueExpanded = toggles.overdueExpanded,
@@ -261,6 +305,11 @@ class TaskViewModel(
             showSortSheet = toggles.showSortSheet,
             selectedTaskForDetails = toggles.selectedTaskForDetails,
             selectedTaskForEdit = toggles.selectedTaskForEdit,
+            subtaskParentForCreate = toggles.subtaskParentForCreate,
+            taskForAdjustParent = toggles.taskForAdjustParent,
+            taskForDeleteConfirm = toggles.taskForDeleteConfirm,
+            breadcrumbStack = toggles.breadcrumbStack,
+            undoAction = undo,
             isConnected = true
         )
     }.stateIn(
@@ -282,6 +331,82 @@ class TaskViewModel(
         }
     }
 
+    // Breadcrumbs Navigation
+    fun drillDown(task: Task) {
+        _uiToggles.update { it.copy(breadcrumbStack = it.breadcrumbStack + task) }
+    }
+
+    fun popBreadcrumb() {
+        _uiToggles.update {
+            if (it.breadcrumbStack.isNotEmpty()) {
+                it.copy(breadcrumbStack = it.breadcrumbStack.dropLast(1))
+            } else it
+        }
+    }
+
+    fun navigateBreadcrumbTo(index: Int) {
+        _uiToggles.update {
+            if (index < 0) {
+                it.copy(breadcrumbStack = emptyList())
+            } else {
+                it.copy(breadcrumbStack = it.breadcrumbStack.take(index + 1))
+            }
+        }
+    }
+
+    // Subtasks & Adjust Parent
+    fun openAddSubtask(parentTask: Task) {
+        _uiToggles.update {
+            it.copy(showCreateDialog = true, subtaskParentForCreate = parentTask)
+        }
+    }
+
+    fun openAdjustParent(task: Task) {
+        _uiToggles.update { it.copy(taskForAdjustParent = task) }
+    }
+
+    fun dismissAdjustParent() {
+        _uiToggles.update { it.copy(taskForAdjustParent = null) }
+    }
+
+    fun moveTask(taskId: String, newParentId: String?, moveSubtasks: Boolean) {
+        viewModelScope.launch {
+            repository.moveTask(taskId, newParentId, moveSubtasks)
+            _uiToggles.update { it.copy(taskForAdjustParent = null) }
+        }
+    }
+
+    // Deletion Modal
+    fun openDeleteConfirm(task: Task) {
+        _uiToggles.update { it.copy(taskForDeleteConfirm = task) }
+    }
+
+    fun dismissDeleteConfirm() {
+        _uiToggles.update { it.copy(taskForDeleteConfirm = null) }
+    }
+
+    fun confirmDelete(task: Task, deleteSubtasks: Boolean) {
+        viewModelScope.launch {
+            AlarmScheduler.cancelAlarm(KairoApplication.instance, task.id)
+            repository.deleteTaskWithSubtasks(task.id, deleteSubtasks)
+            _uiToggles.update { it.copy(taskForDeleteConfirm = null) }
+        }
+    }
+
+    // Undo / Done Bar
+    fun performUndo() {
+        viewModelScope.launch {
+            repository.performUndo()
+        }
+    }
+
+    fun commitUndo() {
+        viewModelScope.launch {
+            repository.commitUndo()
+        }
+    }
+
+    // Filter & Sort
     fun openFilterSheet() {
         _uiToggles.update { it.copy(showFilterSheet = true) }
     }
@@ -341,13 +466,11 @@ class TaskViewModel(
     }
 
     fun setShowCreateDialog(show: Boolean) {
-        _uiToggles.update { it.copy(showCreateDialog = show) }
-    }
-
-    fun deleteTask(taskId: String) {
-        viewModelScope.launch {
-            AlarmScheduler.cancelAlarm(KairoApplication.instance, taskId)
-            repository.deleteTask(taskId)
+        _uiToggles.update {
+            it.copy(
+                showCreateDialog = show,
+                subtaskParentForCreate = if (!show) null else it.subtaskParentForCreate
+            )
         }
     }
 
@@ -429,7 +552,8 @@ class TaskViewModel(
         alarmToneTitle: String? = null,
         repeatType: String? = null,
         repeatDays: String? = null,
-        repeatDates: String? = null
+        repeatDates: String? = null,
+        parentId: String? = null
     ) {
         if (title.isBlank()) return
         val assignedSection = when {
@@ -437,6 +561,7 @@ class TaskViewModel(
             dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
             else -> TaskSection.UPCOMING
         }
+        val siblingCount = repository.getAllTasks().count { it.parentId == parentId }
         val newTask = Task(
             title = title.trim(),
             notes = notes,
@@ -452,12 +577,34 @@ class TaskViewModel(
             repeatType = repeatType,
             repeatDays = repeatDays,
             repeatDates = repeatDates,
-            section = assignedSection
+            section = assignedSection,
+            parentId = parentId,
+            position = siblingCount
         )
         viewModelScope.launch {
             repository.addTask(newTask)
             AlarmScheduler.scheduleAlarm(KairoApplication.instance, newTask)
-            _uiToggles.update { it.copy(showCreateDialog = false) }
+
+            // Open parent after saving so user can see new subtask
+            if (parentId != null) {
+                val parentTask = repository.getTaskById(parentId)
+                if (parentTask != null && _uiToggles.value.breadcrumbStack.none { it.id == parentId }) {
+                    val ancestors = repository.getAncestorIds(parentId, repository.getAllTasks())
+                        .mapNotNull { repository.getTaskById(it) }
+                        .reversed()
+                    _uiToggles.update {
+                        it.copy(
+                            breadcrumbStack = ancestors + parentTask,
+                            showCreateDialog = false,
+                            subtaskParentForCreate = null
+                        )
+                    }
+                } else {
+                    _uiToggles.update { it.copy(showCreateDialog = false, subtaskParentForCreate = null) }
+                }
+            } else {
+                _uiToggles.update { it.copy(showCreateDialog = false, subtaskParentForCreate = null) }
+            }
         }
     }
 }

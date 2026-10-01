@@ -27,7 +27,9 @@ data class TaskDto(
     @SerialName("alarm_tone_title") val alarmToneTitle: String? = null,
     @SerialName("repeat_type") val repeatType: String? = null,
     @SerialName("repeat_days") val repeatDays: String? = null,
-    @SerialName("repeat_dates") val repeatDates: String? = null
+    @SerialName("repeat_dates") val repeatDates: String? = null,
+    @SerialName("parent_id") val parentId: String? = null,
+    @SerialName("position") val position: Int = 0
 ) {
     fun toDomain(): Task {
         return Task(
@@ -50,7 +52,9 @@ data class TaskDto(
             alarmToneTitle = alarmToneTitle,
             repeatType = repeatType,
             repeatDays = repeatDays,
-            repeatDates = repeatDates
+            repeatDates = repeatDates,
+            parentId = parentId,
+            position = position
         )
     }
 
@@ -76,7 +80,9 @@ data class TaskDto(
                 alarmToneTitle = task.alarmToneTitle,
                 repeatType = task.repeatType,
                 repeatDays = task.repeatDays,
-                repeatDates = task.repeatDates
+                repeatDates = task.repeatDates,
+                parentId = task.parentId,
+                position = task.position
             )
         }
     }

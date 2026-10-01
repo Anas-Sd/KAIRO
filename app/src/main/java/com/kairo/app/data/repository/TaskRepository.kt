@@ -1,6 +1,8 @@
 package com.kairo.app.data.repository
 
 import android.util.Log
+import com.kairo.app.KairoApplication
+import com.kairo.app.alarm.AlarmScheduler
 import com.kairo.app.data.model.Priority
 import com.kairo.app.data.model.Task
 import com.kairo.app.data.model.TaskSection
@@ -15,11 +17,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+data class UndoAction(
+    val previousTasks: List<Task>,
+    val message: String
+)
+
 object TaskRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _tasks = MutableStateFlow<List<Task>>(emptyList())
     val tasks: Flow<List<Task>> = _tasks.asStateFlow()
+
+    private val _undoAction = MutableStateFlow<UndoAction?>(null)
+    val undoAction: Flow<UndoAction?> = _undoAction.asStateFlow()
 
     operator fun invoke(): TaskRepository = this
     fun getInstance(): TaskRepository = this
@@ -41,40 +51,175 @@ object TaskRepository {
         }
     }
 
+    // ==========================================
+    // HIERARCHY HELPER QUERIES
+    // ==========================================
+
+    fun getDirectSubtasks(parentId: String?): List<Task> {
+        return _tasks.value.filter { it.parentId == parentId }.sortedBy { it.position }
+    }
+
+    fun getDescendantIds(taskId: String, allTasks: List<Task> = _tasks.value): Set<String> {
+        val result = mutableSetOf<String>()
+        val queue = ArrayDeque<String>()
+        queue.add(taskId)
+        while (queue.isNotEmpty()) {
+            val curr = queue.removeFirst()
+            val children = allTasks.filter { it.parentId == curr }
+            for (c in children) {
+                if (result.add(c.id)) {
+                    queue.add(c.id)
+                }
+            }
+        }
+        return result
+    }
+
+    fun getAncestorIds(taskId: String, allTasks: List<Task> = _tasks.value): List<String> {
+        val byId = allTasks.associateBy { it.id }
+        val ancestors = mutableListOf<String>()
+        var curr = byId[taskId]?.parentId
+        val visited = mutableSetOf<String>()
+        while (curr != null && visited.add(curr)) {
+            ancestors.add(curr)
+            curr = byId[curr]?.parentId
+        }
+        return ancestors
+    }
+
+    fun getTaskPath(taskId: String, allTasks: List<Task> = _tasks.value): String {
+        val byId = allTasks.associateBy { it.id }
+        val chain = mutableListOf<String>()
+        var curr: Task? = byId[taskId]
+        val visited = mutableSetOf<String>()
+        while (curr != null && visited.add(curr.id)) {
+            chain.add(0, curr.title)
+            curr = curr.parentId?.let { byId[it] }
+        }
+        return chain.joinToString(" > ")
+    }
+
+    fun getParentTask(task: Task, allTasks: List<Task> = _tasks.value): Task? {
+        val pId = task.parentId ?: return null
+        return allTasks.firstOrNull { it.id == pId }
+    }
+
+    fun getSubtaskProgress(taskId: String, allTasks: List<Task> = _tasks.value): Pair<Int, Int> {
+        val direct = allTasks.filter { it.parentId == taskId }
+        val doneCount = direct.count { it.isCompleted }
+        return Pair(doneCount, direct.size)
+    }
+
+    // ==========================================
+    // BI-DIRECTIONAL COMPLETION LOGIC
+    // ==========================================
+
     fun markTaskCompleted(taskId: String) {
         val now = System.currentTimeMillis()
-        var updatedTask: Task? = null
+        val allTasks = _tasks.value
+        val target = allTasks.find { it.id == taskId } ?: return
 
-        _tasks.update { currentList ->
-            currentList.map { task ->
-                if (task.id == taskId) {
-                    val modified = task.copy(
-                        isCompleted = true,
-                        section = TaskSection.COMPLETED,
-                        completedAt = now,
-                        updatedAt = now
-                    )
-                    updatedTask = modified
-                    modified
-                } else task
+        // 1. Target and all recursive descendants become COMPLETED
+        val toComplete = mutableSetOf(taskId)
+        toComplete.addAll(getDescendantIds(taskId, allTasks))
+
+        // 2. Cascade upward: A parent becomes completed if ALL its direct children are completed
+        val byId = allTasks.associateBy { it.id }.toMutableMap()
+        for (id in toComplete) {
+            byId[id]?.let {
+                byId[id] = it.copy(isCompleted = true, section = TaskSection.COMPLETED, completedAt = now, updatedAt = now)
             }
         }
 
+        var currentParentId = target.parentId
+        val visited = mutableSetOf<String>()
+        while (currentParentId != null && visited.add(currentParentId)) {
+            val parentTask = byId[currentParentId] ?: break
+            val siblings = byId.values.filter { it.parentId == currentParentId }
+            val allSiblingsDone = siblings.isNotEmpty() && siblings.all { it.isCompleted || toComplete.contains(it.id) }
+            if (allSiblingsDone) {
+                toComplete.add(currentParentId)
+                byId[currentParentId] = parentTask.copy(
+                    isCompleted = true,
+                    section = TaskSection.COMPLETED,
+                    completedAt = now,
+                    updatedAt = now
+                )
+                currentParentId = parentTask.parentId
+            } else {
+                break
+            }
+        }
+
+        // Apply state update
+        val updatedList = allTasks.map { task ->
+            if (toComplete.contains(task.id)) {
+                task.copy(
+                    isCompleted = true,
+                    section = TaskSection.COMPLETED,
+                    completedAt = now,
+                    updatedAt = now
+                )
+            } else task
+        }
+        _tasks.value = updatedList
+
+        // Cancel alarms for auto-completed tasks
+        for (id in toComplete) {
+            runCatching {
+                AlarmScheduler.cancelAlarm(KairoApplication.instance, id)
+            }
+        }
+
+        // Sync affected tasks to Supabase
+        val affected = updatedList.filter { toComplete.contains(it.id) }
         scope.launch {
-            Log.d("TaskRepository", "Syncing task $taskId as COMPLETED at $now to Supabase")
-            SupabaseClient.updateTaskCompletion(
-                taskId = taskId,
-                isCompleted = true,
-                section = TaskSection.COMPLETED.name,
-                completedAt = now
-            ).onSuccess {
-                Log.d("TaskRepository", "Successfully marked task $taskId as COMPLETED in Supabase with exact timestamp $now")
-            }.onFailure { error ->
-                Log.e("TaskRepository", "Failed marking task $taskId COMPLETED in Supabase: ${error.message}")
+            SupabaseClient.batchUpdateTasks(affected.map { TaskDto.fromDomain(it) })
+        }
+    }
+
+    fun toggleTaskCompletion(taskId: String) {
+        val currentTasks = _tasks.value
+        val task = currentTasks.find { it.id == taskId } ?: return
+
+        if (!task.isCompleted) {
+            // Marking as COMPLETED
+            markTaskCompleted(taskId)
+        } else {
+            // Reopening (UNTICKING)
+            val now = System.currentTimeMillis()
+            val toReopen = mutableSetOf(taskId)
+
+            // Rule 1: Unticking a parent -> all its subtasks become not done
+            toReopen.addAll(getDescendantIds(taskId, currentTasks))
+
+            // Rule 2: Unticking a subtask -> parent & all done ancestors become not done
+            toReopen.addAll(getAncestorIds(taskId, currentTasks))
+
+            fun determineOpenSection(dueDate: String): TaskSection {
+                return when {
+                    dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
+                    dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
+                    else -> TaskSection.UPCOMING
+                }
             }
 
-            if (updatedTask == null) {
-                refreshFromSupabase()
+            val updatedList = currentTasks.map { t ->
+                if (toReopen.contains(t.id)) {
+                    t.copy(
+                        isCompleted = false,
+                        section = determineOpenSection(t.dueDate),
+                        completedAt = null,
+                        updatedAt = now
+                    )
+                } else t
+            }
+            _tasks.value = updatedList
+
+            // Sync to Supabase
+            val affected = updatedList.filter { toReopen.contains(it.id) }
+            scope.launch {
+                SupabaseClient.batchUpdateTasks(affected.map { TaskDto.fromDomain(it) })
             }
         }
     }
@@ -99,104 +244,241 @@ object TaskRepository {
         }
 
         scope.launch {
-            Log.d("TaskRepository", "Syncing task $taskId as OVERDUE to Supabase")
             SupabaseClient.updateTaskCompletion(
                 taskId = taskId,
                 isCompleted = false,
                 section = TaskSection.OVERDUE.name,
                 completedAt = null
-            ).onSuccess {
-                Log.d("TaskRepository", "Successfully marked task $taskId as OVERDUE in Supabase")
-            }.onFailure { error ->
-                Log.e("TaskRepository", "Failed marking task $taskId OVERDUE in Supabase: ${error.message}")
-            }
-
-            if (updatedTask == null) {
-                refreshFromSupabase()
-            }
+            )
         }
     }
 
-    fun toggleTaskCompletion(taskId: String) {
-        var updatedTask: Task? = null
-        val now = System.currentTimeMillis()
-        _tasks.update { currentList ->
-            currentList.map { task ->
-                if (task.id == taskId) {
-                    val willComplete = !task.isCompleted
-                    val newSection = if (willComplete) TaskSection.COMPLETED else {
-                        if (task.dueDate.contains("Yesterday", ignoreCase = true)) TaskSection.OVERDUE
-                        else if (task.dueDate.contains("Today", ignoreCase = true)) TaskSection.TODAY
-                        else TaskSection.UPCOMING
-                    }
-                    val completedTime = if (willComplete) now else null
+    // ==========================================
+    // CRUD OPERATIONS
+    // ==========================================
 
-                    val modified = task.copy(
-                        isCompleted = willComplete,
-                        section = newSection,
-                        completedAt = completedTime,
-                        updatedAt = now
-                    )
-                    updatedTask = modified
-                    modified
-                } else task
+    fun addTask(task: Task) {
+        val current = _tasks.value
+        val now = System.currentTimeMillis()
+
+        // If added under a completed parent, reopen the parent and its ancestors
+        val toReopen = mutableSetOf<String>()
+        if (task.parentId != null) {
+            val parent = current.find { it.id == task.parentId }
+            if (parent != null && parent.isCompleted) {
+                toReopen.add(parent.id)
+                toReopen.addAll(getAncestorIds(parent.id, current))
             }
         }
 
-        // Push update to Supabase
-        updatedTask?.let { task ->
-            scope.launch {
-                SupabaseClient.updateTaskCompletion(
-                    taskId = task.id,
-                    isCompleted = task.isCompleted,
-                    section = task.section.name,
-                    completedAt = task.completedAt
-                ).onFailure { error ->
-                    Log.e("TaskRepository", "Error syncing toggle to Supabase: ${error.message}")
-                }
+        val updatedList = current.map { t ->
+            if (toReopen.contains(t.id)) {
+                t.copy(
+                    isCompleted = false,
+                    section = if (t.dueDate.contains("Yesterday", true)) TaskSection.OVERDUE else TaskSection.TODAY,
+                    completedAt = null,
+                    updatedAt = now
+                )
+            } else t
+        }
+
+        _tasks.value = listOf(task) + updatedList
+
+        scope.launch {
+            SupabaseClient.insertTask(TaskDto.fromDomain(task))
+            if (toReopen.isNotEmpty()) {
+                val reopenedTasks = _tasks.value.filter { toReopen.contains(it.id) }
+                SupabaseClient.batchUpdateTasks(reopenedTasks.map { TaskDto.fromDomain(it) })
             }
         }
     }
 
     fun updateTask(task: Task) {
-        // Optimistic UI update
         _tasks.update { currentList ->
             currentList.map { if (it.id == task.id) task else it }
         }
 
-        // Sync to Supabase
         scope.launch {
             SupabaseClient.updateTask(TaskDto.fromDomain(task))
-                .onFailure { error ->
-                    Log.e("TaskRepository", "Error updating task in Supabase: ${error.message}")
-                }
         }
     }
 
-    fun addTask(task: Task) {
-        // Optimistic UI update
-        _tasks.update { current -> listOf(task) + current }
+    // ==========================================
+    // MOVE TASK & ADJUST PARENT
+    // ==========================================
 
-        // Sync to Supabase
+    fun moveTask(taskId: String, newParentId: String?, moveSubtasks: Boolean): Result<Unit> {
+        val current = _tasks.value
+        val target = current.find { it.id == taskId } ?: return Result.failure(Exception("Task not found"))
+
+        // Check for loop safety: cannot set self or any descendant as parent
+        if (newParentId == taskId || (newParentId != null && getDescendantIds(taskId, current).contains(newParentId))) {
+            return Result.failure(Exception("Cannot move task inside its own subtasks (cycle detected)"))
+        }
+
+        // Check if new parent exists (if not null)
+        if (newParentId != null && current.none { it.id == newParentId }) {
+            return Result.failure(Exception("The chosen parent task no longer exists"))
+        }
+
+        // Commit any previous undo action before taking new snapshot
+        commitUndo()
+
+        // Save snapshot for Undo bar
+        val snapshot = current.toList()
+
+        val oldParentId = target.parentId
+        val directChildren = current.filter { it.parentId == taskId }.sortedBy { it.position }
+        val now = System.currentTimeMillis()
+
+        // Calculate target position in new parent
+        val siblingCount = current.count { it.parentId == newParentId && it.id != taskId }
+
+        val modifiedList = current.map { item ->
+            when {
+                item.id == taskId -> {
+                    item.copy(parentId = newParentId, position = siblingCount, updatedAt = now)
+                }
+                !moveSubtasks && item.parentId == taskId -> {
+                    // Subtasks move up to task's old parent, inheriting position
+                    val childIndex = directChildren.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
+                    item.copy(
+                        parentId = oldParentId,
+                        position = target.position + childIndex,
+                        updatedAt = now
+                    )
+                }
+                else -> item
+            }
+        }.toMutableList()
+
+        // Re-evaluate parent completion states
+        recheckParentCompletion(oldParentId, modifiedList, now)
+        recheckParentCompletion(newParentId, modifiedList, now)
+
+        _tasks.value = modifiedList
+        _undoAction.value = UndoAction(snapshot, "Moved '${target.title}'")
+
+        // Sync batch to Supabase
         scope.launch {
-            SupabaseClient.insertTask(TaskDto.fromDomain(task))
-                .onFailure { error ->
-                    Log.e("TaskRepository", "Error inserting task to Supabase: ${error.message}")
-                }
+            val changed = modifiedList.filter { updated ->
+                val prev = snapshot.find { it.id == updated.id }
+                prev == null || prev != updated
+            }
+            SupabaseClient.batchUpdateTasks(changed.map { TaskDto.fromDomain(it) })
         }
+
+        return Result.success(Unit)
     }
+
+    // ==========================================
+    // DELETE TASK (WITH OR WITHOUT SUBTASKS)
+    // ==========================================
 
     fun deleteTask(taskId: String) {
-        // Optimistic UI update
-        _tasks.update { current -> current.filterNot { it.id == taskId } }
+        deleteTaskWithSubtasks(taskId, deleteSubtasks = false)
+    }
 
-        // Sync to Supabase
-        scope.launch {
-            SupabaseClient.deleteTask(taskId)
-                .onFailure { error ->
-                    Log.e("TaskRepository", "Error deleting task from Supabase: ${error.message}")
-                }
+    fun deleteTaskWithSubtasks(taskId: String, deleteSubtasks: Boolean) {
+        val current = _tasks.value
+        val target = current.find { it.id == taskId } ?: return
+
+        commitUndo()
+        val snapshot = current.toList()
+
+        val oldParentId = target.parentId
+        val directChildren = current.filter { it.parentId == taskId }.sortedBy { it.position }
+        val now = System.currentTimeMillis()
+
+        val toDeleteIds = mutableSetOf(taskId)
+        if (deleteSubtasks) {
+            toDeleteIds.addAll(getDescendantIds(taskId, current))
         }
+
+        val modifiedList = current.filterNot { toDeleteIds.contains(it.id) }.map { item ->
+            if (!deleteSubtasks && item.parentId == taskId) {
+                val childIdx = directChildren.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
+                item.copy(
+                    parentId = oldParentId,
+                    position = target.position + childIdx,
+                    updatedAt = now
+                )
+            } else item
+        }.toMutableList()
+
+        // Re-evaluate old parent completion
+        recheckParentCompletion(oldParentId, modifiedList, now)
+
+        _tasks.value = modifiedList
+        _undoAction.value = UndoAction(snapshot, "Deleted '${target.title}'")
+
+        // Sync deletion & reparenting to Supabase
+        scope.launch {
+            SupabaseClient.batchDeleteTasks(toDeleteIds.toList())
+            val changed = modifiedList.filter { updated ->
+                val prev = snapshot.find { it.id == updated.id }
+                prev == null || prev != updated
+            }
+            if (changed.isNotEmpty()) {
+                SupabaseClient.batchUpdateTasks(changed.map { TaskDto.fromDomain(it) })
+            }
+        }
+    }
+
+    // Recheck completion upward if all remaining subtasks under a parent are done
+    private fun recheckParentCompletion(parentId: String?, tasks: MutableList<Task>, now: Long) {
+        var curr = parentId
+        val visited = mutableSetOf<String>()
+        while (curr != null && visited.add(curr)) {
+            val parentIdx = tasks.indexOfFirst { it.id == curr }
+            if (parentIdx == -1) break
+            val parent = tasks[parentIdx]
+            val children = tasks.filter { it.parentId == curr }
+
+            if (children.isNotEmpty() && children.all { it.isCompleted }) {
+                if (!parent.isCompleted) {
+                    tasks[parentIdx] = parent.copy(
+                        isCompleted = true,
+                        section = TaskSection.COMPLETED,
+                        completedAt = now,
+                        updatedAt = now
+                    )
+                }
+                curr = parent.parentId
+            } else if (children.any { !it.isCompleted }) {
+                if (parent.isCompleted) {
+                    tasks[parentIdx] = parent.copy(
+                        isCompleted = false,
+                        section = TaskSection.TODAY,
+                        completedAt = null,
+                        updatedAt = now
+                    )
+                }
+                curr = parent.parentId
+            } else {
+                break
+            }
+        }
+    }
+
+    // ==========================================
+    // UNDO & DONE BAR ACTIONS
+    // ==========================================
+
+    fun performUndo() {
+        val action = _undoAction.value ?: return
+        val restored = action.previousTasks
+        _tasks.value = restored
+        _undoAction.value = null
+
+        scope.launch {
+            // Restore tasks to Supabase
+            SupabaseClient.batchUpdateTasks(restored.map { TaskDto.fromDomain(it) })
+        }
+    }
+
+    fun commitUndo() {
+        _undoAction.value = null
     }
 
     fun getTaskById(taskId: String): Task? {

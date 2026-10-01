@@ -36,5 +36,7 @@ data class Task(
     val alarmToneTitle: String? = null,
     val repeatType: String? = null,
     val repeatDays: String? = null,
-    val repeatDates: String? = null
+    val repeatDates: String? = null,
+    val parentId: String? = null,
+    val position: Int = 0
 )

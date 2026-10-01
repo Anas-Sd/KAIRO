@@ -83,6 +83,9 @@ import com.kairo.app.ui.theme.KairoSurfaceContainerLowest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Folder
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TaskCard(
@@ -91,6 +94,12 @@ fun TaskCard(
     onDeleteTask: () -> Unit = {},
     onShowDetails: () -> Unit = {},
     onEditTask: () -> Unit = {},
+    onAddSubtask: () -> Unit = {},
+    onAdjustParent: () -> Unit = {},
+    hasSubtasks: Boolean = false,
+    subtaskProgress: Pair<Int, Int>? = null,
+    parentTitle: String? = null,
+    onDrillDown: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -144,7 +153,15 @@ fun TaskCard(
     }
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (hasSubtasks) {
+                    Modifier.clickable { onDrillDown() }
+                } else {
+                    Modifier
+                }
+            ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = KairoSurfaceContainerLowest
@@ -157,25 +174,39 @@ fun TaskCard(
                 .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment = Alignment.Top
         ) {
-            Box(
-                modifier = Modifier
-                    .padding(top = 2.dp)
-                    .size(24.dp)
-                    .scale(bounceScale.value)
-                    .background(checkboxBg, shape = RoundedCornerShape(8.dp))
-                    .border(
-                        1.dp,
-                        if (isLocallyCompleted) Color.Transparent else KairoOutlineVariant.copy(alpha = 0.45f),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .clickable { handleToggle() },
-                contentAlignment = Alignment.Center
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (isLocallyCompleted) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 2.dp)
+                        .size(24.dp)
+                        .scale(bounceScale.value)
+                        .background(checkboxBg, shape = RoundedCornerShape(8.dp))
+                        .border(
+                            1.dp,
+                            if (isLocallyCompleted) Color.Transparent else KairoOutlineVariant.copy(alpha = 0.45f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { handleToggle() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isLocallyCompleted) {
+                        Icon(
+                            imageVector = Icons.Default.Done,
+                            contentDescription = "Completed",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                if (hasSubtasks) {
                     Icon(
-                        imageVector = Icons.Default.Done,
-                        contentDescription = "Completed",
-                        tint = Color.White,
+                        imageVector = Icons.Default.ExpandMore,
+                        contentDescription = "Has subtasks",
+                        tint = KairoPrimary,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -286,6 +317,28 @@ fun TaskCard(
                             contentColor = Color(0xFFC8C4D9)
                         )
                     }
+
+                    // Subtask Progress Capsule (e.g. "3/10 done")
+                    if (hasSubtasks && subtaskProgress != null && subtaskProgress.second > 0) {
+                        TaskCapsule(
+                            icon = Icons.Default.AccountTree,
+                            iconTint = KairoPrimary,
+                            text = "${subtaskProgress.first}/${subtaskProgress.second} done",
+                            containerColor = KairoPrimary.copy(alpha = 0.12f),
+                            contentColor = KairoPrimary
+                        )
+                    }
+
+                    // Parent breadcrumb label (when shown in search / flat views)
+                    if (!parentTitle.isNullOrBlank()) {
+                        TaskCapsule(
+                            icon = Icons.Default.Folder,
+                            iconTint = Color(0xFF918EA2),
+                            text = "Under: $parentTitle",
+                            containerColor = KairoSurfaceContainerHigh,
+                            contentColor = Color(0xFFC8C4D9)
+                        )
+                    }
                 }
             }
 
@@ -350,7 +403,7 @@ fun TaskCard(
                         },
                         onClick = {
                             menuExpanded = false
-                            Toast.makeText(context, "Add subtask coming soon", Toast.LENGTH_SHORT).show()
+                            onAddSubtask()
                         }
                     )
                     DropdownMenuItem(
@@ -365,7 +418,7 @@ fun TaskCard(
                         },
                         onClick = {
                             menuExpanded = false
-                            Toast.makeText(context, "Adjust parent coming soon", Toast.LENGTH_SHORT).show()
+                            onAdjustParent()
                         }
                     )
                     DropdownMenuItem(

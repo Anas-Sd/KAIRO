@@ -60,7 +60,25 @@ object SupabaseClient {
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
                 val errorBody = response.body?.string().orEmpty()
-                error("Failed to insert task: HTTP ${response.code} $errorBody")
+                if (errorBody.contains("tasks.parent_id does not exist") || errorBody.contains("tasks.position does not exist")) {
+                    val fallbackJson = json.encodeToString(taskDto)
+                        .replace(""""parent_id":null,""", "")
+                        .replace(Regex(""""parent_id":"[^"]*","""), "")
+                        .replace(Regex(""""position":\d+,"""), "")
+                    val retryReq = Request.Builder()
+                        .url("$SUPABASE_URL/rest/v1/tasks")
+                        .header("apikey", SUPABASE_KEY)
+                        .header("Authorization", "Bearer $SUPABASE_KEY")
+                        .header("Prefer", "return=minimal")
+                        .post(fallbackJson.toRequestBody(JSON_MEDIA_TYPE))
+                        .build()
+                    val retryResp = client.newCall(retryReq).execute()
+                    if (!retryResp.isSuccessful) {
+                        error("Failed to insert task on retry: HTTP ${retryResp.code} ${retryResp.body?.string()}")
+                    }
+                } else {
+                    error("Failed to insert task: HTTP ${response.code} $errorBody")
+                }
             }
         }
     }
@@ -107,7 +125,33 @@ object SupabaseClient {
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
                 val errorBody = response.body?.string().orEmpty()
-                error("Failed to update task: HTTP ${response.code} $errorBody")
+                if (errorBody.contains("tasks.parent_id does not exist") || errorBody.contains("tasks.position does not exist")) {
+                    val fallbackJson = json.encodeToString(taskDto)
+                        .replace(""""parent_id":null,""", "")
+                        .replace(Regex(""""parent_id":"[^"]*","""), "")
+                        .replace(Regex(""""position":\d+,"""), "")
+                    val retryReq = Request.Builder()
+                        .url("$SUPABASE_URL/rest/v1/tasks?id=eq.$encodedId")
+                        .header("apikey", SUPABASE_KEY)
+                        .header("Authorization", "Bearer $SUPABASE_KEY")
+                        .header("Prefer", "return=minimal")
+                        .patch(fallbackJson.toRequestBody(JSON_MEDIA_TYPE))
+                        .build()
+                    val retryResp = client.newCall(retryReq).execute()
+                    if (!retryResp.isSuccessful) {
+                        error("Failed to update task on retry: HTTP ${retryResp.code} ${retryResp.body?.string()}")
+                    }
+                } else {
+                    error("Failed to update task: HTTP ${response.code} $errorBody")
+                }
+            }
+        }
+    }
+
+    suspend fun batchUpdateTasks(taskDtos: List<TaskDto>): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            for (dto in taskDtos) {
+                updateTask(dto).getOrThrow()
             }
         }
     }
@@ -126,6 +170,14 @@ object SupabaseClient {
             if (!response.isSuccessful) {
                 val errorBody = response.body?.string().orEmpty()
                 error("Failed to delete task: HTTP ${response.code} $errorBody")
+            }
+        }
+    }
+
+    suspend fun batchDeleteTasks(taskIds: List<String>): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            for (id in taskIds) {
+                deleteTask(id).getOrThrow()
             }
         }
     }
