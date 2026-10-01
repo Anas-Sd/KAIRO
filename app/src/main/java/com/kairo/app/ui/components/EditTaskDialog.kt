@@ -136,14 +136,26 @@ fun EditTaskDialog(
     var repeatDates by remember { mutableStateOf<String?>(task.repeatDates) }
     var repeatSummaryText by remember {
         val summary = when (task.repeatType) {
+            "BOTH" -> {
+                val days = task.repeatDays?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                val daysStr = if (days.size == 7) "Everyday"
+                else if (days.size == 5 && !days.contains("SAT") && !days.contains("SUN")) "Weekdays"
+                else if (days.size == 2 && days.contains("SAT") && days.contains("SUN")) "Weekends"
+                else "Every " + days.joinToString(", ") { it.take(3) }
+
+                val dates = task.repeatDates?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                val datesStr = if (dates.size == 1) dates.first() else "${dates.size} specific dates"
+                "$daysStr + $datesStr"
+            }
             "DAYS" -> {
-                val days = task.repeatDays?.split(",")?.map { it.trim() } ?: emptyList()
+                val days = task.repeatDays?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
                 if (days.size == 7) "Everyday"
                 else if (days.size == 5 && !days.contains("SAT") && !days.contains("SUN")) "Weekdays"
+                else if (days.size == 2 && days.contains("SAT") && days.contains("SUN")) "Weekends"
                 else "Every " + days.joinToString(", ") { it.take(3) }
             }
             "DATES" -> {
-                val dates = task.repeatDates?.split(",")?.map { it.trim() } ?: emptyList()
+                val dates = task.repeatDates?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
                 if (dates.size == 1) dates.first() else "${dates.size} specific dates"
             }
             else -> "Does not repeat"
@@ -325,19 +337,12 @@ fun EditTaskDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // 1. Task Name Input (Mandatory)
-                Text(
-                    text = "Name of task",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFFC8C4D9),
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
                     placeholder = {
                         Text(
-                            text = "e.g. Complete quarterly report",
+                            text = "Name of task",
                             color = Color(0xFF6B687C),
                             fontSize = 14.sp
                         )
@@ -355,22 +360,15 @@ fun EditTaskDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // 2. Notes Input (Optional)
-                Text(
-                    text = "Notes (optional)",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFFC8C4D9),
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
                     placeholder = {
                         Text(
-                            text = "Add details, checklist, or links...",
+                            text = "Notes (optional)",
                             color = Color(0xFF6B687C),
                             fontSize = 13.sp
                         )

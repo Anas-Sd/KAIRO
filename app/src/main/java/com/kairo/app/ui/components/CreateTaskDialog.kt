@@ -315,19 +315,12 @@ fun CreateTaskDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // 1. Task Name Input (Mandatory)
-                Text(
-                    text = "Name of task",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFFC8C4D9),
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
                     placeholder = {
                         Text(
-                            text = "e.g. Complete quarterly report",
+                            text = "Name of task",
                             color = Color(0xFF6B687C),
                             fontSize = 14.sp
                         )
@@ -345,22 +338,15 @@ fun CreateTaskDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // 2. Notes Input (Optional) - Reduced sleek height
-                Text(
-                    text = "Notes (optional)",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFFC8C4D9),
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
                     placeholder = {
                         Text(
-                            text = "Add details, checklist, or links...",
+                            text = "Notes (optional)",
                             color = Color(0xFF6B687C),
                             fontSize = 13.sp
                         )

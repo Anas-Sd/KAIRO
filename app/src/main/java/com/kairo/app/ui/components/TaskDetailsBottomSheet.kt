@@ -279,14 +279,26 @@ fun TaskDetailsBottomSheet(
 
                     // Repeat rule
                     val repeatSummary = when (task.repeatType) {
+                        "BOTH" -> {
+                            val days = task.repeatDays?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                            val daysStr = if (days.size == 7) "Everyday"
+                            else if (days.size == 5 && !days.contains("SAT") && !days.contains("SUN")) "Weekdays"
+                            else if (days.size == 2 && days.contains("SAT") && days.contains("SUN")) "Weekends"
+                            else "Every " + days.joinToString(", ") { it.take(3) }
+
+                            val dates = task.repeatDates?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                            val datesStr = if (dates.size == 1) dates.first() else "${dates.size} specific dates"
+                            "$daysStr + $datesStr"
+                        }
                         "DAYS" -> {
-                            val days = task.repeatDays?.split(",")?.map { it.trim() } ?: emptyList()
+                            val days = task.repeatDays?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
                             if (days.size == 7) "Everyday"
                             else if (days.size == 5 && !days.contains("SAT") && !days.contains("SUN")) "Weekdays"
+                            else if (days.size == 2 && days.contains("SAT") && days.contains("SUN")) "Weekends"
                             else "Every " + days.joinToString(", ") { it.take(3) }
                         }
                         "DATES" -> {
-                            val dates = task.repeatDates?.split(",")?.map { it.trim() } ?: emptyList()
+                            val dates = task.repeatDates?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
                             if (dates.size == 1) dates.first() else "${dates.size} specific dates"
                         }
                         else -> null
