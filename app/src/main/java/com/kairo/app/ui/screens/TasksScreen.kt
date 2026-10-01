@@ -2,11 +2,8 @@ package com.kairo.app.ui.screens
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,15 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
@@ -43,7 +39,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -51,17 +46,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kairo.app.ui.components.CreateTaskDialog
+import com.kairo.app.ui.components.FilterBottomSheet
 import com.kairo.app.ui.components.FilterSortBar
 import com.kairo.app.ui.components.SectionHeader
 import com.kairo.app.ui.components.SectionType
+import com.kairo.app.ui.components.SortBottomSheet
 import com.kairo.app.ui.components.TaskCard
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoPrimaryContainer
-import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
+import com.kairo.app.ui.theme.KairoSecondary
 import com.kairo.app.ui.viewmodel.TaskViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
+import androidx.compose.material3.ExperimentalMaterial3Api
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TasksScreen(
     onNavigateToAi: () -> Unit,
@@ -70,6 +73,7 @@ fun TasksScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val currentDateStr = SimpleDateFormat("EEEE, MMM d", Locale.getDefault()).format(Date())
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -87,35 +91,60 @@ fun TasksScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Logo and Title
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .background(
-                                    brush = Brush.linearGradient(
-                                        colors = listOf(KairoPrimaryContainer, KairoPrimary)
-                                    ),
-                                    shape = RoundedCornerShape(10.dp)
-                                ),
-                            contentAlignment = Alignment.Center
+                    // Title and Date
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.TaskAlt,
-                                contentDescription = "Logo",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
+                            Text(
+                                text = "Tasks",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
+
+                            // Connected to Supabase Status Pill
+                            if (uiState.isConnected) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            color = KairoSecondary.copy(alpha = 0.12f),
+                                            shape = RoundedCornerShape(100.dp)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            KairoSecondary.copy(alpha = 0.35f),
+                                            RoundedCornerShape(100.dp)
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CloudDone,
+                                            contentDescription = "Connected",
+                                            tint = KairoSecondary,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Text(
+                                            text = "Connected",
+                                            color = KairoSecondary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
                         }
 
                         Text(
-                            text = "Tasks",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            text = currentDateStr,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
@@ -161,7 +190,11 @@ fun TasksScreen(
                         trailingIcon = {
                             if (uiState.searchQuery.isNotEmpty()) {
                                 IconButton(onClick = { viewModel.updateSearch("") }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Clear",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         },
@@ -182,10 +215,10 @@ fun TasksScreen(
 
                 // Filter & Sort Control Bar
                 FilterSortBar(
-                    activeFilter = uiState.activeFilter,
+                    filterCriteria = uiState.filterCriteria,
                     activeSort = uiState.activeSort,
-                    onFilterSelected = { viewModel.setFilter(it) },
-                    onSortSelected = { viewModel.setSort(it) },
+                    onOpenFilter = { viewModel.openFilterSheet() },
+                    onOpenSort = { viewModel.openSortSheet() },
                     onExportClicked = {
                         Toast.makeText(context, "Exporting tasks...", Toast.LENGTH_SHORT).show()
                     }
@@ -304,10 +337,56 @@ fun TasksScreen(
                 }
             }
 
+            // Empty state if all sections are empty due to filtering
+            if (uiState.overdueTasks.isEmpty() && uiState.todayTasks.isEmpty() &&
+                uiState.upcomingTasks.isEmpty() && uiState.completedTasks.isEmpty()
+            ) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No tasks match your filter criteria.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            }
+
             // Bottom spacer for FAB & Navigation bar padding
             item {
                 Spacer(modifier = Modifier.height(72.dp))
             }
+        }
+
+        // Filter Modal Bottom Sheet
+        if (uiState.showFilterSheet) {
+            FilterBottomSheet(
+                initialFilter = uiState.filterCriteria,
+                onApplyFilter = { criteria ->
+                    viewModel.applyFilter(criteria)
+                },
+                onDismiss = {
+                    viewModel.closeFilterSheet()
+                }
+            )
+        }
+
+        // Sort Modal Bottom Sheet
+        if (uiState.showSortSheet) {
+            SortBottomSheet(
+                initialSort = uiState.activeSort,
+                onApplySort = { sort ->
+                    viewModel.applySort(sort)
+                },
+                onDismiss = {
+                    viewModel.closeSortSheet()
+                }
+            )
         }
 
         // Dialog for creating tasks
