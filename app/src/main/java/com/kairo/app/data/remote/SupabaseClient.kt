@@ -67,9 +67,10 @@ object SupabaseClient {
 
     suspend fun updateTaskCompletion(taskId: String, isCompleted: Boolean, section: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
+            val encodedId = java.net.URLEncoder.encode(taskId, "UTF-8")
             val patchJson = """{"is_completed":$isCompleted,"section":"$section"}"""
             val request = Request.Builder()
-                .url("$SUPABASE_URL/rest/v1/tasks?id=eq.$taskId")
+                .url("$SUPABASE_URL/rest/v1/tasks?id=eq.$encodedId")
                 .header("apikey", SUPABASE_KEY)
                 .header("Authorization", "Bearer $SUPABASE_KEY")
                 .header("Prefer", "return=minimal")
@@ -86,9 +87,10 @@ object SupabaseClient {
 
     suspend fun updateTask(taskDto: TaskDto): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
+            val encodedId = java.net.URLEncoder.encode(taskDto.id, "UTF-8")
             val bodyJson = json.encodeToString(taskDto)
             val request = Request.Builder()
-                .url("$SUPABASE_URL/rest/v1/tasks?id=eq.${taskDto.id}")
+                .url("$SUPABASE_URL/rest/v1/tasks?id=eq.$encodedId")
                 .header("apikey", SUPABASE_KEY)
                 .header("Authorization", "Bearer $SUPABASE_KEY")
                 .header("Prefer", "return=minimal")
@@ -105,8 +107,9 @@ object SupabaseClient {
 
     suspend fun deleteTask(taskId: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
+            val encodedId = java.net.URLEncoder.encode(taskId, "UTF-8")
             val request = Request.Builder()
-                .url("$SUPABASE_URL/rest/v1/tasks?id=eq.$taskId")
+                .url("$SUPABASE_URL/rest/v1/tasks?id=eq.$encodedId")
                 .header("apikey", SUPABASE_KEY)
                 .header("Authorization", "Bearer $SUPABASE_KEY")
                 .delete()

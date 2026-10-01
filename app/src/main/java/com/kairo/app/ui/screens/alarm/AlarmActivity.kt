@@ -106,6 +106,11 @@ class AlarmActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         wakeAndShowOnLock()
@@ -139,6 +144,9 @@ class AlarmActivity : ComponentActivity() {
                     location = location,
                     attachment = attachment,
                     onComplete = {
+                        if (taskId.isNotBlank()) {
+                            com.kairo.app.data.repository.TaskRepository.markTaskCompleted(taskId)
+                        }
                         val completeIntent = Intent(this, AlarmReceiver::class.java).apply {
                             action = AlarmReceiver.ACTION_COMPLETE_ALARM
                             putExtra(AlarmReceiver.EXTRA_TASK_ID, taskId)
@@ -161,6 +169,9 @@ class AlarmActivity : ComponentActivity() {
                         finish()
                     },
                     onDismiss = {
+                        if (taskId.isNotBlank()) {
+                            com.kairo.app.data.repository.TaskRepository.markTaskOverdue(taskId)
+                        }
                         val dismissIntent = Intent(this, AlarmReceiver::class.java).apply {
                             action = AlarmReceiver.ACTION_DISMISS_ALARM
                             putExtra(AlarmReceiver.EXTRA_TASK_ID, taskId)
@@ -169,6 +180,9 @@ class AlarmActivity : ComponentActivity() {
                         finish()
                     },
                     onCloseHeader = {
+                        if (taskId.isNotBlank()) {
+                            com.kairo.app.data.repository.TaskRepository.markTaskOverdue(taskId)
+                        }
                         val dismissIntent = Intent(this, AlarmReceiver::class.java).apply {
                             action = AlarmReceiver.ACTION_DISMISS_ALARM
                             putExtra(AlarmReceiver.EXTRA_TASK_ID, taskId)

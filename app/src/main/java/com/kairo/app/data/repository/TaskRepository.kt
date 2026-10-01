@@ -15,11 +15,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class TaskRepository {
+object TaskRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _tasks = MutableStateFlow<List<Task>>(initialMockTasks())
     val tasks: Flow<List<Task>> = _tasks.asStateFlow()
+
+    operator fun invoke(): TaskRepository = this
+    fun getInstance(): TaskRepository = this
 
     init {
         refreshFromSupabase()
@@ -37,6 +40,75 @@ class TaskRepository {
                 .onFailure { error ->
                     Log.e("TaskRepository", "Failed loading from Supabase, using local cache: ${error.message}")
                 }
+        }
+    }
+
+    fun markTaskCompleted(taskId: String) {
+        val now = System.currentTimeMillis()
+        var found = false
+        _tasks.update { currentList ->
+            currentList.map { task ->
+                if (task.id == taskId) {
+                    found = true
+                    task.copy(
+                        isCompleted = true,
+                        section = TaskSection.COMPLETED,
+                        completedAt = now,
+                        updatedAt = now
+                    )
+                } else task
+            }
+        }
+
+        scope.launch {
+            Log.d("TaskRepository", "Syncing task $taskId as COMPLETED to Supabase")
+            SupabaseClient.updateTaskCompletion(
+                taskId = taskId,
+                isCompleted = true,
+                section = TaskSection.COMPLETED.name
+            ).onSuccess {
+                Log.d("TaskRepository", "Successfully marked task $taskId as COMPLETED in Supabase")
+            }.onFailure { error ->
+                Log.e("TaskRepository", "Failed marking task $taskId COMPLETED in Supabase: ${error.message}")
+            }
+
+            if (!found) {
+                refreshFromSupabase()
+            }
+        }
+    }
+
+    fun markTaskOverdue(taskId: String) {
+        val now = System.currentTimeMillis()
+        var found = false
+        _tasks.update { currentList ->
+            currentList.map { task ->
+                if (task.id == taskId) {
+                    found = true
+                    task.copy(
+                        isCompleted = false,
+                        section = TaskSection.OVERDUE,
+                        updatedAt = now
+                    )
+                } else task
+            }
+        }
+
+        scope.launch {
+            Log.d("TaskRepository", "Syncing task $taskId as OVERDUE to Supabase")
+            SupabaseClient.updateTaskCompletion(
+                taskId = taskId,
+                isCompleted = false,
+                section = TaskSection.OVERDUE.name
+            ).onSuccess {
+                Log.d("TaskRepository", "Successfully marked task $taskId as OVERDUE in Supabase")
+            }.onFailure { error ->
+                Log.e("TaskRepository", "Failed marking task $taskId OVERDUE in Supabase: ${error.message}")
+            }
+
+            if (!found) {
+                refreshFromSupabase()
+            }
         }
     }
 

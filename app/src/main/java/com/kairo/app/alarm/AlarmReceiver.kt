@@ -100,13 +100,21 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     private fun handleCompleteAlarm(context: Context, taskId: String) {
+        Log.i(TAG, "handleCompleteAlarm triggered for taskId: $taskId")
         stopRinging(context)
         notifyAlarmOverlayFinish(context)
 
         if (taskId.isNotBlank()) {
+            AlarmScheduler.cancelAlarm(context, taskId)
+            val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
-                val repository = TaskRepository()
-                repository.toggleTaskCompletion(taskId)
+                try {
+                    TaskRepository.markTaskCompleted(taskId)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in handleCompleteAlarm: ${e.message}", e)
+                } finally {
+                    pendingResult.finish()
+                }
             }
             Toast.makeText(context, "Task marked as completed", Toast.LENGTH_SHORT).show()
         }
@@ -142,19 +150,21 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     private fun handleDismissAlarm(context: Context, taskId: String) {
+        Log.i(TAG, "handleDismissAlarm triggered for taskId: $taskId")
         stopRinging(context)
         notifyAlarmOverlayFinish(context)
 
         if (taskId.isNotBlank()) {
             // User requested: When dismissed, the task directly moves to the OVERDUE category
+            AlarmScheduler.cancelAlarm(context, taskId)
+            val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
-                val repository = TaskRepository()
-                repository.getTaskById(taskId)?.let { currentTask ->
-                    val overdueTask = currentTask.copy(
-                        section = TaskSection.OVERDUE,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                    repository.updateTask(overdueTask)
+                try {
+                    TaskRepository.markTaskOverdue(taskId)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in handleDismissAlarm: ${e.message}", e)
+                } finally {
+                    pendingResult.finish()
                 }
             }
             Toast.makeText(context, "Alarm dismissed • Task moved to Overdue", Toast.LENGTH_SHORT).show()
@@ -169,7 +179,9 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     private fun notifyAlarmOverlayFinish(context: Context) {
-        val finishBroadcast = Intent(AlarmActivity.ACTION_FINISH_ALARM_OVERLAY)
+        val finishBroadcast = Intent(AlarmActivity.ACTION_FINISH_ALARM_OVERLAY).apply {
+            setPackage(context.packageName)
+        }
         context.sendBroadcast(finishBroadcast)
     }
 }
