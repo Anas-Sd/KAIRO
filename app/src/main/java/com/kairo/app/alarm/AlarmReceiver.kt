@@ -34,6 +34,7 @@ class AlarmReceiver : BroadcastReceiver() {
         const val EXTRA_TASK_LOCATION = "extra_task_location"
         const val EXTRA_TASK_ATTACHMENT = "extra_task_attachment"
         const val EXTRA_SNOOZE_MINUTES = "extra_snooze_minutes"
+        const val EXTRA_ALARM_URI = "extra_alarm_uri"
 
         private const val TAG = "AlarmReceiver"
     }
@@ -60,6 +61,7 @@ class AlarmReceiver : BroadcastReceiver() {
         val dueTime = intent.getStringExtra(EXTRA_TASK_DUE_TIME).orEmpty()
         val location = intent.getStringExtra(EXTRA_TASK_LOCATION)
         val attachment = intent.getStringExtra(EXTRA_TASK_ATTACHMENT)
+        val alarmToneUri = intent.getStringExtra(EXTRA_ALARM_URI)
 
         // 1. Start foreground ringing audio service
         val serviceIntent = Intent(context, AlarmRingingService::class.java).apply {
@@ -72,6 +74,7 @@ class AlarmReceiver : BroadcastReceiver() {
             putExtra(AlarmRingingService.EXTRA_TASK_DUE_TIME, dueTime)
             putExtra(AlarmRingingService.EXTRA_TASK_LOCATION, location)
             putExtra(AlarmRingingService.EXTRA_TASK_ATTACHMENT, attachment)
+            putExtra(AlarmRingingService.EXTRA_ALARM_URI, alarmToneUri)
         }
         ContextCompat.startForegroundService(context, serviceIntent)
 

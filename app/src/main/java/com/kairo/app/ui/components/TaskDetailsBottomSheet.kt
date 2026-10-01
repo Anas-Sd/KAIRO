@@ -31,8 +31,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -273,6 +275,35 @@ fun TaskDetailsBottomSheet(
                         icon = Icons.Default.CalendarToday,
                         label = "Due Date",
                         value = dueString
+                    )
+
+                    // Repeat rule
+                    val repeatSummary = when (task.repeatType) {
+                        "DAYS" -> {
+                            val days = task.repeatDays?.split(",")?.map { it.trim() } ?: emptyList()
+                            if (days.size == 7) "Everyday"
+                            else if (days.size == 5 && !days.contains("SAT") && !days.contains("SUN")) "Weekdays"
+                            else "Every " + days.joinToString(", ") { it.take(3) }
+                        }
+                        "DATES" -> {
+                            val dates = task.repeatDates?.split(",")?.map { it.trim() } ?: emptyList()
+                            if (dates.size == 1) dates.first() else "${dates.size} specific dates"
+                        }
+                        else -> null
+                    }
+                    if (repeatSummary != null) {
+                        InfoRow(
+                            icon = Icons.Default.Repeat,
+                            label = "Repeat",
+                            value = repeatSummary
+                        )
+                    }
+
+                    // Reminder Alarm Tone
+                    InfoRow(
+                        icon = Icons.Default.MusicNote,
+                        label = "Alarm Tone",
+                        value = task.alarmToneTitle ?: "Default Alarm Tone"
                     )
 
                     // Location

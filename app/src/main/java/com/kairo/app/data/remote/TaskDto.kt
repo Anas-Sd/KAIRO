@@ -22,7 +22,12 @@ data class TaskDto(
     @SerialName("section") val section: String = "TODAY",
     @SerialName("created_at") val createdAt: Long = System.currentTimeMillis(),
     @SerialName("updated_at") val updatedAt: Long = System.currentTimeMillis(),
-    @SerialName("completed_at") val completedAt: Long? = null
+    @SerialName("completed_at") val completedAt: Long? = null,
+    @SerialName("alarm_tone_uri") val alarmToneUri: String? = null,
+    @SerialName("alarm_tone_title") val alarmToneTitle: String? = null,
+    @SerialName("repeat_type") val repeatType: String? = null,
+    @SerialName("repeat_days") val repeatDays: String? = null,
+    @SerialName("repeat_dates") val repeatDates: String? = null
 ) {
     fun toDomain(): Task {
         return Task(
@@ -40,7 +45,12 @@ data class TaskDto(
             section = runCatching { TaskSection.valueOf(section) }.getOrDefault(TaskSection.TODAY),
             createdAt = createdAt,
             updatedAt = updatedAt,
-            completedAt = if (isCompleted) completedAt else null
+            completedAt = if (isCompleted) completedAt else null,
+            alarmToneUri = alarmToneUri,
+            alarmToneTitle = alarmToneTitle,
+            repeatType = repeatType,
+            repeatDays = repeatDays,
+            repeatDates = repeatDates
         )
     }
 
@@ -61,7 +71,12 @@ data class TaskDto(
                 section = task.section.name,
                 createdAt = task.createdAt,
                 updatedAt = task.updatedAt,
-                completedAt = task.completedAt
+                completedAt = task.completedAt,
+                alarmToneUri = task.alarmToneUri,
+                alarmToneTitle = task.alarmToneTitle,
+                repeatType = task.repeatType,
+                repeatDays = task.repeatDays,
+                repeatDates = task.repeatDates
             )
         }
     }

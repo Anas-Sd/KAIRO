@@ -146,6 +146,7 @@ object AlarmScheduler {
             putExtra(AlarmReceiver.EXTRA_TASK_DUE_TIME, task.dueTime ?: "")
             putExtra(AlarmReceiver.EXTRA_TASK_LOCATION, task.location ?: "")
             putExtra(AlarmReceiver.EXTRA_TASK_ATTACHMENT, task.attachmentName ?: "")
+            putExtra(AlarmReceiver.EXTRA_ALARM_URI, task.alarmToneUri)
         }
 
         val requestCode = task.id.hashCode()

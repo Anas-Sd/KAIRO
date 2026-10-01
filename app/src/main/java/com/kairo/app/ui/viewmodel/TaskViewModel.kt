@@ -377,7 +377,12 @@ class TaskViewModel(
         dueTime: String?,
         location: String?,
         attachmentName: String?,
-        attachmentUri: String?
+        attachmentUri: String?,
+        alarmToneUri: String? = null,
+        alarmToneTitle: String? = null,
+        repeatType: String? = null,
+        repeatDays: String? = null,
+        repeatDates: String? = null
     ) {
         if (title.isBlank()) return
         val assignedSection = when {
@@ -395,6 +400,11 @@ class TaskViewModel(
             location = location,
             attachmentName = attachmentName,
             attachmentUri = attachmentUri,
+            alarmToneUri = alarmToneUri,
+            alarmToneTitle = alarmToneTitle,
+            repeatType = repeatType,
+            repeatDays = repeatDays,
+            repeatDates = repeatDates,
             section = assignedSection,
             updatedAt = System.currentTimeMillis()
         )
@@ -414,7 +424,12 @@ class TaskViewModel(
         dueTime: String?,
         location: String?,
         attachmentName: String?,
-        attachmentUri: String? = null
+        attachmentUri: String? = null,
+        alarmToneUri: String? = null,
+        alarmToneTitle: String? = null,
+        repeatType: String? = null,
+        repeatDays: String? = null,
+        repeatDates: String? = null
     ) {
         if (title.isBlank()) return
         val assignedSection = when {
@@ -432,6 +447,11 @@ class TaskViewModel(
             location = location,
             attachmentName = attachmentName,
             attachmentUri = attachmentUri,
+            alarmToneUri = alarmToneUri,
+            alarmToneTitle = alarmToneTitle,
+            repeatType = repeatType,
+            repeatDays = repeatDays,
+            repeatDates = repeatDates,
             section = assignedSection
         )
         viewModelScope.launch {

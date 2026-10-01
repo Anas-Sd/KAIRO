@@ -36,8 +36,11 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -94,7 +97,12 @@ fun CreateTaskDialog(
         dueTime: String?,
         location: String?,
         attachmentName: String?,
-        attachmentUri: String?
+        attachmentUri: String?,
+        alarmToneUri: String?,
+        alarmToneTitle: String?,
+        repeatType: String?,
+        repeatDays: String?,
+        repeatDates: String?
     ) -> Unit
 ) {
     val context = LocalContext.current
@@ -121,6 +129,18 @@ fun CreateTaskDialog(
         val minute = calendar.get(Calendar.MINUTE)
         mutableStateOf(String.format(Locale.getDefault(), "%02d:%02d", hour, minute))
     }
+
+    // Alarm Tone State
+    var alarmToneUri by remember { mutableStateOf<String?>(null) }
+    var alarmToneTitle by remember { mutableStateOf("Default Alarm Tone") }
+    var showTonePicker by remember { mutableStateOf(false) }
+
+    // Repeat State
+    var repeatType by remember { mutableStateOf<String?>(null) }
+    var repeatDays by remember { mutableStateOf<String?>(null) }
+    var repeatDates by remember { mutableStateOf<String?>(null) }
+    var repeatSummaryText by remember { mutableStateOf("Does not repeat") }
+    var showRepeatPicker by remember { mutableStateOf(false) }
 
     var locationText by remember { mutableStateOf("") }
     var attachmentName by remember { mutableStateOf<String?>(null) }
@@ -327,7 +347,7 @@ fun CreateTaskDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // 2. Notes Input (Optional)
+                // 2. Notes Input (Optional) - Reduced sleek height
                 Text(
                     text = "Notes (optional)",
                     fontSize = 12.sp,
@@ -345,8 +365,8 @@ fun CreateTaskDialog(
                             fontSize = 13.sp
                         )
                     },
-                    minLines = 2,
-                    maxLines = 4,
+                    minLines = 1,
+                    maxLines = 2,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = KairoPrimary,
                         unfocusedBorderColor = KairoOutlineVariant.copy(alpha = 0.4f),
@@ -359,7 +379,55 @@ fun CreateTaskDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Repeat Selector (Between Notes and Priority/Date row)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clickable { showRepeatPicker = true },
+                    shape = RoundedCornerShape(14.dp),
+                    color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
+                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Repeat,
+                                contentDescription = "Repeat",
+                                tint = if (repeatType != null) KairoPrimary else Color(0xFF918EA2),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Repeat: $repeatSummaryText",
+                                fontSize = 13.sp,
+                                fontWeight = if (repeatType != null) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (repeatType != null) Color.White else Color(0xFFC8C4D9),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            tint = Color(0xFFC8C4D9),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // 3. Priority Dropdown beside Date & Time Selector
                 Row(
@@ -484,7 +552,55 @@ fun CreateTaskDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 4. Tone Selector (Below Priority & Date row)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clickable { showTonePicker = true },
+                    shape = RoundedCornerShape(14.dp),
+                    color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
+                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = "Alarm Tone",
+                                tint = KairoPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Tone: $alarmToneTitle",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            tint = Color(0xFFC8C4D9),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // 4. Location Selector (Optional)
                 Surface(
@@ -624,7 +740,12 @@ fun CreateTaskDialog(
                                 selectedTimeText,
                                 if (locationText.isNotBlank()) locationText.trim() else null,
                                 attachmentName,
-                                attachmentUri
+                                attachmentUri,
+                                alarmToneUri,
+                                alarmToneTitle,
+                                repeatType,
+                                repeatDays,
+                                repeatDates
                             )
                         },
                         enabled = title.isNotBlank(),
@@ -646,6 +767,37 @@ fun CreateTaskDialog(
                 }
             }
         }
+    }
+
+    // Repeat Picker Dialog
+    if (showRepeatPicker) {
+        RepeatPickerDialog(
+            initialRepeatType = repeatType,
+            initialRepeatDays = repeatDays,
+            initialRepeatDates = repeatDates,
+            onDismiss = { showRepeatPicker = false },
+            onConfirm = { type, days, dates, summary ->
+                repeatType = type
+                repeatDays = days
+                repeatDates = dates
+                repeatSummaryText = summary
+                showRepeatPicker = false
+            }
+        )
+    }
+
+    // Tone Picker Dialog
+    if (showTonePicker) {
+        TonePickerDialog(
+            initialUri = alarmToneUri,
+            initialTitle = alarmToneTitle,
+            onDismiss = { showTonePicker = false },
+            onConfirm = { uri, toneTitle ->
+                alarmToneUri = uri
+                alarmToneTitle = toneTitle
+                showTonePicker = false
+            }
+        )
     }
 
     // Attachment Source Selector Dialog (Camera, Gallery, Files)

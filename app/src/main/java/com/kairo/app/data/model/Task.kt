@@ -31,5 +31,10 @@ data class Task(
     val section: TaskSection = TaskSection.TODAY,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
-    val completedAt: Long? = null
+    val completedAt: Long? = null,
+    val alarmToneUri: String? = null,
+    val alarmToneTitle: String? = null,
+    val repeatType: String? = null,
+    val repeatDays: String? = null,
+    val repeatDates: String? = null
 )

@@ -454,8 +454,23 @@ fun TasksScreen(
         if (uiState.showCreateDialog) {
             CreateTaskDialog(
                 onDismiss = { viewModel.setShowCreateDialog(false) },
-                onConfirm = { title, notes, priority, dueDate, dueDateMillis, dueTime, location, attachmentName, attachmentUri ->
-                    viewModel.createTask(title, notes, priority, dueDate, dueDateMillis, dueTime, location, attachmentName, attachmentUri)
+                onConfirm = { title, notes, priority, dueDate, dueDateMillis, dueTime, location, attachmentName, attachmentUri, alarmToneUri, alarmToneTitle, repeatType, repeatDays, repeatDates ->
+                    viewModel.createTask(
+                        title,
+                        notes,
+                        priority,
+                        dueDate,
+                        dueDateMillis,
+                        dueTime,
+                        location,
+                        attachmentName,
+                        attachmentUri,
+                        alarmToneUri,
+                        alarmToneTitle,
+                        repeatType,
+                        repeatDays,
+                        repeatDates
+                    )
                     Toast.makeText(context, "Task created successfully", Toast.LENGTH_SHORT).show()
                 }
             )
@@ -477,7 +492,7 @@ fun TasksScreen(
             EditTaskDialog(
                 task = editTask,
                 onDismiss = { viewModel.dismissEditTask() },
-                onConfirm = { title, notes, priority, dueDate, dueDateMillis, dueTime, location, attachmentName, attachmentUri ->
+                onConfirm = { title, notes, priority, dueDate, dueDateMillis, dueTime, location, attachmentName, attachmentUri, alarmToneUri, alarmToneTitle, repeatType, repeatDays, repeatDates ->
                     viewModel.updateTask(
                         editTask,
                         title,
@@ -488,7 +503,12 @@ fun TasksScreen(
                         dueTime,
                         location,
                         attachmentName,
-                        attachmentUri
+                        attachmentUri,
+                        alarmToneUri,
+                        alarmToneTitle,
+                        repeatType,
+                        repeatDays,
+                        repeatDates
                     )
                     Toast.makeText(context, "Task updated successfully", Toast.LENGTH_SHORT).show()
                 }
