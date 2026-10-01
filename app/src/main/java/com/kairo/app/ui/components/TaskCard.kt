@@ -136,9 +136,7 @@ fun TaskCard(
     }
 
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable { handleToggle() },
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = KairoSurfaceContainerLowest

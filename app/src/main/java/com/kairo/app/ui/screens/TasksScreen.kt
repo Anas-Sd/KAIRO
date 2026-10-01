@@ -274,18 +274,27 @@ fun TasksScreen(
             }
 
             // 2. TODAY SECTION
-            if (uiState.todayTasks.isNotEmpty()) {
-                item(key = "section_today_header") {
-                    SectionHeader(
-                        title = "Today",
-                        countText = "${uiState.todayTasks.size} tasks",
-                        sectionType = SectionType.TODAY,
-                        isExpanded = uiState.todayExpanded,
-                        onToggle = { viewModel.toggleToday() }
-                    )
-                }
+            item(key = "section_today_header") {
+                SectionHeader(
+                    title = "Today",
+                    countText = "${uiState.todayTasks.size} tasks",
+                    sectionType = SectionType.TODAY,
+                    isExpanded = uiState.todayExpanded,
+                    onToggle = { viewModel.toggleToday() }
+                )
+            }
 
-                if (uiState.todayExpanded) {
+            if (uiState.todayExpanded) {
+                if (uiState.todayTasks.isEmpty()) {
+                    item(key = "today_empty_state") {
+                        Text(
+                            text = "No tasks for today",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(start = 12.dp, top = 2.dp, bottom = 6.dp)
+                        )
+                    }
+                } else {
                     items(uiState.todayTasks, key = { it.id }) { task ->
                         TaskCard(
                             task = task,

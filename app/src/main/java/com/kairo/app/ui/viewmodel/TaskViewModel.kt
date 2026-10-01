@@ -21,8 +21,8 @@ import kotlinx.coroutines.launch
 data class UiToggles(
     val overdueExpanded: Boolean = true,
     val todayExpanded: Boolean = true,
-    val upcomingExpanded: Boolean = true,
-    val completedExpanded: Boolean = true,
+    val upcomingExpanded: Boolean = false, // Collapsed by default
+    val completedExpanded: Boolean = false, // Collapsed by default
     val isSearchActive: Boolean = false,
     val showCreateDialog: Boolean = false,
     val showFilterSheet: Boolean = false,
@@ -38,8 +38,8 @@ data class TasksUiState(
     val activeSort: TaskSort = TaskSort.DATE_NEAR,
     val overdueExpanded: Boolean = true,
     val todayExpanded: Boolean = true,
-    val upcomingExpanded: Boolean = true,
-    val completedExpanded: Boolean = true,
+    val upcomingExpanded: Boolean = false, // Collapsed by default
+    val completedExpanded: Boolean = false, // Collapsed by default
     val searchQuery: String = "",
     val isSearchActive: Boolean = false,
     val showCreateDialog: Boolean = false,
@@ -57,13 +57,39 @@ class TaskViewModel(
     private val _searchQuery = MutableStateFlow("")
     private val _uiToggles = MutableStateFlow(UiToggles())
 
-    // Flow of filtered & sorted tasks
-    private val _filteredTasks = combine(
+    private fun isOverdue(task: Task): Boolean {
+        if (task.isCompleted) return false
+        return task.section == TaskSection.OVERDUE || task.dueDate.contains("Yesterday", ignoreCase = true)
+    }
+
+    private fun isToday(task: Task): Boolean {
+        if (task.isCompleted || isOverdue(task)) return false
+        return task.section == TaskSection.TODAY || task.dueDate.contains("Today", ignoreCase = true)
+    }
+
+    private fun isUpcoming(task: Task): Boolean {
+        if (task.isCompleted || isOverdue(task) || isToday(task)) return false
+        return true
+    }
+
+    private fun sortTasks(list: List<Task>, sort: TaskSort): List<Task> {
+        return when (sort) {
+            TaskSort.DATE_NEAR -> list.sortedBy { it.createdAt }
+            TaskSort.DATE_LATE -> list.sortedByDescending { it.createdAt }
+            TaskSort.PRIORITY_HIGH -> list.sortedByDescending { it.priority.ordinal }
+            TaskSort.PRIORITY_LOW -> list.sortedBy { it.priority.ordinal }
+            TaskSort.TITLE_AZ -> list.sortedBy { it.title.lowercase() }
+            TaskSort.TITLE_ZA -> list.sortedByDescending { it.title.lowercase() }
+        }
+    }
+
+    val uiState: StateFlow<TasksUiState> = combine(
         repository.tasks,
         _filterCriteria,
         _activeSort,
-        _searchQuery
-    ) { tasks: List<Task>, criteria: FilterCriteria, sort: TaskSort, search: String ->
+        _searchQuery,
+        _uiToggles
+    ) { tasks: List<Task>, criteria: FilterCriteria, sort: TaskSort, search: String, toggles: UiToggles ->
         var list = tasks
 
         // 1. Text Search Filter
@@ -90,9 +116,7 @@ class TaskViewModel(
         // 4. Due Date Filter
         criteria.selectedDate?.let { dateFilter ->
             list = when (dateFilter) {
-                DateFilter.TODAY -> list.filter {
-                    it.dueDate.contains("Today", ignoreCase = true) || it.section == TaskSection.TODAY
-                }
+                DateFilter.TODAY -> list.filter { isToday(it) }
                 DateFilter.TOMORROW -> list.filter {
                     it.dueDate.contains("Tomorrow", ignoreCase = true) || it.dueDate.contains("Mon", ignoreCase = true)
                 }
@@ -108,29 +132,17 @@ class TaskViewModel(
             }
         }
 
-        // 5. Sorting
-        when (sort) {
-            TaskSort.DATE_NEAR -> list.sortedBy { it.createdAt }
-            TaskSort.DATE_LATE -> list.sortedByDescending { it.createdAt }
-            TaskSort.PRIORITY_HIGH -> list.sortedByDescending { it.priority.ordinal }
-            TaskSort.PRIORITY_LOW -> list.sortedBy { it.priority.ordinal }
-            TaskSort.TITLE_AZ -> list.sortedBy { it.title.lowercase() }
-            TaskSort.TITLE_ZA -> list.sortedByDescending { it.title.lowercase() }
-        }
-    }
+        // 5. Partition into 4 Categories and apply sorting WITHIN each category
+        val overdue = sortTasks(list.filter { isOverdue(it) }, sort)
+        val today = sortTasks(list.filter { isToday(it) }, sort)
+        val upcoming = sortTasks(list.filter { isUpcoming(it) }, sort)
+        val completed = sortTasks(list.filter { it.isCompleted }, sort)
 
-    val uiState: StateFlow<TasksUiState> = combine(
-        _filteredTasks,
-        _filterCriteria,
-        _activeSort,
-        _searchQuery,
-        _uiToggles
-    ) { filtered: List<Task>, criteria: FilterCriteria, sort: TaskSort, search: String, toggles: UiToggles ->
         TasksUiState(
-            overdueTasks = filtered.filter { it.section == TaskSection.OVERDUE && !it.isCompleted },
-            todayTasks = filtered.filter { it.section == TaskSection.TODAY && !it.isCompleted },
-            upcomingTasks = filtered.filter { it.section == TaskSection.UPCOMING && !it.isCompleted },
-            completedTasks = filtered.filter { it.isCompleted || it.section == TaskSection.COMPLETED },
+            overdueTasks = overdue,
+            todayTasks = today,
+            upcomingTasks = upcoming,
+            completedTasks = completed,
             filterCriteria = criteria,
             activeSort = sort,
             overdueExpanded = toggles.overdueExpanded,
@@ -230,6 +242,11 @@ class TaskViewModel(
         attachmentName: String?
     ) {
         if (title.isBlank()) return
+        val assignedSection = when {
+            dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
+            dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
+            else -> TaskSection.UPCOMING
+        }
         val newTask = Task(
             title = title.trim(),
             notes = notes,
@@ -238,7 +255,7 @@ class TaskViewModel(
             dueTime = dueTime,
             location = location,
             attachmentName = attachmentName,
-            section = TaskSection.TODAY
+            section = assignedSection
         )
         viewModelScope.launch {
             repository.addTask(newTask)
