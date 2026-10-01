@@ -17,6 +17,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 data class UiToggles(
     val overdueExpanded: Boolean = true,
@@ -57,14 +60,95 @@ class TaskViewModel(
     private val _searchQuery = MutableStateFlow("")
     private val _uiToggles = MutableStateFlow(UiToggles())
 
+    private fun getEffectiveDueDateMillis(task: Task): Long {
+        task.dueDateMillis?.let { return it }
+        return computeDueDateMillis(task.dueDate, task.createdAt)
+    }
+
+    private fun computeDueDateMillis(dueDateStr: String, fallback: Long = System.currentTimeMillis()): Long {
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 12)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        return when {
+            dueDateStr.contains("Today", ignoreCase = true) -> cal.timeInMillis
+            dueDateStr.contains("Tomorrow", ignoreCase = true) -> {
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+                cal.timeInMillis
+            }
+            dueDateStr.contains("Yesterday", ignoreCase = true) -> {
+                cal.add(Calendar.DAY_OF_YEAR, -1)
+                cal.timeInMillis
+            }
+            else -> {
+                try {
+                    val fmt = SimpleDateFormat("MMM d", Locale.getDefault())
+                    val parsed = fmt.parse(dueDateStr)
+                    if (parsed != null) {
+                        val parsedCal = Calendar.getInstance().apply {
+                            time = parsed
+                            set(Calendar.YEAR, cal.get(Calendar.YEAR))
+                            set(Calendar.HOUR_OF_DAY, 12)
+                            set(Calendar.MINUTE, 0)
+                            set(Calendar.SECOND, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }
+                        parsedCal.timeInMillis
+                    } else fallback
+                } catch (_: Exception) {
+                    fallback
+                }
+            }
+        }
+    }
+
     private fun isOverdue(task: Task): Boolean {
         if (task.isCompleted) return false
-        return task.section == TaskSection.OVERDUE || task.dueDate.contains("Yesterday", ignoreCase = true)
+        if (task.section == TaskSection.OVERDUE || task.dueDate.contains("Yesterday", ignoreCase = true)) return true
+        val startOfToday = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return getEffectiveDueDateMillis(task) < startOfToday
     }
 
     private fun isToday(task: Task): Boolean {
         if (task.isCompleted || isOverdue(task)) return false
-        return task.section == TaskSection.TODAY || task.dueDate.contains("Today", ignoreCase = true)
+        if (task.section == TaskSection.TODAY || task.dueDate.contains("Today", ignoreCase = true)) return true
+
+        val dueMillis = getEffectiveDueDateMillis(task)
+        val startOfToday = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val endOfToday = startOfToday + 86400000L - 1L
+        return dueMillis in startOfToday..endOfToday
+    }
+
+    private fun isTomorrow(task: Task): Boolean {
+        if (task.dueDate.contains("Tomorrow", ignoreCase = true)) return true
+        val tomorrowCal = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+        }
+        val tomorrowFmt = SimpleDateFormat("MMM d", Locale.getDefault()).format(tomorrowCal.time)
+        if (task.dueDate.contains(tomorrowFmt, ignoreCase = true)) return true
+
+        val dueMillis = getEffectiveDueDateMillis(task)
+        val startOfTomorrow = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val endOfTomorrow = startOfTomorrow + 86400000L - 1L
+        return dueMillis in startOfTomorrow..endOfTomorrow
     }
 
     private fun isUpcoming(task: Task): Boolean {
@@ -74,8 +158,8 @@ class TaskViewModel(
 
     private fun sortTasks(list: List<Task>, sort: TaskSort): List<Task> {
         return when (sort) {
-            TaskSort.DATE_NEAR -> list.sortedBy { it.createdAt }
-            TaskSort.DATE_LATE -> list.sortedByDescending { it.createdAt }
+            TaskSort.DATE_NEAR -> list.sortedBy { getEffectiveDueDateMillis(it) }
+            TaskSort.DATE_LATE -> list.sortedByDescending { getEffectiveDueDateMillis(it) }
             TaskSort.PRIORITY_HIGH -> list.sortedByDescending { it.priority.ordinal }
             TaskSort.PRIORITY_LOW -> list.sortedBy { it.priority.ordinal }
             TaskSort.TITLE_AZ -> list.sortedBy { it.title.lowercase() }
@@ -117,14 +201,15 @@ class TaskViewModel(
         criteria.selectedDate?.let { dateFilter ->
             list = when (dateFilter) {
                 DateFilter.TODAY -> list.filter { isToday(it) }
-                DateFilter.TOMORROW -> list.filter {
-                    it.dueDate.contains("Tomorrow", ignoreCase = true) || it.dueDate.contains("Mon", ignoreCase = true)
-                }
+                DateFilter.TOMORROW -> list.filter { isTomorrow(it) }
                 DateFilter.RANGE -> {
                     if (criteria.dateRangeStart != null && criteria.dateRangeEnd != null) {
                         val start = criteria.dateRangeStart
                         val end = criteria.dateRangeEnd + 86400000L // inclusive of end date
-                        list.filter { task -> task.createdAt in start..end }
+                        list.filter { task ->
+                            val taskDue = getEffectiveDueDateMillis(task)
+                            taskDue in start..end
+                        }
                     } else {
                         list
                     }
@@ -179,6 +264,10 @@ class TaskViewModel(
     fun applyFilter(criteria: FilterCriteria) {
         _filterCriteria.value = criteria
         _uiToggles.update { it.copy(showFilterSheet = false) }
+    }
+
+    fun resetFilters() {
+        _filterCriteria.value = FilterCriteria()
     }
 
     fun openSortSheet() {
@@ -237,6 +326,7 @@ class TaskViewModel(
         notes: String?,
         priority: Priority,
         dueDate: String,
+        dueDateMillis: Long?,
         dueTime: String?,
         location: String?,
         attachmentName: String?
@@ -252,6 +342,7 @@ class TaskViewModel(
             notes = notes,
             priority = priority,
             dueDate = dueDate,
+            dueDateMillis = dueDateMillis ?: computeDueDateMillis(dueDate),
             dueTime = dueTime,
             location = location,
             attachmentName = attachmentName,

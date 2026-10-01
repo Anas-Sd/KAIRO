@@ -22,6 +22,7 @@ data class Task(
     val notes: String? = null,
     val priority: Priority = Priority.MEDIUM,
     val dueDate: String = "Today",
+    val dueDateMillis: Long? = null,
     val dueTime: String? = null,
     val location: String? = null,
     val attachmentName: String? = null,

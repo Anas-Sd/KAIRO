@@ -221,6 +221,10 @@ fun TasksScreen(
                     onOpenSort = { viewModel.openSortSheet() },
                     onExportClicked = {
                         Toast.makeText(context, "Exporting tasks...", Toast.LENGTH_SHORT).show()
+                    },
+                    onResetFilter = {
+                        viewModel.resetFilters()
+                        Toast.makeText(context, "Filters reset", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -410,8 +414,8 @@ fun TasksScreen(
         if (uiState.showCreateDialog) {
             CreateTaskDialog(
                 onDismiss = { viewModel.setShowCreateDialog(false) },
-                onConfirm = { title, notes, priority, dueDate, dueTime, location, attachmentName ->
-                    viewModel.createTask(title, notes, priority, dueDate, dueTime, location, attachmentName)
+                onConfirm = { title, notes, priority, dueDate, dueDateMillis, dueTime, location, attachmentName ->
+                    viewModel.createTask(title, notes, priority, dueDate, dueDateMillis, dueTime, location, attachmentName)
                 }
             )
         }

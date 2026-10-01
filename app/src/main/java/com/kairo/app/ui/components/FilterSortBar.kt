@@ -1,5 +1,10 @@
 package com.kairo.app.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +47,7 @@ fun FilterSortBar(
     onOpenFilter: () -> Unit,
     onOpenSort: () -> Unit,
     onExportClicked: () -> Unit,
+    onResetFilter: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -132,7 +139,32 @@ fun FilterSortBar(
             }
         }
 
-        // 3. Export Icon Button
+        // 3. Reset Filter Icon Button (Visible whenever a filter is active)
+        AnimatedVisibility(
+            visible = filterCriteria.isActive,
+            enter = scaleIn() + fadeIn(),
+            exit = scaleOut() + fadeOut()
+        ) {
+            Surface(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clickable { onResetFilter() },
+                shape = RoundedCornerShape(16.dp),
+                color = KairoSurfaceContainerHigh,
+                border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.6f))
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.RestartAlt,
+                        contentDescription = "Reset Filters",
+                        tint = KairoPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        // 4. Export / Download Icon Button
         Surface(
             modifier = Modifier
                 .size(44.dp)

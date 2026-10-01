@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Place
@@ -228,15 +229,32 @@ fun TaskCard(
                         contentColor = priorityText
                     )
 
-                    // Time / Due Date Capsule
-                    val timeString = task.dueTime ?: task.dueDate
-                    TaskCapsule(
-                        icon = if (isOverdue) Icons.Default.Warning else Icons.Default.Schedule,
-                        iconTint = if (isOverdue) KairoError else KairoPrimary,
-                        text = timeString,
-                        containerColor = KairoSurfaceContainerHigh,
-                        contentColor = if (isOverdue) KairoError else Color(0xFFC8C4D9)
-                    )
+                    // Date & Time Capsules
+                    val isUpcomingTask = task.section == TaskSection.UPCOMING ||
+                        (!task.dueDate.equals("Today", ignoreCase = true) && task.dueDate.isNotBlank())
+
+                    // Date Capsule (always visible for upcoming tasks or non-today tasks)
+                    if (isUpcomingTask || isOverdue) {
+                        TaskCapsule(
+                            icon = if (isOverdue) Icons.Default.Warning else Icons.Default.CalendarToday,
+                            iconTint = if (isOverdue) KairoError else KairoPrimary,
+                            text = task.dueDate,
+                            containerColor = KairoSurfaceContainerHigh,
+                            contentColor = if (isOverdue) KairoError else Color(0xFFC8C4D9)
+                        )
+                    }
+
+                    // Time Capsule (if due time is present, or if it is a Today task)
+                    val displayTime = task.dueTime ?: if (!isUpcomingTask && !isOverdue) task.dueDate else null
+                    if (!displayTime.isNullOrBlank()) {
+                        TaskCapsule(
+                            icon = Icons.Default.Schedule,
+                            iconTint = KairoPrimary,
+                            text = displayTime,
+                            containerColor = KairoSurfaceContainerHigh,
+                            contentColor = Color(0xFFC8C4D9)
+                        )
+                    }
 
                     // Location Capsule (if present)
                     val locationStr = task.location

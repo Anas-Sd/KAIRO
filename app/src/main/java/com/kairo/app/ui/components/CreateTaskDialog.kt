@@ -88,6 +88,7 @@ fun CreateTaskDialog(
         notes: String?,
         priority: Priority,
         dueDate: String,
+        dueDateMillis: Long?,
         dueTime: String?,
         location: String?,
         attachmentName: String?
@@ -103,6 +104,15 @@ fun CreateTaskDialog(
 
     // Date & Time state
     var selectedDateText by remember { mutableStateOf("Today") }
+    var selectedDateMillis by remember {
+        val todayCal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        mutableStateOf<Long?>(todayCal.timeInMillis)
+    }
     var selectedTimeText by remember {
         val hour = calendar.get(Calendar.HOUR_OF_DAY)
         val minute = calendar.get(Calendar.MINUTE)
@@ -183,10 +193,30 @@ fun CreateTaskDialog(
             context,
             { _, year, month, dayOfMonth ->
                 val chosenCal = Calendar.getInstance().apply {
-                    set(year, month, dayOfMonth)
+                    set(Calendar.YEAR, year)
+                    set(Calendar.MONTH, month)
+                    set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
                 }
-                val fmt = SimpleDateFormat("MMM d", Locale.getDefault())
-                selectedDateText = fmt.format(chosenCal.time)
+                selectedDateMillis = chosenCal.timeInMillis
+
+                val todayCal = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val diffDays = ((chosenCal.timeInMillis - todayCal.timeInMillis) / (24 * 60 * 60 * 1000)).toInt()
+
+                selectedDateText = when (diffDays) {
+                    0 -> "Today"
+                    1 -> "Tomorrow"
+                    -1 -> "Yesterday"
+                    else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(chosenCal.time)
+                }
 
                 // Follow up with Time Picker
                 TimePickerDialog(
@@ -567,6 +597,7 @@ fun CreateTaskDialog(
                                 if (notes.isNotBlank()) notes.trim() else null,
                                 selectedPriority,
                                 selectedDateText,
+                                selectedDateMillis,
                                 selectedTimeText,
                                 if (locationText.isNotBlank()) locationText.trim() else null,
                                 attachmentName
