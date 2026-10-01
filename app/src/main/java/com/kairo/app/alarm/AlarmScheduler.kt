@@ -166,17 +166,24 @@ object AlarmScheduler {
         )
 
         try {
-            // Using setAlarmClock ensures maximum reliability like the system clock app
-            val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerTime, showPendingIntent)
-            alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
-            Log.i(TAG, "Successfully scheduled alarm clock for '${task.title}' at $triggerTime (now=$now, diff=${(triggerTime - now) / 1000}s)")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+                // If exact alarms not granted yet, use setAndAllowWhileIdle which does not throw SecurityException
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+                Log.i(TAG, "Scheduled alarm with setAndAllowWhileIdle for '${task.title}' at $triggerTime")
+            } else {
+                val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerTime, showPendingIntent)
+                alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
+                Log.i(TAG, "Successfully scheduled alarm clock for '${task.title}' at $triggerTime")
+            }
         } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException scheduling exact alarm clock, fallback to setExactAndAllowWhileIdle", e)
+            Log.w(TAG, "SecurityException on setAlarmClock, falling back to setAndAllowWhileIdle", e)
             try {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
             } catch (ex: Exception) {
                 Log.e(TAG, "Failed fallback alarm scheduling", ex)
             }
+        } catch (ex: Exception) {
+            Log.e(TAG, "Failed to schedule alarm", ex)
         }
     }
 
