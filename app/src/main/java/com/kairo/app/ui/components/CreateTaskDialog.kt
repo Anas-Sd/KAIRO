@@ -74,7 +74,7 @@ fun CreateTaskDialog(
         title: String,
         notes: String?,
         priority: Priority,
-        dueDisplay: String,
+        dueDate: String,
         dueTime: String?,
         location: String?,
         attachmentName: String?

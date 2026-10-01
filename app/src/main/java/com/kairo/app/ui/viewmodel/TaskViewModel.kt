@@ -7,7 +7,6 @@ import com.kairo.app.data.model.FilterCriteria
 import com.kairo.app.data.model.Priority
 import com.kairo.app.data.model.StatusFilter
 import com.kairo.app.data.model.Task
-import com.kairo.app.data.model.TaskCategory
 import com.kairo.app.data.model.TaskSection
 import com.kairo.app.data.model.TaskSort
 import com.kairo.app.data.repository.TaskRepository
@@ -92,10 +91,10 @@ class TaskViewModel(
         criteria.selectedDate?.let { dateFilter ->
             list = when (dateFilter) {
                 DateFilter.TODAY -> list.filter {
-                    it.dueDisplay.contains("Today", ignoreCase = true) || it.section == TaskSection.TODAY
+                    it.dueDate.contains("Today", ignoreCase = true) || it.section == TaskSection.TODAY
                 }
                 DateFilter.TOMORROW -> list.filter {
-                    it.dueDisplay.contains("Tomorrow", ignoreCase = true) || it.dueDisplay.contains("Mon", ignoreCase = true)
+                    it.dueDate.contains("Tomorrow", ignoreCase = true) || it.dueDate.contains("Mon", ignoreCase = true)
                 }
                 DateFilter.RANGE -> {
                     if (criteria.dateRangeStart != null && criteria.dateRangeEnd != null) {
@@ -225,7 +224,7 @@ class TaskViewModel(
         title: String,
         notes: String?,
         priority: Priority,
-        dueDisplay: String,
+        dueDate: String,
         dueTime: String?,
         location: String?,
         attachmentName: String?
@@ -235,7 +234,7 @@ class TaskViewModel(
             title = title.trim(),
             notes = notes,
             priority = priority,
-            dueDisplay = dueDisplay,
+            dueDate = dueDate,
             dueTime = dueTime,
             location = location,
             attachmentName = attachmentName,

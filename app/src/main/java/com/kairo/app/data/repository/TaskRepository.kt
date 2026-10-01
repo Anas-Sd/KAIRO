@@ -1,10 +1,8 @@
 package com.kairo.app.data.repository
 
 import android.util.Log
-import com.kairo.app.data.model.ContextType
 import com.kairo.app.data.model.Priority
 import com.kairo.app.data.model.Task
-import com.kairo.app.data.model.TaskCategory
 import com.kairo.app.data.model.TaskSection
 import com.kairo.app.data.remote.SupabaseClient
 import com.kairo.app.data.remote.TaskDto
@@ -104,10 +102,9 @@ class TaskRepository {
             id = "task-1",
             title = "Submit monthly expense receipts & invoice audit",
             priority = Priority.URGENT,
-            category = TaskCategory.FINANCE,
-            dueDisplay = "Yesterday, 5:00 PM",
-            contextLabel = "3 files",
-            contextType = ContextType.ATTACHMENT,
+            dueDate = "Yesterday",
+            dueTime = "5:00 PM",
+            attachmentName = "3 files",
             isCompleted = false,
             section = TaskSection.OVERDUE
         ),
@@ -115,11 +112,9 @@ class TaskRepository {
             id = "task-2",
             title = "Q4 Growth Roadmap Strategy Sync",
             priority = Priority.MEDIUM,
-            category = TaskCategory.WORK,
-            secondaryTag = "Strategy",
-            dueDisplay = "2:00 PM",
-            contextLabel = "Google Meet",
-            contextType = ContextType.MEETING,
+            dueDate = "Today",
+            dueTime = "2:00 PM",
+            location = "Google Meet",
             isCompleted = false,
             section = TaskSection.TODAY
         ),
@@ -127,10 +122,9 @@ class TaskRepository {
             id = "task-3",
             title = "Quarterly budget presentation",
             priority = Priority.HIGH,
-            category = TaskCategory.FINANCE,
-            dueDisplay = "4:30 PM",
-            contextLabel = "Boardroom B",
-            contextType = ContextType.LOCATION,
+            dueDate = "Today",
+            dueTime = "4:30 PM",
+            location = "Boardroom B",
             isCompleted = false,
             section = TaskSection.TODAY
         ),
@@ -138,11 +132,9 @@ class TaskRepository {
             id = "task-4",
             title = "Mobile Design System V2 Specs handoff",
             priority = Priority.MEDIUM,
-            category = TaskCategory.DESIGN,
-            secondaryTag = "Sprint 15",
-            dueDisplay = "Mon, 11:00 AM",
-            contextLabel = "Figma doc",
-            contextType = ContextType.ATTACHMENT,
+            dueDate = "Mon",
+            dueTime = "11:00 AM",
+            attachmentName = "Figma doc",
             isCompleted = false,
             section = TaskSection.UPCOMING
         ),
@@ -150,8 +142,8 @@ class TaskRepository {
             id = "task-5",
             title = "Morning routine & hydration checklist",
             priority = Priority.LOW,
-            category = TaskCategory.HABITS,
-            dueDisplay = "8:00 AM Today",
+            dueDate = "Today",
+            dueTime = "8:00 AM",
             isCompleted = true,
             section = TaskSection.COMPLETED
         ),
@@ -159,9 +151,8 @@ class TaskRepository {
             id = "task-6",
             title = "Weekly sprint planning kick-off",
             priority = Priority.MEDIUM,
-            category = TaskCategory.WORK,
-            secondaryTag = "Sprint 14",
-            dueDisplay = "9:15 AM Today",
+            dueDate = "Today",
+            dueTime = "9:15 AM",
             isCompleted = true,
             section = TaskSection.COMPLETED
         ),
@@ -169,8 +160,8 @@ class TaskRepository {
             id = "task-7",
             title = "Review client contract changes",
             priority = Priority.HIGH,
-            category = TaskCategory.LEGAL,
-            dueDisplay = "10:30 AM Today",
+            dueDate = "Today",
+            dueTime = "10:30 AM",
             isCompleted = true,
             section = TaskSection.COMPLETED
         )

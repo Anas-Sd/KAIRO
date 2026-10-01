@@ -199,7 +199,7 @@ fun TaskCard(
                     )
 
                     // Time / Due Date chip
-                    val timeString = task.dueTime ?: task.dueDisplay
+                    val timeString = task.dueTime ?: task.dueDate
                     Row(
                         modifier = Modifier
                             .background(KairoSurfaceContainerHigh, RoundedCornerShape(100.dp))
@@ -224,7 +224,7 @@ fun TaskCard(
                     }
 
                     // Location chip (if present)
-                    val locationStr = task.location ?: if (task.contextType == com.kairo.app.data.model.ContextType.LOCATION) task.contextLabel else null
+                    val locationStr = task.location
                     if (!locationStr.isNullOrBlank()) {
                         Row(
                             modifier = Modifier
@@ -249,7 +249,7 @@ fun TaskCard(
                     }
 
                     // Attachment / Files chip (if present)
-                    val fileStr = task.attachmentName ?: if (task.contextType == com.kairo.app.data.model.ContextType.ATTACHMENT) task.contextLabel else null
+                    val fileStr = task.attachmentName
                     if (!fileStr.isNullOrBlank()) {
                         Row(
                             modifier = Modifier

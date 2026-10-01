@@ -397,8 +397,8 @@ fun TasksScreen(
         if (uiState.showCreateDialog) {
             CreateTaskDialog(
                 onDismiss = { viewModel.setShowCreateDialog(false) },
-                onConfirm = { title, notes, priority, dueDisplay, dueTime, location, attachmentName ->
-                    viewModel.createTask(title, notes, priority, dueDisplay, dueTime, location, attachmentName)
+                onConfirm = { title, notes, priority, dueDate, dueTime, location, attachmentName ->
+                    viewModel.createTask(title, notes, priority, dueDate, dueTime, location, attachmentName)
                 }
             )
         }
