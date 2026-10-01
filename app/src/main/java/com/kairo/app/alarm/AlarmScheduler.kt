@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.util.Log
 import com.kairo.app.MainActivity
@@ -138,6 +139,10 @@ object AlarmScheduler {
 
         val intent = Intent(context, AlarmReceiver::class.java).apply {
             action = AlarmReceiver.ACTION_TRIGGER_ALARM
+            if (!task.alarmToneUri.isNullOrBlank() && task.alarmToneUri != "NONE") {
+                data = Uri.parse(task.alarmToneUri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
             putExtra(AlarmReceiver.EXTRA_TASK_ID, task.id)
             putExtra(AlarmReceiver.EXTRA_TASK_TITLE, task.title)
             putExtra(AlarmReceiver.EXTRA_TASK_NOTES, task.notes)

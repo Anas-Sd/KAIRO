@@ -12,6 +12,10 @@ import android.provider.OpenableColumns
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import java.io.File
+import java.io.FileOutputStream
+import java.security.MessageDigest
+import kotlin.math.absoluteValue
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -119,6 +123,41 @@ private object RecentTonesManager {
     }
 }
 
+private fun cacheToneLocally(context: Context, uriStr: String?): String? {
+    if (uriStr.isNullOrBlank() || uriStr == "NONE") return uriStr
+    val uri = try {
+        Uri.parse(uriStr)
+    } catch (_: Exception) {
+        return uriStr
+    }
+    if (uri.scheme == "file") return uriStr
+    if (uri.scheme != "content") return uriStr
+
+    return try {
+        val tonesDir = File(context.filesDir, "custom_tones").apply { mkdirs() }
+        val md = MessageDigest.getInstance("MD5")
+        val hash = md.digest(uriStr.toByteArray()).joinToString("") { "%02x".format(it) }
+        val targetFile = File(tonesDir, "tone_$hash.mp3")
+
+        if (!targetFile.exists() || targetFile.length() == 0L) {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(targetFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+
+        if (targetFile.exists() && targetFile.length() > 0L) {
+            Uri.fromFile(targetFile).toString()
+        } else {
+            uriStr
+        }
+    } catch (e: Exception) {
+        Log.e("TonePickerDialog", "Failed caching tone locally: $uriStr", e)
+        uriStr
+    }
+}
+
 private enum class TonePickerView {
     MAIN,
     ON_DEVICE
@@ -218,20 +257,21 @@ fun TonePickerDialog(
                     }
                 } catch (_: Exception) {}
             }
+            val cachedUri = cacheToneLocally(context, it.toString()) ?: it.toString()
             val songName = name ?: "Custom Audio File"
             val newItem = ToneItem(
                 title = songName,
                 subtitle = "Custom Audio",
-                uriString = it.toString(),
+                uriString = cachedUri,
                 isDeviceAudio = true
             )
             deviceMusicTones.add(0, newItem)
-            selectedUri = it.toString()
+            selectedUri = cachedUri
             selectedTitle = songName
             RecentTonesManager.saveRecentTone(context, newItem)
             recentTones.clear()
             recentTones.addAll(RecentTonesManager.getRecentTones(context))
-            playAudio(it.toString())
+            playAudio(cachedUri)
         }
     }
 
@@ -585,7 +625,8 @@ fun TonePickerDialog(
                         Button(
                             onClick = {
                                 stopAudio()
-                                onConfirm(selectedUri, selectedTitle)
+                                val finalUri = cacheToneLocally(context, selectedUri)
+                                onConfirm(finalUri, selectedTitle)
                             },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
@@ -773,7 +814,7 @@ fun TonePickerDialog(
                             }
                         } else {
                             items(filteredList) { track ->
-                                val isSelected = (selectedUri == track.uriString)
+                                val isSelected = (selectedUri == track.uriString || selectedTitle == track.title)
 
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
@@ -781,12 +822,14 @@ fun TonePickerDialog(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
-                                            selectedUri = track.uriString
+                                            val cachedUri = cacheToneLocally(context, track.uriString) ?: track.uriString
+                                            val cachedTrack = track.copy(uriString = cachedUri)
+                                            selectedUri = cachedUri
                                             selectedTitle = track.title
-                                            RecentTonesManager.saveRecentTone(context, track)
+                                            RecentTonesManager.saveRecentTone(context, cachedTrack)
                                             recentTones.clear()
                                             recentTones.addAll(RecentTonesManager.getRecentTones(context))
-                                            playAudio(track.uriString)
+                                            playAudio(cachedUri)
                                         }
                                 ) {
                                     Row(
@@ -840,12 +883,14 @@ fun TonePickerDialog(
                                         RadioButton(
                                             selected = isSelected,
                                             onClick = {
-                                                selectedUri = track.uriString
+                                                val cachedUri = cacheToneLocally(context, track.uriString) ?: track.uriString
+                                                val cachedTrack = track.copy(uriString = cachedUri)
+                                                selectedUri = cachedUri
                                                 selectedTitle = track.title
-                                                RecentTonesManager.saveRecentTone(context, track)
+                                                RecentTonesManager.saveRecentTone(context, cachedTrack)
                                                 recentTones.clear()
                                                 recentTones.addAll(RecentTonesManager.getRecentTones(context))
-                                                playAudio(track.uriString)
+                                                playAudio(cachedUri)
                                             },
                                             colors = RadioButtonDefaults.colors(
                                                 selectedColor = TealActive,

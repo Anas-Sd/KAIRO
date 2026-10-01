@@ -110,7 +110,7 @@ fun CreateTaskDialog(
 
     var title by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
-    var selectedPriority by remember { mutableStateOf(Priority.MEDIUM) }
+    var selectedPriority by remember { mutableStateOf(Priority.LOW) }
     var priorityMenuExpanded by remember { mutableStateOf(false) }
 
     // Date & Time state

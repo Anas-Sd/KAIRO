@@ -21,6 +21,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.kairo.app.R
 import com.kairo.app.ui.screens.alarm.AlarmActivity
+import java.io.File
 
 class AlarmRingingService : Service() {
 
@@ -136,31 +137,113 @@ class AlarmRingingService : Service() {
             mediaPlayer?.release()
             mediaPlayer = null
 
-            val ringtoneUri = if (!customUriStr.isNullOrBlank()) {
-                Uri.parse(customUriStr)
-            } else {
-                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            }
-
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(applicationContext, ringtoneUri)
+            val player = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                         .build()
                 )
                 isLooping = true
-                prepare()
-                start()
             }
-            Log.i(TAG, "Playing alarm sound on USAGE_ALARM: $ringtoneUri")
+
+            var sourceConfigured = false
+
+            if (!customUriStr.isNullOrBlank()) {
+                val uri = Uri.parse(customUriStr)
+                Log.i(TAG, "Attempting to play custom alarm URI: $customUriStr (scheme: ${uri.scheme})")
+
+                // Strategy 1: Local file path
+                if (uri.scheme == "file") {
+                    val path = uri.path
+                    if (path != null && File(path).exists()) {
+                        player.setDataSource(path)
+                        sourceConfigured = true
+                        Log.i(TAG, "Configured dataSource from local file: $path")
+                    }
+                }
+
+                // Strategy 2: Try local cache from content URI
+                if (!sourceConfigured && uri.scheme == "content") {
+                    try {
+                        val tonesDir = File(filesDir, "custom_tones").apply { mkdirs() }
+                        val md = java.security.MessageDigest.getInstance("MD5")
+                        val hash = md.digest(customUriStr.toByteArray()).joinToString("") { "%02x".format(it) }
+                        val cachedFile = File(tonesDir, "tone_$hash.mp3")
+                        if (!cachedFile.exists() || cachedFile.length() == 0L) {
+                            applicationContext.contentResolver.openInputStream(uri)?.use { input ->
+                                java.io.FileOutputStream(cachedFile).use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                        }
+                        if (cachedFile.exists() && cachedFile.length() > 0L) {
+                            player.setDataSource(cachedFile.absolutePath)
+                            sourceConfigured = true
+                            Log.i(TAG, "Configured dataSource from cached content file: ${cachedFile.absolutePath}")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Content caching attempt failed: ${e.message}")
+                    }
+                }
+
+                // Strategy 3: ContentResolver AssetFileDescriptor
+                if (!sourceConfigured && uri.scheme == "content") {
+                    try {
+                        applicationContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                            player.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                            sourceConfigured = true
+                            Log.i(TAG, "Configured dataSource via openAssetFileDescriptor")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "openAssetFileDescriptor failed: ${e.message}")
+                    }
+
+                    // Strategy 3: ContentResolver FileDescriptor
+                    if (!sourceConfigured) {
+                        try {
+                            applicationContext.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                                player.setDataSource(pfd.fileDescriptor)
+                                sourceConfigured = true
+                                Log.i(TAG, "Configured dataSource via openFileDescriptor")
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "openFileDescriptor failed: ${e.message}")
+                        }
+                    }
+
+                    // Strategy 4: Direct setDataSource(context, uri)
+                    if (!sourceConfigured) {
+                        try {
+                            player.setDataSource(applicationContext, uri)
+                            sourceConfigured = true
+                            Log.i(TAG, "Configured dataSource via setDataSource(context, uri)")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "setDataSource(context, uri) failed: ${e.message}")
+                        }
+                    }
+                }
+            }
+
+            // Fallback to system alarm ringtone if custom URI could not be opened
+            if (!sourceConfigured) {
+                val defaultAlarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                Log.w(TAG, "Custom tone not loaded, falling back to system alarm: $defaultAlarmUri")
+                player.setDataSource(applicationContext, defaultAlarmUri)
+            }
+
+            player.prepare()
+            player.start()
+            mediaPlayer = player
+            Log.i(TAG, "Successfully started alarm audio playback")
         } catch (e: Exception) {
-            Log.e(TAG, "Error playing alarm sound, fallback to default notification sound", e)
+            Log.e(TAG, "Error playing alarm sound, fallback to default alarm/ringtone", e)
             try {
-                val fallbackUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                val fallbackUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
                 mediaPlayer = MediaPlayer().apply {
                     setDataSource(applicationContext, fallbackUri)
                     setAudioAttributes(

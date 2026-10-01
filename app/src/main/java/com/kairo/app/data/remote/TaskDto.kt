@@ -34,7 +34,7 @@ data class TaskDto(
             id = id,
             title = title,
             notes = notes,
-            priority = runCatching { Priority.valueOf(priority) }.getOrDefault(Priority.MEDIUM),
+            priority = runCatching { Priority.valueOf(priority) }.getOrDefault(Priority.LOW),
             dueDate = dueDate,
             dueDateMillis = dueDateMillis,
             dueTime = dueTime,

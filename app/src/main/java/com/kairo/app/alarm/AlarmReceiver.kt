@@ -4,6 +4,7 @@ import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.PowerManager
 import android.util.Log
 import android.widget.Toast
@@ -66,6 +67,10 @@ class AlarmReceiver : BroadcastReceiver() {
         // 1. Start foreground ringing audio service
         val serviceIntent = Intent(context, AlarmRingingService::class.java).apply {
             action = AlarmRingingService.ACTION_START_RINGING
+            if (!alarmToneUri.isNullOrBlank() && alarmToneUri != "NONE") {
+                data = Uri.parse(alarmToneUri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
             putExtra(AlarmRingingService.EXTRA_TASK_ID, taskId)
             putExtra(AlarmRingingService.EXTRA_TASK_TITLE, title)
             putExtra(AlarmRingingService.EXTRA_TASK_NOTES, notes)

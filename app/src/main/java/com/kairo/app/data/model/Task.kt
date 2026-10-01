@@ -20,7 +20,7 @@ data class Task(
     val id: String = UUID.randomUUID().toString(),
     val title: String,
     val notes: String? = null,
-    val priority: Priority = Priority.MEDIUM,
+    val priority: Priority = Priority.LOW,
     val dueDate: String = "Today",
     val dueDateMillis: Long? = null,
     val dueTime: String? = null,
