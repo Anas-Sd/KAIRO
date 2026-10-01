@@ -119,6 +119,14 @@ class TaskRepository {
         }
     }
 
+    fun getTaskById(taskId: String): Task? {
+        return _tasks.value.firstOrNull { it.id == taskId }
+    }
+
+    fun getAllTasks(): List<Task> {
+        return _tasks.value
+    }
+
     private fun initialMockTasks(): List<Task> = listOf(
         Task(
             id = "task-1",

@@ -1,7 +1,9 @@
 package com.kairo.app.ui.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.kairo.app.alarm.AlarmScheduler
 import com.kairo.app.data.model.DateFilter
 import com.kairo.app.data.model.FilterCriteria
 import com.kairo.app.data.model.Priority
@@ -56,8 +58,23 @@ data class TasksUiState(
 )
 
 class TaskViewModel(
+    application: Application,
     private val repository: TaskRepository = TaskRepository()
-) : ViewModel() {
+) : AndroidViewModel(application) {
+
+    init {
+        viewModelScope.launch {
+            repository.tasks.collect { taskList ->
+                val now = System.currentTimeMillis()
+                taskList.filter { !it.isCompleted }.forEach { task ->
+                    val trigger = AlarmScheduler.calculateTriggerMillis(task.dueDate, task.dueTime, task.dueDateMillis)
+                    if (trigger != null && trigger > now) {
+                        AlarmScheduler.scheduleAlarm(getApplication(), task, trigger)
+                    }
+                }
+            }
+        }
+    }
 
     private val _filterCriteria = MutableStateFlow(FilterCriteria())
     private val _activeSort = MutableStateFlow(TaskSort.DATE_NEAR)
@@ -256,6 +273,13 @@ class TaskViewModel(
     fun toggleTask(taskId: String) {
         viewModelScope.launch {
             repository.toggleTaskCompletion(taskId)
+            repository.getTaskById(taskId)?.let { updated ->
+                if (updated.isCompleted) {
+                    AlarmScheduler.cancelAlarm(getApplication(), taskId)
+                } else {
+                    AlarmScheduler.scheduleAlarm(getApplication(), updated)
+                }
+            }
         }
     }
 
@@ -323,6 +347,7 @@ class TaskViewModel(
 
     fun deleteTask(taskId: String) {
         viewModelScope.launch {
+            AlarmScheduler.cancelAlarm(getApplication(), taskId)
             repository.deleteTask(taskId)
         }
     }
@@ -376,6 +401,7 @@ class TaskViewModel(
         )
         viewModelScope.launch {
             repository.updateTask(updated)
+            AlarmScheduler.scheduleAlarm(getApplication(), updated)
             _uiToggles.update { it.copy(selectedTaskForEdit = null) }
         }
     }
@@ -411,6 +437,7 @@ class TaskViewModel(
         )
         viewModelScope.launch {
             repository.addTask(newTask)
+            AlarmScheduler.scheduleAlarm(getApplication(), newTask)
             _uiToggles.update { it.copy(showCreateDialog = false) }
         }
     }
