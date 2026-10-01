@@ -126,6 +126,11 @@ class AlarmRingingService : Service() {
     }
 
     private fun playAlarmSound(customUriStr: String?) {
+        if (customUriStr == "NONE") {
+            Log.i(TAG, "Alarm tone set to NONE: running in silent mode")
+            return
+        }
+
         try {
             mediaPlayer?.stop()
             mediaPlayer?.release()

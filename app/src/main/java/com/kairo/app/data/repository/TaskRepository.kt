@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 object TaskRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val _tasks = MutableStateFlow<List<Task>>(initialMockTasks())
+    private val _tasks = MutableStateFlow<List<Task>>(emptyList())
     val tasks: Flow<List<Task>> = _tasks.asStateFlow()
 
     operator fun invoke(): TaskRepository = this
@@ -32,13 +32,11 @@ object TaskRepository {
         scope.launch {
             SupabaseClient.getTasks()
                 .onSuccess { remoteList ->
-                    if (remoteList.isNotEmpty()) {
-                        _tasks.value = remoteList.map { it.toDomain() }
-                        Log.d("TaskRepository", "Loaded ${remoteList.size} tasks live from Supabase")
-                    }
+                    _tasks.value = remoteList.map { it.toDomain() }
+                    Log.d("TaskRepository", "Loaded ${remoteList.size} tasks live from Supabase")
                 }
                 .onFailure { error ->
-                    Log.e("TaskRepository", "Failed loading from Supabase, using local cache: ${error.message}")
+                    Log.e("TaskRepository", "Failed loading from Supabase: ${error.message}")
                 }
         }
     }
@@ -208,74 +206,4 @@ object TaskRepository {
     fun getAllTasks(): List<Task> {
         return _tasks.value
     }
-
-    private fun initialMockTasks(): List<Task> = listOf(
-        Task(
-            id = "task-1",
-            title = "Submit monthly expense receipts & invoice audit",
-            priority = Priority.URGENT,
-            dueDate = "Yesterday",
-            dueTime = "5:00 PM",
-            attachmentName = "3 files",
-            isCompleted = false,
-            section = TaskSection.OVERDUE
-        ),
-        Task(
-            id = "task-2",
-            title = "Q4 Growth Roadmap Strategy Sync",
-            priority = Priority.MEDIUM,
-            dueDate = "Today",
-            dueTime = "2:00 PM",
-            location = "Google Meet",
-            isCompleted = false,
-            section = TaskSection.TODAY
-        ),
-        Task(
-            id = "task-3",
-            title = "Quarterly budget presentation",
-            priority = Priority.HIGH,
-            dueDate = "Today",
-            dueTime = "4:30 PM",
-            location = "Boardroom B",
-            isCompleted = false,
-            section = TaskSection.TODAY
-        ),
-        Task(
-            id = "task-4",
-            title = "Mobile Design System V2 Specs handoff",
-            priority = Priority.MEDIUM,
-            dueDate = "Mon",
-            dueTime = "11:00 AM",
-            attachmentName = "Figma doc",
-            isCompleted = false,
-            section = TaskSection.UPCOMING
-        ),
-        Task(
-            id = "task-5",
-            title = "Morning routine & hydration checklist",
-            priority = Priority.LOW,
-            dueDate = "Today",
-            dueTime = "8:00 AM",
-            isCompleted = true,
-            section = TaskSection.COMPLETED
-        ),
-        Task(
-            id = "task-6",
-            title = "Weekly sprint planning kick-off",
-            priority = Priority.MEDIUM,
-            dueDate = "Today",
-            dueTime = "9:15 AM",
-            isCompleted = true,
-            section = TaskSection.COMPLETED
-        ),
-        Task(
-            id = "task-7",
-            title = "Review client contract changes",
-            priority = Priority.HIGH,
-            dueDate = "Today",
-            dueTime = "10:30 AM",
-            isCompleted = true,
-            section = TaskSection.COMPLETED
-        )
-    )
 }

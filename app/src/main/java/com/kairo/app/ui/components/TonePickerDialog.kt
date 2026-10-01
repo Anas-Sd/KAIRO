@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -28,30 +29,36 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -64,19 +71,58 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
-import com.kairo.app.ui.theme.KairoSecondary
-import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import com.kairo.app.ui.theme.KairoSurfaceContainerHighest
 import com.kairo.app.ui.theme.KairoSurfaceContainerLowest
+
+private val TealActive = Color(0xFF26E0BA)
+private val CoralMusicIcon = Color(0xFFE84A5F)
 
 data class ToneItem(
     val title: String,
     val subtitle: String? = null,
-    val uriString: String?, // null for default system alarm
+    val uriString: String?, // null = system default, "NONE" = silent
     val isDeviceAudio: Boolean = false
 )
+
+private object RecentTonesManager {
+    private const val PREFS_NAME = "kairo_tone_prefs"
+    private const val KEY_RECENT = "recent_tones_v2"
+
+    fun getRecentTones(context: Context): List<ToneItem> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val raw = prefs.getString(KEY_RECENT, null) ?: return emptyList()
+        return raw.split(";;").mapNotNull { entry ->
+            val parts = entry.split("||")
+            if (parts.size >= 2) {
+                val title = parts[0]
+                val uri = parts[1].takeIf { it.isNotBlank() }
+                val sub = if (parts.size >= 3) parts[2] else null
+                ToneItem(title = title, subtitle = sub, uriString = uri, isDeviceAudio = true)
+            } else null
+        }
+    }
+
+    fun saveRecentTone(context: Context, tone: ToneItem) {
+        if (tone.uriString == null || tone.uriString == "NONE") return
+        val current = getRecentTones(context).filter { it.uriString != tone.uriString }
+        val updated = listOf(tone) + current
+        val serialized = updated.take(5).joinToString(";;") { item ->
+            "${item.title}||${item.uriString.orEmpty()}||${item.subtitle.orEmpty()}"
+        }
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_RECENT, serialized)
+            .apply()
+    }
+}
+
+private enum class TonePickerView {
+    MAIN,
+    ON_DEVICE
+}
 
 @Composable
 fun TonePickerDialog(
@@ -86,12 +132,23 @@ fun TonePickerDialog(
     onConfirm: (uri: String?, title: String) -> Unit
 ) {
     val context = LocalContext.current
-    var availableTones by remember { mutableStateOf<List<ToneItem>>(emptyList()) }
+    var currentView by remember { mutableStateOf(TonePickerView.MAIN) }
+
     var selectedUri by remember { mutableStateOf(initialUri) }
-    var selectedTitle by remember { mutableStateOf(initialTitle ?: "Default Alarm Tone") }
-    var searchQuery by remember { mutableStateOf("") }
-    var currentlyPlayingUri by remember { mutableStateOf<String?>(null) }
+    var selectedTitle by remember { mutableStateOf(initialTitle ?: "Default") }
+    var defaultToneName by remember { mutableStateOf("Default") }
+
+    val recentTones = remember { mutableStateListOf<ToneItem>() }
+    val deviceMusicTones = remember { mutableStateListOf<ToneItem>() }
+    val deviceRecordingTones = remember { mutableStateListOf<ToneItem>() }
+
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var currentlyPlayingUri by remember { mutableStateOf<String?>(null) }
+
+    // Search and tab state on "On this device" screen
+    var onDeviceTab by remember { mutableIntStateOf(0) } // 0: Music, 1: Recordings
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearchActive by remember { mutableStateOf(false) }
 
     fun stopAudio() {
         try {
@@ -104,6 +161,8 @@ fun TonePickerDialog(
 
     fun playAudio(uriStr: String?) {
         stopAudio()
+        if (uriStr == "NONE") return // Silent mode
+
         try {
             val audioUri = if (!uriStr.isNullOrBlank()) {
                 Uri.parse(uriStr)
@@ -136,7 +195,7 @@ fun TonePickerDialog(
         }
     }
 
-    // SAF Picker to choose any downloaded song or audio file directly
+    // SAF Picker to choose any audio file directly from device storage
     val pickAudioLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -159,103 +218,93 @@ fun TonePickerDialog(
                     }
                 } catch (_: Exception) {}
             }
-            val songName = name ?: "Custom Audio Track"
+            val songName = name ?: "Custom Audio File"
             val newItem = ToneItem(
                 title = songName,
-                subtitle = "Custom Audio / Download",
+                subtitle = "Custom Audio",
                 uriString = it.toString(),
                 isDeviceAudio = true
             )
-            availableTones = listOf(newItem) + availableTones.filter { item -> item.uriString != it.toString() }
+            deviceMusicTones.add(0, newItem)
             selectedUri = it.toString()
             selectedTitle = songName
+            RecentTonesManager.saveRecentTone(context, newItem)
+            recentTones.clear()
+            recentTones.addAll(RecentTonesManager.getRecentTones(context))
             playAudio(it.toString())
         }
     }
 
-    // Load downloaded audio files & system alarm tones
+    // Load initial defaults, recent tones & device songs
     LaunchedEffect(Unit) {
-        val list = mutableListOf<ToneItem>()
-        list.add(ToneItem("Default Alarm Tone", "System Default", null, false))
+        // Query system default alarm tone name (e.g. "Delight")
+        try {
+            val defUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            val ringtone = RingtoneManager.getRingtone(context, defUri)
+            val name = ringtone?.getTitle(context)
+            if (!name.isNullOrBlank()) {
+                defaultToneName = name
+            }
+        } catch (_: Exception) {}
 
-        // 1. Query Downloaded / Music tracks from MediaStore
+        // Load recently used tones from SharedPreferences
+        recentTones.clear()
+        val loadedRecents = RecentTonesManager.getRecentTones(context)
+        recentTones.addAll(loadedRecents)
+
+        // Query MediaStore Audio files (Downloaded songs & Recordings)
         try {
             val projection = arrayOf(
                 MediaStore.Audio.Media._ID,
                 MediaStore.Audio.Media.TITLE,
                 MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media.DISPLAY_NAME
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.DATA
             )
-            val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 OR ${MediaStore.Audio.Media.TITLE} IS NOT NULL"
             val cursor = context.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
-                selection,
                 null,
-                "${MediaStore.Audio.Media.TITLE} ASC"
+                null,
+                "${MediaStore.Audio.Media.DATE_ADDED} DESC"
             )
             cursor?.use {
                 val idCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                 val titleCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                 val artistCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                 val nameCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val dataCol = it.getColumnIndex(MediaStore.Audio.Media.DATA)
+
                 while (it.moveToNext()) {
                     val id = it.getLong(idCol)
-                    val trackTitle = it.getString(titleCol) ?: it.getString(nameCol) ?: "Downloaded Song"
+                    val rawTitle = it.getString(titleCol) ?: it.getString(nameCol) ?: "Audio Track"
                     val artist = it.getString(artistCol)?.takeIf { a -> a != "<unknown>" }
+                    val path = if (dataCol != -1) it.getString(dataCol).orEmpty() else ""
                     val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-                    list.add(
-                        ToneItem(
-                            title = trackTitle,
-                            subtitle = artist ?: "Downloaded Music",
-                            uriString = contentUri.toString(),
-                            isDeviceAudio = true
-                        )
+
+                    val isRecording = path.contains("recording", ignoreCase = true) ||
+                            path.contains("voice", ignoreCase = true) ||
+                            path.contains("WhatsApp", ignoreCase = true) ||
+                            rawTitle.startsWith("AUD-", ignoreCase = true)
+
+                    val item = ToneItem(
+                        title = rawTitle,
+                        subtitle = artist ?: if (isRecording) "Voice recording" else "Downloaded song",
+                        uriString = contentUri.toString(),
+                        isDeviceAudio = true
                     )
+
+                    if (isRecording) {
+                        deviceRecordingTones.add(item)
+                    } else {
+                        deviceMusicTones.add(item)
+                    }
                 }
             }
         } catch (e: Exception) {
-            Log.e("TonePickerDialog", "Error querying device songs", e)
+            Log.e("TonePickerDialog", "Error querying device media", e)
         }
-
-        // 2. Query System Tones from RingtoneManager
-        try {
-            val ringtoneManager = RingtoneManager(context).apply {
-                setType(RingtoneManager.TYPE_ALARM or RingtoneManager.TYPE_RINGTONE)
-            }
-            val cursor = ringtoneManager.cursor
-            while (cursor.moveToNext()) {
-                val title = cursor.getString(RingtoneManager.TITLE_COLUMN_INDEX)
-                val uri = ringtoneManager.getRingtoneUri(cursor.position)
-                if (uri != null) {
-                    list.add(
-                        ToneItem(
-                            title = title,
-                            subtitle = "System Tone",
-                            uriString = uri.toString(),
-                            isDeviceAudio = false
-                        )
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("TonePickerDialog", "Error fetching system tones", e)
-        }
-
-        // If the initial tone was a custom URI not already listed, include it
-        if (!initialUri.isNullOrBlank() && list.none { it.uriString == initialUri }) {
-            list.add(
-                1,
-                ToneItem(
-                    title = initialTitle ?: "Selected Tone",
-                    subtitle = "Previously Selected",
-                    uriString = initialUri,
-                    isDeviceAudio = true
-                )
-            )
-        }
-
-        availableTones = list
     }
 
     DisposableEffect(Unit) {
@@ -264,306 +313,564 @@ fun TonePickerDialog(
         }
     }
 
-    // Filter tones by real-time search query
-    val filteredTones = remember(availableTones, searchQuery) {
-        if (searchQuery.isBlank()) {
-            availableTones
-        } else {
-            availableTones.filter { tone ->
-                tone.title.contains(searchQuery, ignoreCase = true) ||
-                (tone.subtitle?.contains(searchQuery, ignoreCase = true) == true)
-            }
-        }
-    }
-
-    Dialog(onDismissRequest = {
-        stopAudio()
-        onDismiss()
-    }) {
+    Dialog(
+        onDismissRequest = {
+            stopAudio()
+            onDismiss()
+        },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Surface(
             shape = RoundedCornerShape(24.dp),
             color = KairoSurfaceContainerLowest,
             border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f)),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .heightIn(max = 620.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-            ) {
-                // Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            if (currentView == TonePickerView.MAIN) {
+                // ==========================================
+                // SCREEN 1: RINGTONE MAIN (Matches img1)
+                // ==========================================
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
                 ) {
+                    // Top Bar: Back arrow + Title
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .background(KairoPrimary.copy(alpha = 0.2f), CircleShape),
-                            contentAlignment = Alignment.Center
+                        IconButton(
+                            onClick = {
+                                stopAudio()
+                                onDismiss()
+                            },
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.MusicNote,
-                                contentDescription = null,
-                                tint = KairoPrimary,
-                                modifier = Modifier.size(18.dp)
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color.White
                             )
                         }
                         Text(
-                            text = "Select Alarm Tone",
-                            fontSize = 18.sp,
+                            text = "Ringtone",
+                            fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
                     }
 
-                    IconButton(
-                        onClick = {
-                            stopAudio()
-                            onDismiss()
-                        },
-                        modifier = Modifier.size(28.dp)
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = Color(0xFFC8C4D9)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Search Bar
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = {
-                        Text(
-                            text = "Search tones or songs...",
-                            color = Color(0xFF6B687C),
-                            fontSize = 13.sp
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search",
-                            tint = Color(0xFF918EA2),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear",
-                                    tint = Color(0xFFC8C4D9),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = KairoPrimary,
-                        unfocusedBorderColor = KairoOutlineVariant.copy(alpha = 0.35f),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedContainerColor = KairoSurfaceContainerHighest.copy(alpha = 0.3f),
-                        unfocusedContainerColor = KairoSurfaceContainerHighest.copy(alpha = 0.3f)
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Option to pick any audio file from device storage
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = KairoSurfaceContainerHighest.copy(alpha = 0.45f),
-                    border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.4f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { pickAudioLauncher.launch("audio/*") }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add Custom Audio",
-                            tint = KairoPrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = "Choose downloaded file from device...",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = KairoPrimary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // List of filtered tones & songs
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 260.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (filteredTones.isEmpty()) {
+                        // Section 1 Card: Default, None, and Recently Used
                         item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 24.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "No tones match \"$searchQuery\"",
-                                    color = Color(0xFF6B687C),
-                                    fontSize = 13.sp
-                                )
-                            }
-                        }
-                    } else {
-                        items(filteredTones) { tone ->
-                            val isSelected = (tone.uriString == selectedUri) ||
-                                    (tone.uriString == null && selectedUri == null)
-                            val isPlaying = currentlyPlayingUri == (tone.uriString ?: "default")
-
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (isSelected) KairoPrimary.copy(alpha = 0.15f) else KairoSurfaceContainerHighest.copy(alpha = 0.35f),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (isSelected) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.25f)
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selectedUri = tone.uriString
-                                        selectedTitle = tone.title
-                                        playAudio(tone.uriString)
-                                    }
+                                shape = RoundedCornerShape(16.dp),
+                                color = KairoSurfaceContainerHighest.copy(alpha = 0.45f),
+                                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.25f)),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    // Row 1: Default
+                                    val isDefaultSelected = (selectedUri == null)
                                     Row(
-                                        modifier = Modifier.weight(1f),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                selectedUri = null
+                                                selectedTitle = defaultToneName
+                                                playAudio(null)
+                                            }
+                                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            imageVector = if (isPlaying) Icons.Default.GraphicEq else Icons.Default.MusicNote,
-                                            contentDescription = null,
-                                            tint = if (isPlaying) KairoSecondary else if (isSelected) KairoPrimary else Color(0xFF918EA2),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Column {
+                                        Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = tone.title,
-                                                fontSize = 13.sp,
-                                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                                color = if (isSelected) Color.White else Color(0xFFE3E1EC),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
+                                                text = "Default",
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color.White
                                             )
-                                            if (tone.subtitle != null) {
-                                                Text(
-                                                    text = tone.subtitle,
-                                                    fontSize = 11.sp,
-                                                    color = if (tone.isDeviceAudio) KairoSecondary.copy(alpha = 0.85f) else Color(0xFF918EA2),
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
+                                            Text(
+                                                text = defaultToneName,
+                                                fontSize = 13.sp,
+                                                color = TealActive,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                        RadioButton(
+                                            selected = isDefaultSelected,
+                                            onClick = {
+                                                selectedUri = null
+                                                selectedTitle = defaultToneName
+                                                playAudio(null)
+                                            },
+                                            colors = RadioButtonDefaults.colors(
+                                                selectedColor = TealActive,
+                                                unselectedColor = Color(0xFF6B687C)
+                                            )
+                                        )
+                                    }
+
+                                    HorizontalDivider(
+                                        color = KairoOutlineVariant.copy(alpha = 0.2f),
+                                        thickness = 1.dp
+                                    )
+
+                                    // Row 2: None (Silent)
+                                    val isNoneSelected = (selectedUri == "NONE")
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                selectedUri = "NONE"
+                                                selectedTitle = "None"
+                                                stopAudio()
+                                            }
+                                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "None",
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color.White,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        RadioButton(
+                                            selected = isNoneSelected,
+                                            onClick = {
+                                                selectedUri = "NONE"
+                                                selectedTitle = "None"
+                                                stopAudio()
+                                            },
+                                            colors = RadioButtonDefaults.colors(
+                                                selectedColor = TealActive,
+                                                unselectedColor = Color(0xFF6B687C)
+                                            )
+                                        )
+                                    }
+
+                                    // Row 3+: Recently Used Tones
+                                    if (recentTones.isNotEmpty()) {
+                                        recentTones.forEach { recent ->
+                                            HorizontalDivider(
+                                                color = KairoOutlineVariant.copy(alpha = 0.2f),
+                                                thickness = 1.dp
+                                            )
+                                            val isRecentSelected = (selectedUri == recent.uriString)
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        selectedUri = recent.uriString
+                                                        selectedTitle = recent.title
+                                                        playAudio(recent.uriString)
+                                                    }
+                                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = recent.title,
+                                                        fontSize = 14.sp,
+                                                        fontWeight = if (isRecentSelected) FontWeight.Bold else FontWeight.Medium,
+                                                        color = Color.White,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    Text(
+                                                        text = recent.subtitle ?: "Recently used",
+                                                        fontSize = 11.sp,
+                                                        color = Color(0xFF918EA2),
+                                                        maxLines = 1
+                                                    )
+                                                }
+                                                RadioButton(
+                                                    selected = isRecentSelected,
+                                                    onClick = {
+                                                        selectedUri = recent.uriString
+                                                        selectedTitle = recent.title
+                                                        playAudio(recent.uriString)
+                                                    },
+                                                    colors = RadioButtonDefaults.colors(
+                                                        selectedColor = TealActive,
+                                                        unselectedColor = Color(0xFF6B687C)
+                                                    )
                                                 )
                                             }
-                                        }
-                                    }
-
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        IconButton(
-                                            onClick = {
-                                                if (isPlaying) {
-                                                    stopAudio()
-                                                } else {
-                                                    selectedUri = tone.uriString
-                                                    selectedTitle = tone.title
-                                                    playAudio(tone.uriString)
-                                                }
-                                            },
-                                            modifier = Modifier.size(28.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
-                                                contentDescription = if (isPlaying) "Stop" else "Preview",
-                                                tint = if (isPlaying) KairoSecondary else KairoPrimary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-
-                                        if (isSelected) {
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = "Selected",
-                                                tint = KairoPrimary,
-                                                modifier = Modifier.size(18.dp)
-                                            )
                                         }
                                     }
                                 }
                             }
                         }
+
+                        // Section 2: Custom -> "On this device"
+                        item {
+                            Text(
+                                text = "Custom",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF918EA2),
+                                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+                            )
+
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = KairoSurfaceContainerHighest.copy(alpha = 0.45f),
+                                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.25f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        stopAudio()
+                                        currentView = TonePickerView.ON_DEVICE
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "On this device",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = "Open",
+                                        tint = Color(0xFF918EA2),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Action buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                stopAudio()
+                                onDismiss()
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.5f))
+                        ) {
+                            Text("Cancel", color = Color(0xFFC8C4D9))
+                        }
+
+                        Button(
+                            onClick = {
+                                stopAudio()
+                                onConfirm(selectedUri, selectedTitle)
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary)
+                        ) {
+                            Text("Confirm", color = Color(0xFF130067), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            } else {
+                // ==========================================
+                // SCREEN 2: ON THIS DEVICE (Matches img2)
+                // ==========================================
+                val activeList = if (onDeviceTab == 0) deviceMusicTones else deviceRecordingTones
+                val filteredList = if (searchQuery.isBlank()) {
+                    activeList
+                } else {
+                    activeList.filter {
+                        it.title.contains(searchQuery, ignoreCase = true) ||
+                                (it.subtitle?.contains(searchQuery, ignoreCase = true) == true)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // Actions: Cancel & Set Tone
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = {
-                            stopAudio()
-                            onDismiss()
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.5f))
+                    // Top Bar: Back arrow + Title + Search icon
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Cancel", color = Color(0xFFC8C4D9))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    stopAudio()
+                                    currentView = TonePickerView.MAIN
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = Color.White
+                                )
+                            }
+                            Text(
+                                text = "On this device",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { isSearchActive = !isSearchActive },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = Color.White
+                            )
+                        }
                     }
 
+                    if (isSearchActive) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search songs or recordings...", color = Color(0xFF6B687C), fontSize = 13.sp) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = TealActive,
+                                unfocusedBorderColor = KairoOutlineVariant.copy(alpha = 0.4f),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedContainerColor = KairoSurfaceContainerHighest.copy(alpha = 0.35f),
+                                unfocusedContainerColor = KairoSurfaceContainerHighest.copy(alpha = 0.35f)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Tabs: Music vs Recordings
+                    TabRow(
+                        selectedTabIndex = onDeviceTab,
+                        containerColor = Color.Transparent,
+                        contentColor = TealActive,
+                        indicator = { tabPositions ->
+                            TabRowDefaults.SecondaryIndicator(
+                                Modifier.tabIndicatorOffset(tabPositions[onDeviceTab]),
+                                color = TealActive
+                            )
+                        }
+                    ) {
+                        Tab(
+                            selected = onDeviceTab == 0,
+                            onClick = { onDeviceTab = 0 },
+                            text = {
+                                Text(
+                                    "Music",
+                                    fontWeight = if (onDeviceTab == 0) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (onDeviceTab == 0) Color.White else Color(0xFF918EA2)
+                                )
+                            }
+                        )
+                        Tab(
+                            selected = onDeviceTab == 1,
+                            onClick = { onDeviceTab = 1 },
+                            text = {
+                                Text(
+                                    "Recordings",
+                                    fontWeight = if (onDeviceTab == 1) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (onDeviceTab == 1) Color.White else Color(0xFF918EA2)
+                                )
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Direct file picker chip
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
+                        border = BorderStroke(1.dp, TealActive.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { pickAudioLauncher.launch("audio/*") }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                tint = TealActive,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Select audio from files / storage...",
+                                fontSize = 12.sp,
+                                color = TealActive,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // List of Audio Tracks
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (filteredList.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 36.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (searchQuery.isNotBlank()) "No audio found matching \"$searchQuery\""
+                                        else "No audio files detected on device",
+                                        color = Color(0xFF6B687C),
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            items(filteredList) { track ->
+                                val isSelected = (selectedUri == track.uriString)
+
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSelected) TealActive.copy(alpha = 0.1f) else KairoSurfaceContainerHighest.copy(alpha = 0.3f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedUri = track.uriString
+                                            selectedTitle = track.title
+                                            RecentTonesManager.saveRecentTone(context, track)
+                                            recentTones.clear()
+                                            recentTones.addAll(RecentTonesManager.getRecentTones(context))
+                                            playAudio(track.uriString)
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.weight(1f),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            // Red coral music icon container (Matches img2)
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .background(CoralMusicIcon, RoundedCornerShape(10.dp)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.MusicNote,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = track.title,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                    color = Color.White,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                if (track.subtitle != null) {
+                                                    Text(
+                                                        text = track.subtitle,
+                                                        fontSize = 11.sp,
+                                                        color = Color(0xFF918EA2),
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = {
+                                                selectedUri = track.uriString
+                                                selectedTitle = track.title
+                                                RecentTonesManager.saveRecentTone(context, track)
+                                                recentTones.clear()
+                                                recentTones.addAll(RecentTonesManager.getRecentTones(context))
+                                                playAudio(track.uriString)
+                                            },
+                                            colors = RadioButtonDefaults.colors(
+                                                selectedColor = TealActive,
+                                                unselectedColor = Color(0xFF6B687C)
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Done selecting on device
                     Button(
                         onClick = {
                             stopAudio()
-                            onConfirm(selectedUri, selectedTitle)
+                            currentView = TonePickerView.MAIN
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = TealActive)
                     ) {
-                        Text("Confirm Tone", color = Color(0xFF130067), fontWeight = FontWeight.Bold)
+                        Text("Done", color = Color(0xFF0F0E13), fontWeight = FontWeight.Bold)
                     }
                 }
             }
