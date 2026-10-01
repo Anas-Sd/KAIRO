@@ -13,7 +13,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -68,30 +71,33 @@ fun SectionHeader(
         ) {
             when (sectionType) {
                 SectionType.OVERDUE -> {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .background(KairoError, CircleShape)
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Overdue",
+                        tint = KairoError,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
                 SectionType.TODAY -> {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .background(KairoPrimary, CircleShape)
+                    Icon(
+                        imageVector = Icons.Default.Today,
+                        contentDescription = "Today",
+                        tint = KairoPrimary,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
                 SectionType.UPCOMING -> {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .background(KairoPrimary.copy(alpha = 0.6f), CircleShape)
+                    Icon(
+                        imageVector = Icons.Default.Event,
+                        contentDescription = "Upcoming",
+                        tint = Color(0xFF67E8F9),
+                        modifier = Modifier.size(18.dp)
                     )
                 }
                 SectionType.COMPLETED -> {
                     Icon(
                         imageVector = Icons.Default.CheckCircle,
-                        contentDescription = null,
+                        contentDescription = "Completed",
                         tint = KairoSecondary,
                         modifier = Modifier.size(18.dp)
                     )

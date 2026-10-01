@@ -42,14 +42,21 @@ class TaskRepository {
 
     fun toggleTaskCompletion(taskId: String) {
         var updatedTask: Task? = null
+        val now = System.currentTimeMillis()
         _tasks.update { currentList ->
             currentList.map { task ->
                 if (task.id == taskId) {
                     val willComplete = !task.isCompleted
-                    val newSection = if (willComplete) TaskSection.COMPLETED else TaskSection.TODAY
+                    val newSection = if (willComplete) TaskSection.COMPLETED else {
+                        if (task.dueDate.contains("Yesterday", ignoreCase = true)) TaskSection.OVERDUE
+                        else if (task.dueDate.contains("Today", ignoreCase = true)) TaskSection.TODAY
+                        else TaskSection.UPCOMING
+                    }
                     val modified = task.copy(
                         isCompleted = willComplete,
-                        section = newSection
+                        section = newSection,
+                        completedAt = if (willComplete) now else null,
+                        updatedAt = now
                     )
                     updatedTask = modified
                     modified
@@ -68,6 +75,21 @@ class TaskRepository {
                     Log.e("TaskRepository", "Error syncing toggle to Supabase: ${error.message}")
                 }
             }
+        }
+    }
+
+    fun updateTask(task: Task) {
+        // Optimistic UI update
+        _tasks.update { currentList ->
+            currentList.map { if (it.id == task.id) task else it }
+        }
+
+        // Sync to Supabase
+        scope.launch {
+            SupabaseClient.updateTask(TaskDto.fromDomain(task))
+                .onFailure { error ->
+                    Log.e("TaskRepository", "Error updating task in Supabase: ${error.message}")
+                }
         }
     }
 

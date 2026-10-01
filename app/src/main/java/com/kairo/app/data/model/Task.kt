@@ -26,7 +26,10 @@ data class Task(
     val dueTime: String? = null,
     val location: String? = null,
     val attachmentName: String? = null,
+    val attachmentUri: String? = null,
     val isCompleted: Boolean = false,
     val section: TaskSection = TaskSection.TODAY,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val completedAt: Long? = null
 )

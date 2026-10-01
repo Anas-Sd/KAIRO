@@ -31,9 +31,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Schedule
@@ -84,6 +89,8 @@ fun TaskCard(
     task: Task,
     onToggleCompletion: () -> Unit,
     onDeleteTask: () -> Unit = {},
+    onShowDetails: () -> Unit = {},
+    onEditTask: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -303,20 +310,44 @@ fun TaskCard(
                 ) {
                     DropdownMenuItem(
                         text = { Text("Details", color = Color.White) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "Details",
+                                tint = KairoPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
                         onClick = {
                             menuExpanded = false
-                            Toast.makeText(context, "Details for: ${task.title}", Toast.LENGTH_SHORT).show()
+                            onShowDetails()
                         }
                     )
                     DropdownMenuItem(
                         text = { Text("Edit", color = Color.White) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit",
+                                tint = Color(0xFFFFB77D),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
                         onClick = {
                             menuExpanded = false
-                            Toast.makeText(context, "Edit coming soon", Toast.LENGTH_SHORT).show()
+                            onEditTask()
                         }
                     )
                     DropdownMenuItem(
                         text = { Text("Add subtask", color = Color.White) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.AddCircleOutline,
+                                contentDescription = "Add subtask",
+                                tint = Color(0xFFC8C4D9),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
                         onClick = {
                             menuExpanded = false
                             Toast.makeText(context, "Add subtask coming soon", Toast.LENGTH_SHORT).show()
@@ -324,6 +355,14 @@ fun TaskCard(
                     )
                     DropdownMenuItem(
                         text = { Text("Adjust parent", color = Color.White) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.AccountTree,
+                                contentDescription = "Adjust parent",
+                                tint = Color(0xFFC8C4D9),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
                         onClick = {
                             menuExpanded = false
                             Toast.makeText(context, "Adjust parent coming soon", Toast.LENGTH_SHORT).show()
@@ -331,10 +370,17 @@ fun TaskCard(
                     )
                     DropdownMenuItem(
                         text = { Text("Delete", color = KairoError) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.DeleteOutline,
+                                contentDescription = "Delete",
+                                tint = KairoError,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
                         onClick = {
                             menuExpanded = false
                             onDeleteTask()
-                            Toast.makeText(context, "Task deleted", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }

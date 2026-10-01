@@ -16,7 +16,6 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,7 +26,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
@@ -45,7 +43,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -67,6 +64,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import com.kairo.app.data.model.Priority
+import com.kairo.app.data.model.Task
 import com.kairo.app.ui.theme.KairoError
 import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
@@ -83,7 +81,8 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun CreateTaskDialog(
+fun EditTaskDialog(
+    task: Task,
     onDismiss: () -> Unit,
     onConfirm: (
         title: String,
@@ -100,31 +99,27 @@ fun CreateTaskDialog(
     val context = LocalContext.current
     val calendar = remember { Calendar.getInstance() }
 
-    var title by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
-    var selectedPriority by remember { mutableStateOf(Priority.MEDIUM) }
+    var title by remember { mutableStateOf(task.title) }
+    var notes by remember { mutableStateOf(task.notes ?: "") }
+    var selectedPriority by remember { mutableStateOf(task.priority) }
     var priorityMenuExpanded by remember { mutableStateOf(false) }
 
     // Date & Time state
-    var selectedDateText by remember { mutableStateOf("Today") }
-    var selectedDateMillis by remember {
-        val todayCal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        mutableStateOf<Long?>(todayCal.timeInMillis)
-    }
+    var selectedDateText by remember { mutableStateOf(task.dueDate) }
+    var selectedDateMillis by remember { mutableStateOf(task.dueDateMillis) }
     var selectedTimeText by remember {
-        val hour = calendar.get(Calendar.HOUR_OF_DAY)
-        val minute = calendar.get(Calendar.MINUTE)
-        mutableStateOf(String.format(Locale.getDefault(), "%02d:%02d", hour, minute))
+        mutableStateOf(
+            task.dueTime ?: run {
+                val hour = calendar.get(Calendar.HOUR_OF_DAY)
+                val minute = calendar.get(Calendar.MINUTE)
+                String.format(Locale.getDefault(), "%02d:%02d", hour, minute)
+            }
+        )
     }
 
-    var locationText by remember { mutableStateOf("") }
-    var attachmentName by remember { mutableStateOf<String?>(null) }
-    var attachmentUri by remember { mutableStateOf<String?>(null) }
+    var locationText by remember { mutableStateOf(task.location ?: "") }
+    var attachmentName by remember { mutableStateOf(task.attachmentName) }
+    var attachmentUri by remember { mutableStateOf(task.attachmentUri) }
     var showAttachmentSourceDialog by remember { mutableStateOf(false) }
     var showPermissionDeniedDialog by remember { mutableStateOf(false) }
 
@@ -177,12 +172,12 @@ fun CreateTaskDialog(
         }
     }
 
-    // 3. Gallery Picker Launcher (PickVisualMedia)
+    // 3. Gallery Picker Launcher
     val pickGalleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            val fileName = getFileName(context, uri)
+            val fileName = getFileNameFromUri(context, uri)
             attachmentName = fileName
             attachmentUri = uri.toString()
             showAttachmentSourceDialog = false
@@ -190,12 +185,12 @@ fun CreateTaskDialog(
         }
     }
 
-    // 4. Document / File Picker Launcher (GetContent)
+    // 4. Document / File Picker Launcher
     val pickFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val fileName = getFileName(context, uri)
+            val fileName = getFileNameFromUri(context, uri)
             attachmentName = fileName
             attachmentUri = uri.toString()
             showAttachmentSourceDialog = false
@@ -274,7 +269,7 @@ fun CreateTaskDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Task",
+                        text = "Edit Task",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -592,7 +587,7 @@ fun CreateTaskDialog(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // 6. Action Buttons: Cancel and Create
+                // 6. Action Buttons: Cancel and Save Changes
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -638,7 +633,7 @@ fun CreateTaskDialog(
                             .height(48.dp)
                     ) {
                         Text(
-                            text = "Create",
+                            text = "Save",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -670,9 +665,7 @@ fun CreateTaskDialog(
                     AttachmentOptionRow(
                         icon = Icons.Default.CameraAlt,
                         label = "Camera",
-                        onClick = {
-                            launchCamera()
-                        }
+                        onClick = { launchCamera() }
                     )
                     AttachmentOptionRow(
                         icon = Icons.Default.PhotoLibrary,
@@ -783,7 +776,7 @@ private fun AttachmentOptionRow(
     }
 }
 
-private fun getFileName(context: Context, uri: Uri): String {
+private fun getFileNameFromUri(context: Context, uri: Uri): String {
     var result: String? = null
     if (uri.scheme == "content") {
         try {

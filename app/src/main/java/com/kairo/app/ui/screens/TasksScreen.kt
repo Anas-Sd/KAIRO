@@ -46,12 +46,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kairo.app.ui.components.CreateTaskDialog
+import com.kairo.app.ui.components.EditTaskDialog
 import com.kairo.app.ui.components.FilterBottomSheet
 import com.kairo.app.ui.components.FilterSortBar
 import com.kairo.app.ui.components.SectionHeader
 import com.kairo.app.ui.components.SectionType
 import com.kairo.app.ui.components.SortBottomSheet
 import com.kairo.app.ui.components.TaskCard
+import com.kairo.app.ui.components.TaskDetailsBottomSheet
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
@@ -269,8 +271,17 @@ fun TasksScreen(
                     items(uiState.overdueTasks, key = { it.id }) { task ->
                         TaskCard(
                             task = task,
-                            onToggleCompletion = { viewModel.toggleTask(task.id) },
-                            onDeleteTask = { viewModel.deleteTask(task.id) },
+                            onToggleCompletion = {
+                                viewModel.toggleTask(task.id)
+                                val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            },
+                            onDeleteTask = {
+                                viewModel.deleteTask(task.id)
+                                Toast.makeText(context, "Task deleted", Toast.LENGTH_SHORT).show()
+                            },
+                            onShowDetails = { viewModel.showTaskDetails(task) },
+                            onEditTask = { viewModel.showEditTask(task) },
                             modifier = Modifier.animateItem()
                         )
                     }
@@ -302,8 +313,17 @@ fun TasksScreen(
                     items(uiState.todayTasks, key = { it.id }) { task ->
                         TaskCard(
                             task = task,
-                            onToggleCompletion = { viewModel.toggleTask(task.id) },
-                            onDeleteTask = { viewModel.deleteTask(task.id) },
+                            onToggleCompletion = {
+                                viewModel.toggleTask(task.id)
+                                val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            },
+                            onDeleteTask = {
+                                viewModel.deleteTask(task.id)
+                                Toast.makeText(context, "Task deleted", Toast.LENGTH_SHORT).show()
+                            },
+                            onShowDetails = { viewModel.showTaskDetails(task) },
+                            onEditTask = { viewModel.showEditTask(task) },
                             modifier = Modifier.animateItem()
                         )
                     }
@@ -326,8 +346,17 @@ fun TasksScreen(
                     items(uiState.upcomingTasks, key = { it.id }) { task ->
                         TaskCard(
                             task = task,
-                            onToggleCompletion = { viewModel.toggleTask(task.id) },
-                            onDeleteTask = { viewModel.deleteTask(task.id) },
+                            onToggleCompletion = {
+                                viewModel.toggleTask(task.id)
+                                val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            },
+                            onDeleteTask = {
+                                viewModel.deleteTask(task.id)
+                                Toast.makeText(context, "Task deleted", Toast.LENGTH_SHORT).show()
+                            },
+                            onShowDetails = { viewModel.showTaskDetails(task) },
+                            onEditTask = { viewModel.showEditTask(task) },
                             modifier = Modifier.animateItem()
                         )
                     }
@@ -350,8 +379,17 @@ fun TasksScreen(
                     items(uiState.completedTasks, key = { it.id }) { task ->
                         TaskCard(
                             task = task,
-                            onToggleCompletion = { viewModel.toggleTask(task.id) },
-                            onDeleteTask = { viewModel.deleteTask(task.id) },
+                            onToggleCompletion = {
+                                viewModel.toggleTask(task.id)
+                                val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            },
+                            onDeleteTask = {
+                                viewModel.deleteTask(task.id)
+                                Toast.makeText(context, "Task deleted", Toast.LENGTH_SHORT).show()
+                            },
+                            onShowDetails = { viewModel.showTaskDetails(task) },
+                            onEditTask = { viewModel.showEditTask(task) },
                             modifier = Modifier.animateItem()
                         )
                     }
@@ -390,6 +428,7 @@ fun TasksScreen(
                 initialFilter = uiState.filterCriteria,
                 onApplyFilter = { criteria ->
                     viewModel.applyFilter(criteria)
+                    Toast.makeText(context, "Filters applied", Toast.LENGTH_SHORT).show()
                 },
                 onDismiss = {
                     viewModel.closeFilterSheet()
@@ -403,6 +442,7 @@ fun TasksScreen(
                 initialSort = uiState.activeSort,
                 onApplySort = { sort ->
                     viewModel.applySort(sort)
+                    Toast.makeText(context, "Sorted by ${sort.displayName}", Toast.LENGTH_SHORT).show()
                 },
                 onDismiss = {
                     viewModel.closeSortSheet()
@@ -414,8 +454,43 @@ fun TasksScreen(
         if (uiState.showCreateDialog) {
             CreateTaskDialog(
                 onDismiss = { viewModel.setShowCreateDialog(false) },
-                onConfirm = { title, notes, priority, dueDate, dueDateMillis, dueTime, location, attachmentName ->
-                    viewModel.createTask(title, notes, priority, dueDate, dueDateMillis, dueTime, location, attachmentName)
+                onConfirm = { title, notes, priority, dueDate, dueDateMillis, dueTime, location, attachmentName, attachmentUri ->
+                    viewModel.createTask(title, notes, priority, dueDate, dueDateMillis, dueTime, location, attachmentName, attachmentUri)
+                    Toast.makeText(context, "Task created successfully", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        // Bottom sheet for task details
+        val detailsTask = uiState.selectedTaskForDetails
+        if (detailsTask != null) {
+            TaskDetailsBottomSheet(
+                task = detailsTask,
+                onDismiss = { viewModel.dismissTaskDetails() },
+                onEditClicked = { viewModel.showEditTask(detailsTask) }
+            )
+        }
+
+        // Dialog for editing tasks
+        val editTask = uiState.selectedTaskForEdit
+        if (editTask != null) {
+            EditTaskDialog(
+                task = editTask,
+                onDismiss = { viewModel.dismissEditTask() },
+                onConfirm = { title, notes, priority, dueDate, dueDateMillis, dueTime, location, attachmentName, attachmentUri ->
+                    viewModel.updateTask(
+                        editTask,
+                        title,
+                        notes,
+                        priority,
+                        dueDate,
+                        dueDateMillis,
+                        dueTime,
+                        location,
+                        attachmentName,
+                        attachmentUri
+                    )
+                    Toast.makeText(context, "Task updated successfully", Toast.LENGTH_SHORT).show()
                 }
             )
         }

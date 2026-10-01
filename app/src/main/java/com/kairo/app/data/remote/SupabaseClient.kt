@@ -67,13 +67,33 @@ object SupabaseClient {
 
     suspend fun updateTaskCompletion(taskId: String, isCompleted: Boolean, section: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val patchJson = """{"is_completed":$isCompleted,"section":"$section"}"""
+            val completedAtVal = if (isCompleted) System.currentTimeMillis() else null
+            val patchJson = """{"is_completed":$isCompleted,"section":"$section","completed_at":$completedAtVal,"updated_at":${System.currentTimeMillis()}}"""
             val request = Request.Builder()
                 .url("$SUPABASE_URL/rest/v1/tasks?id=eq.$taskId")
                 .header("apikey", SUPABASE_KEY)
                 .header("Authorization", "Bearer $SUPABASE_KEY")
                 .header("Prefer", "return=minimal")
                 .patch(patchJson.toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val errorBody = response.body?.string().orEmpty()
+                error("Failed to update task completion: HTTP ${response.code} $errorBody")
+            }
+        }
+    }
+
+    suspend fun updateTask(taskDto: TaskDto): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val bodyJson = json.encodeToString(taskDto)
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/tasks?id=eq.${taskDto.id}")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Prefer", "return=minimal")
+                .patch(bodyJson.toRequestBody(JSON_MEDIA_TYPE))
                 .build()
 
             val response = client.newCall(request).execute()

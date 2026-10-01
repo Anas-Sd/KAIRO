@@ -29,7 +29,9 @@ data class UiToggles(
     val isSearchActive: Boolean = false,
     val showCreateDialog: Boolean = false,
     val showFilterSheet: Boolean = false,
-    val showSortSheet: Boolean = false
+    val showSortSheet: Boolean = false,
+    val selectedTaskForDetails: Task? = null,
+    val selectedTaskForEdit: Task? = null
 )
 
 data class TasksUiState(
@@ -48,6 +50,8 @@ data class TasksUiState(
     val showCreateDialog: Boolean = false,
     val showFilterSheet: Boolean = false,
     val showSortSheet: Boolean = false,
+    val selectedTaskForDetails: Task? = null,
+    val selectedTaskForEdit: Task? = null,
     val isConnected: Boolean = true
 )
 
@@ -239,6 +243,8 @@ class TaskViewModel(
             showCreateDialog = toggles.showCreateDialog,
             showFilterSheet = toggles.showFilterSheet,
             showSortSheet = toggles.showSortSheet,
+            selectedTaskForDetails = toggles.selectedTaskForDetails,
+            selectedTaskForEdit = toggles.selectedTaskForEdit,
             isConnected = true
         )
     }.stateIn(
@@ -321,6 +327,59 @@ class TaskViewModel(
         }
     }
 
+    fun showTaskDetails(task: Task) {
+        _uiToggles.update { it.copy(selectedTaskForDetails = task) }
+    }
+
+    fun dismissTaskDetails() {
+        _uiToggles.update { it.copy(selectedTaskForDetails = null) }
+    }
+
+    fun showEditTask(task: Task) {
+        _uiToggles.update { it.copy(selectedTaskForEdit = task, selectedTaskForDetails = null) }
+    }
+
+    fun dismissEditTask() {
+        _uiToggles.update { it.copy(selectedTaskForEdit = null) }
+    }
+
+    fun updateTask(
+        task: Task,
+        title: String,
+        notes: String?,
+        priority: Priority,
+        dueDate: String,
+        dueDateMillis: Long?,
+        dueTime: String?,
+        location: String?,
+        attachmentName: String?,
+        attachmentUri: String?
+    ) {
+        if (title.isBlank()) return
+        val assignedSection = when {
+            dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
+            dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
+            else -> TaskSection.UPCOMING
+        }
+        val updated = task.copy(
+            title = title.trim(),
+            notes = notes,
+            priority = priority,
+            dueDate = dueDate,
+            dueDateMillis = dueDateMillis ?: computeDueDateMillis(dueDate),
+            dueTime = dueTime,
+            location = location,
+            attachmentName = attachmentName,
+            attachmentUri = attachmentUri,
+            section = assignedSection,
+            updatedAt = System.currentTimeMillis()
+        )
+        viewModelScope.launch {
+            repository.updateTask(updated)
+            _uiToggles.update { it.copy(selectedTaskForEdit = null) }
+        }
+    }
+
     fun createTask(
         title: String,
         notes: String?,
@@ -329,7 +388,8 @@ class TaskViewModel(
         dueDateMillis: Long?,
         dueTime: String?,
         location: String?,
-        attachmentName: String?
+        attachmentName: String?,
+        attachmentUri: String? = null
     ) {
         if (title.isBlank()) return
         val assignedSection = when {
@@ -346,6 +406,7 @@ class TaskViewModel(
             dueTime = dueTime,
             location = location,
             attachmentName = attachmentName,
+            attachmentUri = attachmentUri,
             section = assignedSection
         )
         viewModelScope.launch {

@@ -17,9 +17,12 @@ data class TaskDto(
     @SerialName("due_time") val dueTime: String? = null,
     @SerialName("location") val location: String? = null,
     @SerialName("attachment_name") val attachmentName: String? = null,
+    @SerialName("attachment_uri") val attachmentUri: String? = null,
     @SerialName("is_completed") val isCompleted: Boolean = false,
     @SerialName("section") val section: String = "TODAY",
-    @SerialName("created_at") val createdAt: Long = System.currentTimeMillis()
+    @SerialName("created_at") val createdAt: Long = System.currentTimeMillis(),
+    @SerialName("updated_at") val updatedAt: Long = System.currentTimeMillis(),
+    @SerialName("completed_at") val completedAt: Long? = null
 ) {
     fun toDomain(): Task {
         return Task(
@@ -32,9 +35,12 @@ data class TaskDto(
             dueTime = dueTime,
             location = location,
             attachmentName = attachmentName,
+            attachmentUri = attachmentUri,
             isCompleted = isCompleted,
             section = runCatching { TaskSection.valueOf(section) }.getOrDefault(TaskSection.TODAY),
-            createdAt = createdAt
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+            completedAt = completedAt
         )
     }
 
@@ -50,9 +56,12 @@ data class TaskDto(
                 dueTime = task.dueTime,
                 location = task.location,
                 attachmentName = task.attachmentName,
+                attachmentUri = task.attachmentUri,
                 isCompleted = task.isCompleted,
                 section = task.section.name,
-                createdAt = task.createdAt
+                createdAt = task.createdAt,
+                updatedAt = task.updatedAt,
+                completedAt = task.completedAt
             )
         }
     }
