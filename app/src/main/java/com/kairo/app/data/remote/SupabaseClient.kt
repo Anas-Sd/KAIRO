@@ -65,10 +65,20 @@ object SupabaseClient {
         }
     }
 
-    suspend fun updateTaskCompletion(taskId: String, isCompleted: Boolean, section: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun updateTaskCompletion(
+        taskId: String,
+        isCompleted: Boolean,
+        section: String,
+        notes: String? = null
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val encodedId = java.net.URLEncoder.encode(taskId, "UTF-8")
-            val patchJson = """{"is_completed":$isCompleted,"section":"$section"}"""
+            val patchJson = if (notes != null) {
+                val notesJson = json.encodeToString(notes)
+                """{"is_completed":$isCompleted,"section":"$section","notes":$notesJson}"""
+            } else {
+                """{"is_completed":$isCompleted,"section":"$section"}"""
+            }
             val request = Request.Builder()
                 .url("$SUPABASE_URL/rest/v1/tasks?id=eq.$encodedId")
                 .header("apikey", SUPABASE_KEY)

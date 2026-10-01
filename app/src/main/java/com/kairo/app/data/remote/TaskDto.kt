@@ -1,5 +1,6 @@
 package com.kairo.app.data.remote
 
+import com.kairo.app.data.local.TaskMetadataStore
 import com.kairo.app.data.model.Priority
 import com.kairo.app.data.model.Task
 import com.kairo.app.data.model.TaskSection
@@ -21,31 +22,43 @@ data class TaskDto(
     @SerialName("created_at") val createdAt: Long = System.currentTimeMillis()
 ) {
     fun toDomain(): Task {
+        val decoded = TaskMetadataCodec.decode(notes)
+        val storedCompletedAt = TaskMetadataStore.getCompletedAt(id) ?: decoded.completedAt
+        val effectiveCompletedAt = if (isCompleted) (storedCompletedAt ?: System.currentTimeMillis()) else null
+        val storedUpdatedAt = TaskMetadataStore.getUpdatedAt(id) ?: decoded.updatedAt ?: createdAt
+        val storedAttachment = TaskMetadataStore.getAttachmentUri(id) ?: decoded.attachmentUri
+
         return Task(
             id = id,
             title = title,
-            notes = notes,
+            notes = decoded.cleanNotes,
             priority = runCatching { Priority.valueOf(priority) }.getOrDefault(Priority.MEDIUM),
             dueDate = dueDate,
             dueDateMillis = null,
             dueTime = dueTime,
             location = location,
             attachmentName = attachmentName,
-            attachmentUri = null,
+            attachmentUri = storedAttachment,
             isCompleted = isCompleted,
             section = runCatching { TaskSection.valueOf(section) }.getOrDefault(TaskSection.TODAY),
             createdAt = createdAt,
-            updatedAt = createdAt,
-            completedAt = if (isCompleted) createdAt else null
+            updatedAt = storedUpdatedAt,
+            completedAt = effectiveCompletedAt
         )
     }
 
     companion object {
         fun fromDomain(task: Task): TaskDto {
+            val encodedNotes = TaskMetadataCodec.encode(
+                userNotes = task.notes,
+                completedAt = task.completedAt,
+                updatedAt = task.updatedAt,
+                attachmentUri = task.attachmentUri
+            )
             return TaskDto(
                 id = task.id,
                 title = task.title,
-                notes = task.notes,
+                notes = encodedNotes,
                 priority = task.priority.name,
                 dueDate = task.dueDate,
                 dueTime = task.dueTime,
