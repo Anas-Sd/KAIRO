@@ -121,6 +121,18 @@ private object RecentTonesManager {
             .putString(KEY_RECENT, serialized)
             .apply()
     }
+
+    fun removeRecentTone(context: Context, uriString: String?) {
+        if (uriString == null) return
+        val current = getRecentTones(context).filter { it.uriString != uriString }
+        val serialized = current.joinToString(";;") { item ->
+            "${item.title}||${item.uriString.orEmpty()}||${item.subtitle.orEmpty()}"
+        }
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_RECENT, serialized)
+            .apply()
+    }
 }
 
 private fun cacheToneLocally(context: Context, uriStr: String?): String? {
@@ -539,18 +551,48 @@ fun TonePickerDialog(
                                                         maxLines = 1
                                                     )
                                                 }
-                                                RadioButton(
-                                                    selected = isRecentSelected,
-                                                    onClick = {
-                                                        selectedUri = recent.uriString
-                                                        selectedTitle = recent.title
-                                                        playAudio(recent.uriString)
-                                                    },
-                                                    colors = RadioButtonDefaults.colors(
-                                                        selectedColor = TealActive,
-                                                        unselectedColor = Color(0xFF6B687C)
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    // Small 'x' mark to remove recent tone
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(24.dp)
+                                                            .background(Color(0xFF2C293A).copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                                                            .clickable {
+                                                                RecentTonesManager.removeRecentTone(context, recent.uriString)
+                                                                recentTones.clear()
+                                                                recentTones.addAll(RecentTonesManager.getRecentTones(context))
+                                                                if (selectedUri == recent.uriString) {
+                                                                    stopAudio()
+                                                                    selectedUri = null
+                                                                    selectedTitle = defaultToneName
+                                                                }
+                                                            },
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Close,
+                                                            contentDescription = "Remove recent tone",
+                                                            tint = Color(0xFFC8C4D9),
+                                                            modifier = Modifier.size(13.dp)
+                                                        )
+                                                    }
+
+                                                    RadioButton(
+                                                        selected = isRecentSelected,
+                                                        onClick = {
+                                                            selectedUri = recent.uriString
+                                                            selectedTitle = recent.title
+                                                            playAudio(recent.uriString)
+                                                        },
+                                                        colors = RadioButtonDefaults.colors(
+                                                            selectedColor = TealActive,
+                                                            unselectedColor = Color(0xFF6B687C)
+                                                        )
                                                     )
-                                                )
+                                                }
                                             }
                                         }
                                     }
