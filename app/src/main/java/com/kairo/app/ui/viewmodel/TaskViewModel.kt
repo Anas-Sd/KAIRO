@@ -215,13 +215,30 @@ class TaskViewModel(
         _uiToggles.update { it.copy(showCreateDialog = show) }
     }
 
-    fun createTask(title: String, category: TaskCategory, priority: Priority) {
+    fun deleteTask(taskId: String) {
+        viewModelScope.launch {
+            repository.deleteTask(taskId)
+        }
+    }
+
+    fun createTask(
+        title: String,
+        notes: String?,
+        priority: Priority,
+        dueDisplay: String,
+        dueTime: String?,
+        location: String?,
+        attachmentName: String?
+    ) {
         if (title.isBlank()) return
         val newTask = Task(
             title = title.trim(),
-            category = category,
+            notes = notes,
             priority = priority,
-            dueDisplay = "Today",
+            dueDisplay = dueDisplay,
+            dueTime = dueTime,
+            location = location,
+            attachmentName = attachmentName,
             section = TaskSection.TODAY
         )
         viewModelScope.launch {

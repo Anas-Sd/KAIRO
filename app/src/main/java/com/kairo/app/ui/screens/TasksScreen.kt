@@ -265,7 +265,8 @@ fun TasksScreen(
                     items(uiState.overdueTasks, key = { it.id }) { task ->
                         TaskCard(
                             task = task,
-                            onToggleCompletion = { viewModel.toggleTask(task.id) }
+                            onToggleCompletion = { viewModel.toggleTask(task.id) },
+                            onDeleteTask = { viewModel.deleteTask(task.id) }
                         )
                     }
                 }
@@ -287,7 +288,8 @@ fun TasksScreen(
                     items(uiState.todayTasks, key = { it.id }) { task ->
                         TaskCard(
                             task = task,
-                            onToggleCompletion = { viewModel.toggleTask(task.id) }
+                            onToggleCompletion = { viewModel.toggleTask(task.id) },
+                            onDeleteTask = { viewModel.deleteTask(task.id) }
                         )
                     }
                 }
@@ -309,7 +311,8 @@ fun TasksScreen(
                     items(uiState.upcomingTasks, key = { it.id }) { task ->
                         TaskCard(
                             task = task,
-                            onToggleCompletion = { viewModel.toggleTask(task.id) }
+                            onToggleCompletion = { viewModel.toggleTask(task.id) },
+                            onDeleteTask = { viewModel.deleteTask(task.id) }
                         )
                     }
                 }
@@ -331,7 +334,8 @@ fun TasksScreen(
                     items(uiState.completedTasks, key = { it.id }) { task ->
                         TaskCard(
                             task = task,
-                            onToggleCompletion = { viewModel.toggleTask(task.id) }
+                            onToggleCompletion = { viewModel.toggleTask(task.id) },
+                            onDeleteTask = { viewModel.deleteTask(task.id) }
                         )
                     }
                 }
@@ -393,8 +397,8 @@ fun TasksScreen(
         if (uiState.showCreateDialog) {
             CreateTaskDialog(
                 onDismiss = { viewModel.setShowCreateDialog(false) },
-                onConfirm = { title, category, priority ->
-                    viewModel.createTask(title, category, priority)
+                onConfirm = { title, notes, priority, dueDisplay, dueTime, location, attachmentName ->
+                    viewModel.createTask(title, notes, priority, dueDisplay, dueTime, location, attachmentName)
                 }
             )
         }
