@@ -93,7 +93,8 @@ fun SortBottomSheet(
                     color = KairoPrimary,
                     modifier = Modifier
                         .clickable {
-                            selectedSort = TaskSort.DATE_NEAR
+                            onApplySort(TaskSort.DATE_NEAR)
+                            onDismiss()
                         }
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 )

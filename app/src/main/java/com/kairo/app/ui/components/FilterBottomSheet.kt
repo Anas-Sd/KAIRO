@@ -16,10 +16,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,11 +41,15 @@ import com.kairo.app.data.model.DateFilter
 import com.kairo.app.data.model.FilterCriteria
 import com.kairo.app.data.model.Priority
 import com.kairo.app.data.model.StatusFilter
+import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoPrimaryContainer
 import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import com.kairo.app.ui.theme.KairoSurfaceContainerHighest
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,6 +62,14 @@ fun FilterBottomSheet(
     var tempStatuses by remember { mutableStateOf(initialFilter.selectedStatuses) }
     var tempPriorities by remember { mutableStateOf(initialFilter.selectedPriorities) }
     var tempDate by remember { mutableStateOf(initialFilter.selectedDate) }
+    var tempRangeStart by remember { mutableStateOf(initialFilter.dateRangeStart) }
+    var tempRangeEnd by remember { mutableStateOf(initialFilter.dateRangeEnd) }
+
+    var showRangePickerDialog by remember { mutableStateOf(false) }
+    val dateRangePickerState = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = tempRangeStart,
+        initialSelectedEndDateMillis = tempRangeEnd
+    )
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -91,6 +108,7 @@ fun FilterBottomSheet(
                     color = Color.White
                 )
 
+                // Reset button: clears filters AND closes the bottom sheet
                 Text(
                     text = "Reset",
                     fontSize = 14.sp,
@@ -98,9 +116,8 @@ fun FilterBottomSheet(
                     color = KairoPrimary,
                     modifier = Modifier
                         .clickable {
-                            tempStatuses = emptySet()
-                            tempPriorities = emptySet()
-                            tempDate = null
+                            onApplyFilter(FilterCriteria())
+                            onDismiss()
                         }
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
@@ -171,16 +188,39 @@ fun FilterBottomSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                DateFilter.values().forEach { dateFilter ->
-                    val isSelected = tempDate == dateFilter
-                    FilterChip(
-                        label = dateFilter.label,
-                        isSelected = isSelected,
-                        onClick = {
-                            tempDate = if (isSelected) null else dateFilter
-                        }
-                    )
+                // Today chip
+                FilterChip(
+                    label = "Today",
+                    isSelected = tempDate == DateFilter.TODAY,
+                    onClick = {
+                        tempDate = if (tempDate == DateFilter.TODAY) null else DateFilter.TODAY
+                    }
+                )
+
+                // Tomorrow chip
+                FilterChip(
+                    label = "Tomorrow",
+                    isSelected = tempDate == DateFilter.TOMORROW,
+                    onClick = {
+                        tempDate = if (tempDate == DateFilter.TOMORROW) null else DateFilter.TOMORROW
+                    }
+                )
+
+                // Range chip (opens DateRangePicker on click)
+                val rangeLabel = if (tempDate == DateFilter.RANGE && tempRangeStart != null && tempRangeEnd != null) {
+                    val fmt = SimpleDateFormat("MMM d", Locale.getDefault())
+                    "${fmt.format(Date(tempRangeStart!!))} - ${fmt.format(Date(tempRangeEnd!!))}"
+                } else {
+                    "Range"
                 }
+
+                FilterChip(
+                    label = rangeLabel,
+                    isSelected = tempDate == DateFilter.RANGE,
+                    onClick = {
+                        showRangePickerDialog = true
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.height(36.dp))
@@ -192,7 +232,9 @@ fun FilterBottomSheet(
                         FilterCriteria(
                             selectedStatuses = tempStatuses,
                             selectedPriorities = tempPriorities,
-                            selectedDate = tempDate
+                            selectedDate = tempDate,
+                            dateRangeStart = tempRangeStart,
+                            dateRangeEnd = tempRangeEnd
                         )
                     )
                 },
@@ -211,6 +253,62 @@ fun FilterBottomSheet(
                     fontWeight = FontWeight.Bold
                 )
             }
+        }
+    }
+
+    // Material 3 Date Range Picker Dialog
+    if (showRangePickerDialog) {
+        DatePickerDialog(
+            onDismissRequest = { showRangePickerDialog = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val start = dateRangePickerState.selectedStartDateMillis
+                        val end = dateRangePickerState.selectedEndDateMillis
+                        if (start != null && end != null) {
+                            tempRangeStart = start
+                            tempRangeEnd = end
+                            tempDate = DateFilter.RANGE
+                        }
+                        showRangePickerDialog = false
+                    }
+                ) {
+                    Text("Confirm", color = KairoPrimary, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showRangePickerDialog = false }
+                ) {
+                    Text("Cancel", color = Color(0xFFC8C4D9))
+                }
+            },
+            colors = DatePickerDefaults.colors(
+                containerColor = KairoSurfaceContainerHigh
+            )
+        ) {
+            DateRangePicker(
+                state = dateRangePickerState,
+                modifier = Modifier.weight(1f),
+                colors = DatePickerDefaults.colors(
+                    containerColor = KairoSurfaceContainerHigh,
+                    titleContentColor = Color.White,
+                    headlineContentColor = Color.White,
+                    weekdayContentColor = Color(0xFF918EA2),
+                    subheadContentColor = Color.White,
+                    yearContentColor = Color.White,
+                    currentYearContentColor = KairoPrimary,
+                    selectedYearContentColor = Color.White,
+                    selectedYearContainerColor = KairoPrimaryContainer,
+                    dayContentColor = Color.White,
+                    selectedDayContentColor = Color.White,
+                    selectedDayContainerColor = KairoPrimaryContainer,
+                    todayContentColor = KairoPrimary,
+                    todayDateBorderColor = KairoPrimary,
+                    dayInSelectionRangeContentColor = Color.White,
+                    dayInSelectionRangeContainerColor = KairoPrimaryContainer.copy(alpha = 0.35f)
+                )
+            )
         }
     }
 }

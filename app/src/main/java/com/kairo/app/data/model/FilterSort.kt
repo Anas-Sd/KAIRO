@@ -14,7 +14,9 @@ enum class DateFilter(val label: String) {
 data class FilterCriteria(
     val selectedStatuses: Set<StatusFilter> = emptySet(),
     val selectedPriorities: Set<Priority> = emptySet(),
-    val selectedDate: DateFilter? = null
+    val selectedDate: DateFilter? = null,
+    val dateRangeStart: Long? = null,
+    val dateRangeEnd: Long? = null
 ) {
     val isActive: Boolean
         get() = selectedStatuses.isNotEmpty() || selectedPriorities.isNotEmpty() || selectedDate != null

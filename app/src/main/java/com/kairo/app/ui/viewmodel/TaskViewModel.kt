@@ -97,7 +97,15 @@ class TaskViewModel(
                 DateFilter.TOMORROW -> list.filter {
                     it.dueDisplay.contains("Tomorrow", ignoreCase = true) || it.dueDisplay.contains("Mon", ignoreCase = true)
                 }
-                DateFilter.RANGE -> list
+                DateFilter.RANGE -> {
+                    if (criteria.dateRangeStart != null && criteria.dateRangeEnd != null) {
+                        val start = criteria.dateRangeStart
+                        val end = criteria.dateRangeEnd + 86400000L // inclusive of end date
+                        list.filter { task -> task.createdAt in start..end }
+                    } else {
+                        list
+                    }
+                }
             }
         }
 
