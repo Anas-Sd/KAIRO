@@ -1,10 +1,18 @@
 package com.kairo.app.ui.components
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -41,11 +49,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -64,6 +74,8 @@ import com.kairo.app.ui.theme.KairoSecondary
 import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import com.kairo.app.ui.theme.KairoSurfaceContainerHighest
 import com.kairo.app.ui.theme.KairoSurfaceContainerLowest
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -74,35 +86,59 @@ fun TaskCard(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var menuExpanded by remember { mutableStateOf(false) }
 
-    val isOverdue = task.section == TaskSection.OVERDUE && !task.isCompleted
+    // Local animated state for instant tactile response
+    var isLocallyCompleted by remember(task.id, task.isCompleted) { mutableStateOf(task.isCompleted) }
+    val bounceScale = remember { Animatable(1f) }
+
+    val isOverdue = task.section == TaskSection.OVERDUE && !isLocallyCompleted
     val borderColor = if (isOverdue) {
         KairoError.copy(alpha = 0.35f)
     } else {
         KairoOutlineVariant.copy(alpha = 0.18f)
     }
 
-    // Interactive bouncy checkbox animation
-    val checkScale by animateFloatAsState(
-        targetValue = if (task.isCompleted) 1.05f else 0.82f,
-        animationSpec = spring(
-            dampingRatio = 0.45f,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "bouncyCheckboxScale"
-    )
-
     val checkboxBg by animateColorAsState(
-        targetValue = if (task.isCompleted) KairoPrimaryContainer else KairoSurfaceContainerHighest,
-        animationSpec = spring(dampingRatio = 0.6f),
+        targetValue = if (isLocallyCompleted) KairoPrimaryContainer else KairoSurfaceContainerHighest,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow),
         label = "checkboxBg"
     )
+
+    val textColor by animateColorAsState(
+        targetValue = if (isLocallyCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f) else Color.White,
+        animationSpec = tween(durationMillis = 200),
+        label = "textColor"
+    )
+
+    fun handleToggle() {
+        val nextCompleted = !isLocallyCompleted
+        isLocallyCompleted = nextCompleted
+        coroutineScope.launch {
+            // Tactile squash, stretch, and spring bounce
+            bounceScale.animateTo(
+                targetValue = 1.35f,
+                animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing)
+            )
+            bounceScale.animateTo(
+                targetValue = 0.88f,
+                animationSpec = tween(durationMillis = 80, easing = LinearOutSlowInEasing)
+            )
+            bounceScale.animateTo(
+                targetValue = 1.0f,
+                animationSpec = spring(dampingRatio = 0.42f, stiffness = Spring.StiffnessMedium)
+            )
+            // Visual settling window before section rearrangement
+            delay(280)
+            onToggleCompletion()
+        }
+    }
 
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onToggleCompletion() },
+            .clickable { handleToggle() },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = KairoSurfaceContainerLowest
@@ -115,22 +151,21 @@ fun TaskCard(
                 .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment = Alignment.Top
         ) {
-            // 1. Checkbox squircle with bounce animation on checking/unchecking
             Box(
                 modifier = Modifier
                     .padding(top = 2.dp)
                     .size(24.dp)
-                    .scale(checkScale)
+                    .scale(bounceScale.value)
                     .background(checkboxBg, shape = RoundedCornerShape(8.dp))
                     .border(
                         1.dp,
-                        if (task.isCompleted) Color.Transparent else KairoOutlineVariant.copy(alpha = 0.45f),
+                        if (isLocallyCompleted) Color.Transparent else KairoOutlineVariant.copy(alpha = 0.45f),
                         RoundedCornerShape(8.dp)
                     )
-                    .clickable { onToggleCompletion() },
+                    .clickable { handleToggle() },
                 contentAlignment = Alignment.Center
             ) {
-                if (task.isCompleted) {
+                if (isLocallyCompleted) {
                     Icon(
                         imageVector = Icons.Default.Done,
                         contentDescription = "Completed",
@@ -142,7 +177,7 @@ fun TaskCard(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // 2. Middle Content Column: Task Name, Notes, and Chips
+            // 2. Middle Content Column: Task Name, Notes, and Equal-Height Capsules
             Column(modifier = Modifier.weight(1f)) {
                 // Task Name
                 Text(
@@ -151,15 +186,11 @@ fun TaskCard(
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold
                     ),
-                    color = if (task.isCompleted) {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    } else {
-                        Color.White
-                    },
-                    textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                    color = textColor,
+                    textDecoration = if (isLocallyCompleted) TextDecoration.LineThrough else TextDecoration.None
                 )
 
-                // Notes (if present, directly under the task name)
+                // Notes (directly under the task name if present)
                 val displayNotes = task.notes
                 if (!displayNotes.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(3.dp))
@@ -175,11 +206,12 @@ fun TaskCard(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Bottom Metadata Chips: [Priority] [Time] [Location] [Files]
+                // All items share the EXACT SAME capsule height (24.dp) and pill shape
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Priority Badge
+                    // Priority Capsule
                     val priorityBg = when (task.priority) {
                         Priority.LOW -> KairoSecondary.copy(alpha = 0.15f)
                         Priority.MEDIUM -> KairoPrimary.copy(alpha = 0.15f)
@@ -192,85 +224,44 @@ fun TaskCard(
                         Priority.HIGH -> Color(0xFFFFB77D)
                         Priority.URGENT -> KairoOnErrorContainer
                     }
-                    TagBadge(
+                    TaskCapsule(
                         text = task.priority.label,
                         containerColor = priorityBg,
                         contentColor = priorityText
                     )
 
-                    // Time / Due Date chip
+                    // Time / Due Date Capsule
                     val timeString = task.dueTime ?: task.dueDate
-                    Row(
-                        modifier = Modifier
-                            .background(KairoSurfaceContainerHigh, RoundedCornerShape(100.dp))
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        val icon = if (isOverdue) Icons.Default.Warning else Icons.Default.Schedule
-                        val tint = if (isOverdue) KairoError else KairoPrimary
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = tint,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = timeString,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = if (isOverdue) KairoError else Color(0xFFC8C4D9)
-                        )
-                    }
+                    TaskCapsule(
+                        icon = if (isOverdue) Icons.Default.Warning else Icons.Default.Schedule,
+                        iconTint = if (isOverdue) KairoError else KairoPrimary,
+                        text = timeString,
+                        containerColor = KairoSurfaceContainerHigh,
+                        contentColor = if (isOverdue) KairoError else Color(0xFFC8C4D9)
+                    )
 
-                    // Location chip (if present)
+                    // Location Capsule (if present)
                     val locationStr = task.location
                     if (!locationStr.isNullOrBlank()) {
-                        Row(
-                            modifier = Modifier
-                                .background(KairoSurfaceContainerHigh, RoundedCornerShape(100.dp))
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Place,
-                                contentDescription = null,
-                                tint = Color(0xFF918EA2),
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Text(
-                                text = locationStr,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFFC8C4D9)
-                            )
-                        }
+                        TaskCapsule(
+                            icon = Icons.Default.Place,
+                            iconTint = Color(0xFF918EA2),
+                            text = locationStr,
+                            containerColor = KairoSurfaceContainerHigh,
+                            contentColor = Color(0xFFC8C4D9)
+                        )
                     }
 
-                    // Attachment / Files chip (if present)
+                    // Attachment Capsule: If present, show ONLY the attachment symbol!
                     val fileStr = task.attachmentName
                     if (!fileStr.isNullOrBlank()) {
-                        Row(
-                            modifier = Modifier
-                                .background(KairoSurfaceContainerHigh, RoundedCornerShape(100.dp))
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AttachFile,
-                                contentDescription = null,
-                                tint = Color(0xFF918EA2),
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Text(
-                                text = fileStr,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFFC8C4D9)
-                            )
-                        }
+                        TaskCapsule(
+                            icon = Icons.Default.AttachFile,
+                            iconTint = Color(0xFFC8C4D9),
+                            text = null, // Only the attachment icon inside the capsule
+                            containerColor = KairoSurfaceContainerHigh,
+                            contentColor = Color(0xFFC8C4D9)
+                        )
                     }
                 }
             }
@@ -298,7 +289,7 @@ fun TaskCard(
                         text = { Text("Details", color = Color.White) },
                         onClick = {
                             menuExpanded = false
-                            Toast.makeText(context, "Details: ${task.title}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Details for: ${task.title}", Toast.LENGTH_SHORT).show()
                         }
                     )
                     DropdownMenuItem(
@@ -336,24 +327,43 @@ fun TaskCard(
     }
 }
 
+/**
+ * Standard uniform capsule badge ensuring Priority, Time, Location,
+ * and Attachment chips all share the exact same height, padding, and pill geometry.
+ */
 @Composable
-fun TagBadge(
-    text: String,
+fun TaskCapsule(
     containerColor: Color,
     contentColor: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    iconTint: Color? = null,
+    text: String? = null
 ) {
-    Box(
+    Row(
         modifier = modifier
-            .background(containerColor, shape = RoundedCornerShape(100.dp))
-            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .height(24.dp)
+            .background(containerColor, RoundedCornerShape(100.dp))
+            .padding(horizontal = if (text == null) 8.dp else 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        Text(
-            text = text,
-            color = contentColor,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            lineHeight = 14.sp
-        )
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint ?: contentColor,
+                modifier = Modifier.size(12.dp)
+            )
+        }
+        if (!text.isNullOrBlank()) {
+            Text(
+                text = text,
+                color = contentColor,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 11.sp
+            )
+        }
     }
 }

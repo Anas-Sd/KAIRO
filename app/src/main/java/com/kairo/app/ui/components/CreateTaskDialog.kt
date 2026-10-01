@@ -1,7 +1,19 @@
 package com.kairo.app.ui.components
 
+import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.provider.Settings
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -53,6 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
 import com.kairo.app.data.model.Priority
 import com.kairo.app.ui.theme.KairoError
 import com.kairo.app.ui.theme.KairoOutlineVariant
@@ -99,6 +112,66 @@ fun CreateTaskDialog(
     var locationText by remember { mutableStateOf("") }
     var attachmentName by remember { mutableStateOf<String?>(null) }
     var showAttachmentSourceDialog by remember { mutableStateOf(false) }
+    var showPermissionDeniedDialog by remember { mutableStateOf(false) }
+
+    // 1. Camera Launcher
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap: Bitmap? ->
+        if (bitmap != null) {
+            val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val fileName = "photo_$timeStamp.jpg"
+            attachmentName = fileName
+            showAttachmentSourceDialog = false
+            Toast.makeText(context, "Captured: $fileName", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // 2. Camera Permission Launcher
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            takePictureLauncher.launch(null)
+        } else {
+            showPermissionDeniedDialog = true
+        }
+    }
+
+    fun launchCamera() {
+        when {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED -> {
+                takePictureLauncher.launch(null)
+            }
+            else -> {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+        }
+    }
+
+    // 3. Gallery Picker Launcher (PickVisualMedia)
+    val pickGalleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val fileName = getFileName(context, uri)
+            attachmentName = fileName
+            showAttachmentSourceDialog = false
+            Toast.makeText(context, "Selected: $fileName", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // 4. Document / File Picker Launcher (GetContent)
+    val pickFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val fileName = getFileName(context, uri)
+            attachmentName = fileName
+            showAttachmentSourceDialog = false
+            Toast.makeText(context, "Selected: $fileName", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // Native Date & Time picker launchers
     fun showDateTimePicker() {
@@ -159,28 +232,40 @@ fun CreateTaskDialog(
 
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Close",
-                            tint = Color(0xFFC8C4D9),
-                            modifier = Modifier.size(20.dp)
+                            tint = Color(0xFFC8C4D9)
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // 1. Task Name Input Box
+                // 1. Task Name Input (Mandatory)
+                Text(
+                    text = "Name of task",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFFC8C4D9),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    placeholder = { Text("Task name", color = Color(0xFF918EA2)) },
+                    placeholder = {
+                        Text(
+                            text = "e.g. Complete quarterly report",
+                            color = Color(0xFF6B687C),
+                            fontSize = 14.sp
+                        )
+                    },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = KairoPrimary,
-                        unfocusedBorderColor = KairoOutlineVariant.copy(alpha = 0.35f),
+                        unfocusedBorderColor = KairoOutlineVariant.copy(alpha = 0.4f),
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
                         focusedContainerColor = KairoSurfaceContainerHighest.copy(alpha = 0.3f),
@@ -190,18 +275,31 @@ fun CreateTaskDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // 2. Notes Input Box (optional)
+                // 2. Notes Input (Optional)
+                Text(
+                    text = "Notes (optional)",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFFC8C4D9),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    placeholder = { Text("Notes", color = Color(0xFF918EA2)) },
+                    placeholder = {
+                        Text(
+                            text = "Add details, checklist, or links...",
+                            color = Color(0xFF6B687C),
+                            fontSize = 13.sp
+                        )
+                    },
                     minLines = 2,
-                    maxLines = 3,
+                    maxLines = 4,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = KairoPrimary,
-                        unfocusedBorderColor = KairoOutlineVariant.copy(alpha = 0.35f),
+                        unfocusedBorderColor = KairoOutlineVariant.copy(alpha = 0.4f),
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
                         focusedContainerColor = KairoSurfaceContainerHighest.copy(alpha = 0.3f),
@@ -211,14 +309,14 @@ fun CreateTaskDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // 3. Side-by-side Row: Priority Dropdown + Date & Time
+                // 3. Priority Dropdown beside Date & Time Selector
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Priority selector box with dropdown
+                    // Priority Dropdown (Left side)
                     Box(modifier = Modifier.weight(1f)) {
                         Surface(
                             modifier = Modifier
@@ -240,7 +338,7 @@ fun CreateTaskDialog(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    val dotColor = when (selectedPriority) {
+                                    val chipColor = when (selectedPriority) {
                                         Priority.LOW -> KairoSecondary
                                         Priority.MEDIUM -> KairoPrimary
                                         Priority.HIGH -> Color(0xFFFFB77D)
@@ -249,19 +347,18 @@ fun CreateTaskDialog(
                                     Box(
                                         modifier = Modifier
                                             .size(8.dp)
-                                            .background(dotColor, RoundedCornerShape(100.dp))
+                                            .background(chipColor, RoundedCornerShape(4.dp))
                                     )
                                     Text(
                                         text = selectedPriority.label,
                                         fontSize = 13.sp,
-                                        fontWeight = FontWeight.Medium,
+                                        fontWeight = FontWeight.SemiBold,
                                         color = Color.White
                                     )
                                 }
-
                                 Icon(
                                     imageVector = Icons.Default.ExpandMore,
-                                    contentDescription = null,
+                                    contentDescription = "Expand",
                                     tint = Color(0xFFC8C4D9),
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -270,16 +367,29 @@ fun CreateTaskDialog(
 
                         DropdownMenu(
                             expanded = priorityMenuExpanded,
-                            onDismissRequest = { priorityMenuExpanded = false }
+                            onDismissRequest = { priorityMenuExpanded = false },
+                            modifier = Modifier.background(KairoSurfaceContainerHigh)
                         ) {
-                            listOf(Priority.LOW, Priority.MEDIUM, Priority.HIGH, Priority.URGENT).forEach { p ->
+                            Priority.entries.forEach { p ->
+                                val pColor = when (p) {
+                                    Priority.LOW -> KairoSecondary
+                                    Priority.MEDIUM -> KairoPrimary
+                                    Priority.HIGH -> Color(0xFFFFB77D)
+                                    Priority.URGENT -> KairoError
+                                }
                                 DropdownMenuItem(
                                     text = {
-                                        Text(
-                                            text = p.label,
-                                            fontWeight = if (p == selectedPriority) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (p == selectedPriority) KairoPrimary else MaterialTheme.colorScheme.onSurface
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .background(pColor, RoundedCornerShape(4.dp))
+                                            )
+                                            Text(p.label, color = Color.White)
+                                        }
                                     },
                                     onClick = {
                                         selectedPriority = p
@@ -290,7 +400,7 @@ fun CreateTaskDialog(
                         }
                     }
 
-                    // Date & Time Picker trigger
+                    // Date & Time Selector (Right side beside priority)
                     Surface(
                         modifier = Modifier
                             .weight(1.3f)
@@ -309,7 +419,7 @@ fun CreateTaskDialog(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.CalendarToday,
-                                contentDescription = "Date and Time",
+                                contentDescription = "Date and time",
                                 tint = KairoPrimary,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -324,37 +434,57 @@ fun CreateTaskDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // 4. Location Input Box (optional)
-                OutlinedTextField(
-                    value = locationText,
-                    onValueChange = { locationText = it },
-                    placeholder = { Text("Location", color = Color(0xFF918EA2)) },
-                    leadingIcon = {
+                // 4. Location Selector (Optional)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
+                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Place,
                             contentDescription = "Location",
                             tint = Color(0xFF918EA2),
                             modifier = Modifier.size(18.dp)
                         )
-                    },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = KairoPrimary,
-                        unfocusedBorderColor = KairoOutlineVariant.copy(alpha = 0.35f),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedContainerColor = KairoSurfaceContainerHighest.copy(alpha = 0.3f),
-                        unfocusedContainerColor = KairoSurfaceContainerHighest.copy(alpha = 0.3f)
-                    ),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                        OutlinedTextField(
+                            value = locationText,
+                            onValueChange = { locationText = it },
+                            placeholder = {
+                                Text(
+                                    text = "Location (optional)",
+                                    color = Color(0xFF6B687C),
+                                    fontSize = 13.sp
+                                )
+                            },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // 5. Files / Photos selector
+                // 5. Photos / File Selection Button
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -373,7 +503,8 @@ fun CreateTaskDialog(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f, fill = false)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.AttachFile,
@@ -382,10 +513,11 @@ fun CreateTaskDialog(
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
-                                text = attachmentName ?: "Files",
+                                text = attachmentName ?: "Photos / Files",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = if (attachmentName != null) Color.White else Color(0xFF918EA2)
+                                color = if (attachmentName != null) Color.White else Color(0xFF918EA2),
+                                maxLines = 1
                             )
                         }
 
@@ -453,7 +585,7 @@ fun CreateTaskDialog(
                         Text(
                             text = "Create",
                             fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
@@ -484,24 +616,23 @@ fun CreateTaskDialog(
                         icon = Icons.Default.CameraAlt,
                         label = "Camera",
                         onClick = {
-                            attachmentName = "Photo from Camera"
-                            showAttachmentSourceDialog = false
+                            launchCamera()
                         }
                     )
                     AttachmentOptionRow(
                         icon = Icons.Default.PhotoLibrary,
                         label = "Gallery",
                         onClick = {
-                            attachmentName = "Image from Gallery"
-                            showAttachmentSourceDialog = false
+                            pickGalleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
                         }
                     )
                     AttachmentOptionRow(
                         icon = Icons.Default.Folder,
                         label = "Files",
                         onClick = {
-                            attachmentName = "Document file"
-                            showAttachmentSourceDialog = false
+                            pickFileLauncher.launch("*/*")
                         }
                     )
                 }
@@ -510,6 +641,53 @@ fun CreateTaskDialog(
             dismissButton = {
                 TextButton(onClick = { showAttachmentSourceDialog = false }) {
                     Text("Cancel", color = Color(0xFFC8C4D9))
+                }
+            }
+        )
+    }
+
+    // Permission Denied Dialog with direct link to App Settings
+    if (showPermissionDeniedDialog) {
+        AlertDialog(
+            onDismissRequest = { showPermissionDeniedDialog = false },
+            containerColor = KairoSurfaceContainerHigh,
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Text(
+                    text = "Camera Permission Required",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            },
+            text = {
+                Text(
+                    text = "KAIRO needs camera access to capture photo attachments for your tasks. You can grant this in App Settings.",
+                    fontSize = 14.sp,
+                    color = Color(0xFFC8C4D9)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPermissionDeniedDialog = false
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = KairoPrimaryContainer,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Open Settings")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPermissionDeniedDialog = false }) {
+                    Text("Cancel", color = Color(0xFF918EA2))
                 }
             }
         )
@@ -548,4 +726,29 @@ private fun AttachmentOptionRow(
             )
         }
     }
+}
+
+private fun getFileName(context: Context, uri: Uri): String {
+    var result: String? = null
+    if (uri.scheme == "content") {
+        try {
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (index != -1) {
+                        result = it.getString(index)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+    if (result == null) {
+        result = uri.path
+        val cut = result?.lastIndexOf('/') ?: -1
+        if (cut != -1) {
+            result = result?.substring(cut + 1)
+        }
+    }
+    return result ?: "attachment_${System.currentTimeMillis()}"
 }

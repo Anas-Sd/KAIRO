@@ -266,7 +266,8 @@ fun TasksScreen(
                         TaskCard(
                             task = task,
                             onToggleCompletion = { viewModel.toggleTask(task.id) },
-                            onDeleteTask = { viewModel.deleteTask(task.id) }
+                            onDeleteTask = { viewModel.deleteTask(task.id) },
+                            modifier = Modifier.animateItem()
                         )
                     }
                 }
@@ -289,7 +290,8 @@ fun TasksScreen(
                         TaskCard(
                             task = task,
                             onToggleCompletion = { viewModel.toggleTask(task.id) },
-                            onDeleteTask = { viewModel.deleteTask(task.id) }
+                            onDeleteTask = { viewModel.deleteTask(task.id) },
+                            modifier = Modifier.animateItem()
                         )
                     }
                 }
@@ -312,7 +314,8 @@ fun TasksScreen(
                         TaskCard(
                             task = task,
                             onToggleCompletion = { viewModel.toggleTask(task.id) },
-                            onDeleteTask = { viewModel.deleteTask(task.id) }
+                            onDeleteTask = { viewModel.deleteTask(task.id) },
+                            modifier = Modifier.animateItem()
                         )
                     }
                 }
@@ -335,7 +338,8 @@ fun TasksScreen(
                         TaskCard(
                             task = task,
                             onToggleCompletion = { viewModel.toggleTask(task.id) },
-                            onDeleteTask = { viewModel.deleteTask(task.id) }
+                            onDeleteTask = { viewModel.deleteTask(task.id) },
+                            modifier = Modifier.animateItem()
                         )
                     }
                 }
