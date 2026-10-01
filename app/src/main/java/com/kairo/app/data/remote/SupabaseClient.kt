@@ -67,8 +67,7 @@ object SupabaseClient {
 
     suspend fun updateTaskCompletion(taskId: String, isCompleted: Boolean, section: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val completedAtVal = if (isCompleted) System.currentTimeMillis() else null
-            val patchJson = """{"is_completed":$isCompleted,"section":"$section","completed_at":$completedAtVal,"updated_at":${System.currentTimeMillis()}}"""
+            val patchJson = """{"is_completed":$isCompleted,"section":"$section"}"""
             val request = Request.Builder()
                 .url("$SUPABASE_URL/rest/v1/tasks?id=eq.$taskId")
                 .header("apikey", SUPABASE_KEY)
