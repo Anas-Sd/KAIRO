@@ -69,16 +69,13 @@ object SupabaseClient {
         taskId: String,
         isCompleted: Boolean,
         section: String,
-        notes: String? = null
+        completedAt: Long? = null
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val encodedId = java.net.URLEncoder.encode(taskId, "UTF-8")
-            val patchJson = if (notes != null) {
-                val notesJson = json.encodeToString(notes)
-                """{"is_completed":$isCompleted,"section":"$section","notes":$notesJson}"""
-            } else {
-                """{"is_completed":$isCompleted,"section":"$section"}"""
-            }
+            val now = System.currentTimeMillis()
+            val completedAtJson = if (completedAt != null) "$completedAt" else "null"
+            val patchJson = """{"is_completed":$isCompleted,"section":"$section","completed_at":$completedAtJson,"updated_at":$now}"""
             val request = Request.Builder()
                 .url("$SUPABASE_URL/rest/v1/tasks?id=eq.$encodedId")
                 .header("apikey", SUPABASE_KEY)

@@ -1,13 +1,11 @@
 package com.kairo.app.data.repository
 
 import android.util.Log
-import com.kairo.app.data.local.TaskMetadataStore
 import com.kairo.app.data.model.Priority
 import com.kairo.app.data.model.Task
 import com.kairo.app.data.model.TaskSection
 import com.kairo.app.data.remote.SupabaseClient
 import com.kairo.app.data.remote.TaskDto
-import com.kairo.app.data.remote.TaskMetadataCodec
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,18 +33,7 @@ object TaskRepository {
             SupabaseClient.getTasks()
                 .onSuccess { remoteList ->
                     if (remoteList.isNotEmpty()) {
-                        val currentTasksMap = _tasks.value.associateBy { it.id }
-                        val mapped = remoteList.map { dto ->
-                            val domain = dto.toDomain()
-                            val local = currentTasksMap[domain.id]
-                            // Preserve in-memory accurate completedAt if remote didn't have one
-                            if (domain.isCompleted && domain.completedAt == null && local?.completedAt != null) {
-                                domain.copy(completedAt = local.completedAt)
-                            } else {
-                                domain
-                            }
-                        }
-                        _tasks.value = mapped
+                        _tasks.value = remoteList.map { it.toDomain() }
                         Log.d("TaskRepository", "Loaded ${remoteList.size} tasks live from Supabase")
                     }
                 }
@@ -59,8 +46,6 @@ object TaskRepository {
     fun markTaskCompleted(taskId: String) {
         val now = System.currentTimeMillis()
         var updatedTask: Task? = null
-        TaskMetadataStore.saveCompletedAt(taskId, now)
-        TaskMetadataStore.saveUpdatedAt(taskId, now)
 
         _tasks.update { currentList ->
             currentList.map { task ->
@@ -79,25 +64,11 @@ object TaskRepository {
 
         scope.launch {
             Log.d("TaskRepository", "Syncing task $taskId as COMPLETED at $now to Supabase")
-            val targetTask = updatedTask ?: Task(
-                id = taskId,
-                title = "Task",
-                isCompleted = true,
-                section = TaskSection.COMPLETED,
-                completedAt = now,
-                updatedAt = now
-            )
-            val encodedNotes = TaskMetadataCodec.encode(
-                userNotes = targetTask.notes,
-                completedAt = now,
-                updatedAt = now,
-                attachmentUri = targetTask.attachmentUri
-            )
             SupabaseClient.updateTaskCompletion(
                 taskId = taskId,
                 isCompleted = true,
                 section = TaskSection.COMPLETED.name,
-                notes = encodedNotes
+                completedAt = now
             ).onSuccess {
                 Log.d("TaskRepository", "Successfully marked task $taskId as COMPLETED in Supabase with exact timestamp $now")
             }.onFailure { error ->
@@ -113,8 +84,6 @@ object TaskRepository {
     fun markTaskOverdue(taskId: String) {
         val now = System.currentTimeMillis()
         var updatedTask: Task? = null
-        TaskMetadataStore.saveCompletedAt(taskId, null)
-        TaskMetadataStore.saveUpdatedAt(taskId, now)
 
         _tasks.update { currentList ->
             currentList.map { task ->
@@ -132,26 +101,12 @@ object TaskRepository {
         }
 
         scope.launch {
-            Log.d("TaskRepository", "Syncing task $taskId as OVERDUE at $now to Supabase")
-            val targetTask = updatedTask ?: Task(
-                id = taskId,
-                title = "Task",
-                isCompleted = false,
-                section = TaskSection.OVERDUE,
-                completedAt = null,
-                updatedAt = now
-            )
-            val encodedNotes = TaskMetadataCodec.encode(
-                userNotes = targetTask.notes,
-                completedAt = null,
-                updatedAt = now,
-                attachmentUri = targetTask.attachmentUri
-            )
+            Log.d("TaskRepository", "Syncing task $taskId as OVERDUE to Supabase")
             SupabaseClient.updateTaskCompletion(
                 taskId = taskId,
                 isCompleted = false,
                 section = TaskSection.OVERDUE.name,
-                notes = encodedNotes
+                completedAt = null
             ).onSuccess {
                 Log.d("TaskRepository", "Successfully marked task $taskId as OVERDUE in Supabase")
             }.onFailure { error ->
@@ -177,8 +132,6 @@ object TaskRepository {
                         else TaskSection.UPCOMING
                     }
                     val completedTime = if (willComplete) now else null
-                    TaskMetadataStore.saveCompletedAt(taskId, completedTime)
-                    TaskMetadataStore.saveUpdatedAt(taskId, now)
 
                     val modified = task.copy(
                         isCompleted = willComplete,
@@ -195,17 +148,11 @@ object TaskRepository {
         // Push update to Supabase
         updatedTask?.let { task ->
             scope.launch {
-                val encodedNotes = TaskMetadataCodec.encode(
-                    userNotes = task.notes,
-                    completedAt = task.completedAt,
-                    updatedAt = task.updatedAt,
-                    attachmentUri = task.attachmentUri
-                )
                 SupabaseClient.updateTaskCompletion(
                     taskId = task.id,
                     isCompleted = task.isCompleted,
                     section = task.section.name,
-                    notes = encodedNotes
+                    completedAt = task.completedAt
                 ).onFailure { error ->
                     Log.e("TaskRepository", "Error syncing toggle to Supabase: ${error.message}")
                 }
@@ -214,10 +161,6 @@ object TaskRepository {
     }
 
     fun updateTask(task: Task) {
-        TaskMetadataStore.saveAttachmentUri(task.id, task.attachmentUri)
-        TaskMetadataStore.saveCompletedAt(task.id, task.completedAt)
-        TaskMetadataStore.saveUpdatedAt(task.id, task.updatedAt)
-
         // Optimistic UI update
         _tasks.update { currentList ->
             currentList.map { if (it.id == task.id) task else it }
@@ -233,9 +176,6 @@ object TaskRepository {
     }
 
     fun addTask(task: Task) {
-        TaskMetadataStore.saveAttachmentUri(task.id, task.attachmentUri)
-        TaskMetadataStore.saveUpdatedAt(task.id, task.updatedAt)
-
         // Optimistic UI update
         _tasks.update { current -> listOf(task) + current }
 
@@ -249,8 +189,6 @@ object TaskRepository {
     }
 
     fun deleteTask(taskId: String) {
-        TaskMetadataStore.clear(taskId)
-
         // Optimistic UI update
         _tasks.update { current -> current.filterNot { it.id == taskId } }
 

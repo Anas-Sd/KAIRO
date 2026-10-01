@@ -1,6 +1,5 @@
 package com.kairo.app.data.remote
 
-import com.kairo.app.data.local.TaskMetadataStore
 import com.kairo.app.data.model.Priority
 import com.kairo.app.data.model.Task
 import com.kairo.app.data.model.TaskSection
@@ -14,59 +13,55 @@ data class TaskDto(
     @SerialName("notes") val notes: String? = null,
     @SerialName("priority") val priority: String = "MEDIUM",
     @SerialName("due_date") val dueDate: String = "Today",
+    @SerialName("due_date_millis") val dueDateMillis: Long? = null,
     @SerialName("due_time") val dueTime: String? = null,
     @SerialName("location") val location: String? = null,
     @SerialName("attachment_name") val attachmentName: String? = null,
+    @SerialName("attachment_uri") val attachmentUri: String? = null,
     @SerialName("is_completed") val isCompleted: Boolean = false,
     @SerialName("section") val section: String = "TODAY",
-    @SerialName("created_at") val createdAt: Long = System.currentTimeMillis()
+    @SerialName("created_at") val createdAt: Long = System.currentTimeMillis(),
+    @SerialName("updated_at") val updatedAt: Long = System.currentTimeMillis(),
+    @SerialName("completed_at") val completedAt: Long? = null
 ) {
     fun toDomain(): Task {
-        val decoded = TaskMetadataCodec.decode(notes)
-        val storedCompletedAt = TaskMetadataStore.getCompletedAt(id) ?: decoded.completedAt
-        val effectiveCompletedAt = if (isCompleted) (storedCompletedAt ?: System.currentTimeMillis()) else null
-        val storedUpdatedAt = TaskMetadataStore.getUpdatedAt(id) ?: decoded.updatedAt ?: createdAt
-        val storedAttachment = TaskMetadataStore.getAttachmentUri(id) ?: decoded.attachmentUri
-
         return Task(
             id = id,
             title = title,
-            notes = decoded.cleanNotes,
+            notes = notes,
             priority = runCatching { Priority.valueOf(priority) }.getOrDefault(Priority.MEDIUM),
             dueDate = dueDate,
-            dueDateMillis = null,
+            dueDateMillis = dueDateMillis,
             dueTime = dueTime,
             location = location,
             attachmentName = attachmentName,
-            attachmentUri = storedAttachment,
+            attachmentUri = attachmentUri,
             isCompleted = isCompleted,
             section = runCatching { TaskSection.valueOf(section) }.getOrDefault(TaskSection.TODAY),
             createdAt = createdAt,
-            updatedAt = storedUpdatedAt,
-            completedAt = effectiveCompletedAt
+            updatedAt = updatedAt,
+            completedAt = if (isCompleted) completedAt else null
         )
     }
 
     companion object {
         fun fromDomain(task: Task): TaskDto {
-            val encodedNotes = TaskMetadataCodec.encode(
-                userNotes = task.notes,
-                completedAt = task.completedAt,
-                updatedAt = task.updatedAt,
-                attachmentUri = task.attachmentUri
-            )
             return TaskDto(
                 id = task.id,
                 title = task.title,
-                notes = encodedNotes,
+                notes = task.notes,
                 priority = task.priority.name,
                 dueDate = task.dueDate,
+                dueDateMillis = task.dueDateMillis,
                 dueTime = task.dueTime,
                 location = task.location,
                 attachmentName = task.attachmentName,
+                attachmentUri = task.attachmentUri,
                 isCompleted = task.isCompleted,
                 section = task.section.name,
-                createdAt = task.createdAt
+                createdAt = task.createdAt,
+                updatedAt = task.updatedAt,
+                completedAt = task.completedAt
             )
         }
     }
