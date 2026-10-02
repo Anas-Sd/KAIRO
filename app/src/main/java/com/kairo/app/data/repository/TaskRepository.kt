@@ -62,6 +62,7 @@ object TaskRepository {
         val localList = localDb.getTasksForUser(userCode)
         _tasks.value = localList
         Log.d("TaskRepository", "Loaded ${localList.size} tasks immediately from local SQLite database")
+        com.kairo.app.location.GeofenceManager.syncGeofencesWithActiveTasks(KairoApplication.instance)
     }
 
     fun clearTasksLocally() {

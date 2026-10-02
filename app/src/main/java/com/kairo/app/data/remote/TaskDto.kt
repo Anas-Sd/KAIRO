@@ -30,7 +30,10 @@ data class TaskDto(
     @SerialName("repeat_dates") val repeatDates: String? = null,
     @SerialName("parent_id") val parentId: String? = null,
     @SerialName("position") val position: Int = 0,
-    @SerialName("user_code") val userCode: String? = null
+    @SerialName("user_code") val userCode: String? = null,
+    @SerialName("latitude") val latitude: Double? = null,
+    @SerialName("longitude") val longitude: Double? = null,
+    @SerialName("location_radius") val locationRadius: Int? = 500
 ) {
     fun toDomain(): Task {
         return Task(
@@ -55,7 +58,10 @@ data class TaskDto(
             repeatDays = repeatDays,
             repeatDates = repeatDates,
             parentId = parentId,
-            position = position
+            position = position,
+            latitude = latitude,
+            longitude = longitude,
+            locationRadius = locationRadius ?: 500
         )
     }
 
@@ -84,7 +90,10 @@ data class TaskDto(
                 repeatDates = task.repeatDates,
                 parentId = task.parentId,
                 position = task.position,
-                userCode = userCode ?: com.kairo.app.data.auth.AuthManager.getUserCode()
+                userCode = userCode ?: com.kairo.app.data.auth.AuthManager.getUserCode(),
+                latitude = task.latitude,
+                longitude = task.longitude,
+                locationRadius = task.locationRadius
             )
         }
     }

@@ -30,6 +30,9 @@ class BootReceiver : BroadcastReceiver() {
                             Log.d("BootReceiver", "Rescheduled alarm for '${task.title}' at $trigger")
                         }
                     }
+
+                    // Resync location geofences
+                    com.kairo.app.location.GeofenceManager.syncGeofencesWithActiveTasks(context)
                 } catch (e: Exception) {
                     Log.e("BootReceiver", "Error rescheduling alarms on boot: ${e.message}", e)
                 } finally {

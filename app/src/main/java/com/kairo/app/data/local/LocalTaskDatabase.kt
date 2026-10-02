@@ -23,7 +23,7 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
     companion object {
         private const val TAG = "LocalTaskDatabase"
         private const val DATABASE_NAME = "kairo_local_tasks.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
 
         // Table local_tasks
         const val TABLE_TASKS = "local_tasks"
@@ -51,6 +51,9 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         const val COL_POSITION = "position"
         const val COL_USER_CODE = "user_code"
         const val COL_SYNC_STATUS = "sync_status" // "SYNCED", "PENDING"
+        const val COL_LATITUDE = "latitude"
+        const val COL_LONGITUDE = "longitude"
+        const val COL_LOCATION_RADIUS = "location_radius"
 
         // Table sync_queue
         const val TABLE_SYNC_QUEUE = "sync_queue"
@@ -97,7 +100,10 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
                 $COL_PARENT_ID TEXT,
                 $COL_POSITION INTEGER NOT NULL DEFAULT 0,
                 $COL_USER_CODE TEXT,
-                $COL_SYNC_STATUS TEXT NOT NULL DEFAULT 'SYNCED'
+                $COL_SYNC_STATUS TEXT NOT NULL DEFAULT 'SYNCED',
+                $COL_LATITUDE REAL,
+                $COL_LONGITUDE REAL,
+                $COL_LOCATION_RADIUS INTEGER DEFAULT 500
             );
         """.trimIndent()
 
@@ -122,7 +128,13 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Migration logic for future schema updates
+        if (oldVersion < 2) {
+            runCatching {
+                db.execSQL("ALTER TABLE $TABLE_TASKS ADD COLUMN $COL_LATITUDE REAL;")
+                db.execSQL("ALTER TABLE $TABLE_TASKS ADD COLUMN $COL_LONGITUDE REAL;")
+                db.execSQL("ALTER TABLE $TABLE_TASKS ADD COLUMN $COL_LOCATION_RADIUS INTEGER DEFAULT 500;")
+            }
+        }
     }
 
     // ==========================================
@@ -168,12 +180,34 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
                     repeatDays = cursor.getString(cursor.getColumnIndexOrThrow(COL_REPEAT_DAYS)),
                     repeatDates = cursor.getString(cursor.getColumnIndexOrThrow(COL_REPEAT_DATES)),
                     parentId = cursor.getString(cursor.getColumnIndexOrThrow(COL_PARENT_ID)),
-                    position = cursor.getInt(cursor.getColumnIndexOrThrow(COL_POSITION))
+                    position = cursor.getInt(cursor.getColumnIndexOrThrow(COL_POSITION)),
+                    latitude = if (cursor.isNull(cursor.getColumnIndexOrThrow(COL_LATITUDE))) null else cursor.getDouble(cursor.getColumnIndexOrThrow(COL_LATITUDE)),
+                    longitude = if (cursor.isNull(cursor.getColumnIndexOrThrow(COL_LONGITUDE))) null else cursor.getDouble(cursor.getColumnIndexOrThrow(COL_LONGITUDE)),
+                    locationRadius = if (cursor.isNull(cursor.getColumnIndexOrThrow(COL_LOCATION_RADIUS))) 500 else cursor.getInt(cursor.getColumnIndexOrThrow(COL_LOCATION_RADIUS))
                 )
                 tasks.add(task)
             }
         }
         return tasks
+    }
+
+    @Synchronized
+    fun getActiveTasksWithLocation(userCode: String?): List<Task> {
+        val all = getTasksForUser(userCode)
+        return all.filter { !it.isCompleted && it.latitude != null && it.longitude != null }
+    }
+
+    @Synchronized
+    fun getActiveTasksForGeofence(userCode: String?, lat: Double, lng: Double, toleranceMeters: Double = 300.0): List<Task> {
+        val active = getActiveTasksWithLocation(userCode)
+        return active.filter { task ->
+            val tLat = task.latitude ?: return@filter false
+            val tLng = task.longitude ?: return@filter false
+            val results = FloatArray(1)
+            android.location.Location.distanceBetween(lat, lng, tLat, tLng, results)
+            val distance = results[0]
+            distance <= (task.locationRadius + toleranceMeters)
+        }
     }
 
     @Synchronized
@@ -204,6 +238,9 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
             put(COL_POSITION, task.position)
             put(COL_USER_CODE, userCode)
             put(COL_SYNC_STATUS, syncStatus)
+            put(COL_LATITUDE, task.latitude)
+            put(COL_LONGITUDE, task.longitude)
+            put(COL_LOCATION_RADIUS, task.locationRadius)
         }
         db.insertWithOnConflict(TABLE_TASKS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }

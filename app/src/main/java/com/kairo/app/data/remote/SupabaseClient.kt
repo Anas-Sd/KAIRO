@@ -83,13 +83,22 @@ object SupabaseClient {
                 val errorBody = response.body?.string().orEmpty()
                 if (errorBody.contains("tasks.parent_id does not exist") || 
                     errorBody.contains("tasks.position does not exist") ||
-                    errorBody.contains("tasks.user_code does not exist")) {
+                    errorBody.contains("tasks.user_code does not exist") ||
+                    errorBody.contains("tasks.latitude does not exist") ||
+                    errorBody.contains("tasks.longitude does not exist") ||
+                    errorBody.contains("tasks.location_radius does not exist")) {
                     val fallbackJson = json.encodeToString(taskDto)
                         .replace(""""parent_id":null,""", "")
                         .replace(Regex(""""parent_id":"[^"]*","""), "")
                         .replace(Regex(""""position":\d+,"""), "")
                         .replace(""""user_code":null,""", "")
                         .replace(Regex(""""user_code":"[^"]*","""), "")
+                        .replace(""""latitude":null,""", "")
+                        .replace(Regex(""""latitude":-?\d+(\.\d+)?,"""), "")
+                        .replace(""""longitude":null,""", "")
+                        .replace(Regex(""""longitude":-?\d+(\.\d+)?,"""), "")
+                        .replace(""""location_radius":500,""", "")
+                        .replace(Regex(""""location_radius":\d+,"""), "")
                     val retryReq = Request.Builder()
                         .url("$SUPABASE_URL/rest/v1/tasks")
                         .header("apikey", SUPABASE_KEY)
@@ -152,13 +161,22 @@ object SupabaseClient {
                 val errorBody = response.body?.string().orEmpty()
                 if (errorBody.contains("tasks.parent_id does not exist") || 
                     errorBody.contains("tasks.position does not exist") ||
-                    errorBody.contains("tasks.user_code does not exist")) {
+                    errorBody.contains("tasks.user_code does not exist") ||
+                    errorBody.contains("tasks.latitude does not exist") ||
+                    errorBody.contains("tasks.longitude does not exist") ||
+                    errorBody.contains("tasks.location_radius does not exist")) {
                     val fallbackJson = json.encodeToString(taskDto)
                         .replace(""""parent_id":null,""", "")
                         .replace(Regex(""""parent_id":"[^"]*","""), "")
                         .replace(Regex(""""position":\d+,"""), "")
                         .replace(""""user_code":null,""", "")
                         .replace(Regex(""""user_code":"[^"]*","""), "")
+                        .replace(""""latitude":null,""", "")
+                        .replace(Regex(""""latitude":-?\d+(\.\d+)?,"""), "")
+                        .replace(""""longitude":null,""", "")
+                        .replace(Regex(""""longitude":-?\d+(\.\d+)?,"""), "")
+                        .replace(""""location_radius":500,""", "")
+                        .replace(Regex(""""location_radius":\d+,"""), "")
                     val retryReq = Request.Builder()
                         .url("$SUPABASE_URL/rest/v1/tasks?id=eq.$encodedId")
                         .header("apikey", SUPABASE_KEY)

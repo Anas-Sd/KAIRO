@@ -529,7 +529,10 @@ class TaskViewModel(
         alarmToneTitle: String? = null,
         repeatType: String? = null,
         repeatDays: String? = null,
-        repeatDates: String? = null
+        repeatDates: String? = null,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        locationRadius: Int = 500
     ) {
         if (title.isBlank()) return
         val assignedSection = when {
@@ -553,6 +556,9 @@ class TaskViewModel(
             repeatDays = repeatDays,
             repeatDates = repeatDates,
             section = assignedSection,
+            latitude = latitude,
+            longitude = longitude,
+            locationRadius = locationRadius,
             updatedAt = System.currentTimeMillis()
         )
         viewModelScope.launch {
@@ -577,7 +583,10 @@ class TaskViewModel(
         repeatType: String? = null,
         repeatDays: String? = null,
         repeatDates: String? = null,
-        parentId: String? = null
+        parentId: String? = null,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        locationRadius: Int = 500
     ) {
         if (title.isBlank()) return
         val assignedSection = when {
@@ -603,7 +612,10 @@ class TaskViewModel(
             repeatDates = repeatDates,
             section = assignedSection,
             parentId = parentId,
-            position = siblingCount
+            position = siblingCount,
+            latitude = latitude,
+            longitude = longitude,
+            locationRadius = locationRadius
         )
         viewModelScope.launch {
             repository.addTask(newTask)

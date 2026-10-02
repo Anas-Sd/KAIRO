@@ -101,7 +101,10 @@ fun EditTaskDialog(
         alarmToneTitle: String?,
         repeatType: String?,
         repeatDays: String?,
-        repeatDates: String?
+        repeatDates: String?,
+        latitude: Double?,
+        longitude: Double?,
+        locationRadius: Int
     ) -> Unit
 ) {
     val context = LocalContext.current
@@ -164,7 +167,13 @@ fun EditTaskDialog(
     }
     var showRepeatPicker by remember { mutableStateOf(false) }
 
+    // Location State
     var locationText by remember { mutableStateOf(task.location ?: "") }
+    var latitude by remember { mutableStateOf<Double?>(task.latitude) }
+    var longitude by remember { mutableStateOf<Double?>(task.longitude) }
+    var locationRadius by remember { androidx.compose.runtime.mutableIntStateOf(task.locationRadius) }
+    var showLocationPicker by remember { mutableStateOf(false) }
+
     var attachmentName by remember { mutableStateOf(task.attachmentName) }
     var attachmentUri by remember { mutableStateOf(task.attachmentUri) }
     var showAttachmentSourceDialog by remember { mutableStateOf(false) }
@@ -614,45 +623,72 @@ fun EditTaskDialog(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
+                        .height(52.dp)
+                        .clickable { showLocationPicker = true },
                     shape = RoundedCornerShape(14.dp),
                     color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
-                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
+                    border = BorderStroke(1.dp, if (locationText.isNotBlank()) KairoPrimary.copy(alpha = 0.6f) else KairoOutlineVariant.copy(alpha = 0.35f))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp),
+                            .padding(horizontal = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Place,
-                            contentDescription = "Location",
-                            tint = Color(0xFF918EA2),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        OutlinedTextField(
-                            value = locationText,
-                            onValueChange = { locationText = it },
-                            placeholder = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Place,
+                                contentDescription = "Location",
+                                tint = if (locationText.isNotBlank()) KairoPrimary else Color(0xFF918EA2),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            if (locationText.isNotBlank()) {
+                                Column {
+                                    Text(
+                                        text = locationText,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${locationRadius}m radius • AI Alert",
+                                        fontSize = 11.sp,
+                                        color = KairoPrimary.copy(alpha = 0.85f)
+                                    )
+                                }
+                            } else {
                                 Text(
-                                    text = "Location (optional)",
+                                    text = "Location & Geofence (optional)",
                                     color = Color(0xFF6B687C),
                                     fontSize = 13.sp
                                 )
-                            },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                            }
+                        }
+
+                        if (locationText.isNotBlank()) {
+                            IconButton(
+                                onClick = {
+                                    locationText = ""
+                                    latitude = null
+                                    longitude = null
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear Location",
+                                    tint = Color(0xFF918EA2),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -753,7 +789,10 @@ fun EditTaskDialog(
                                 alarmToneTitle,
                                 repeatType,
                                 repeatDays,
-                                repeatDates
+                                repeatDates,
+                                latitude,
+                                longitude,
+                                locationRadius
                             )
                         },
                         enabled = title.isNotBlank(),
@@ -775,6 +814,24 @@ fun EditTaskDialog(
                 }
             }
         }
+    }
+
+    // Location Picker Dialog
+    if (showLocationPicker) {
+        LocationPickerDialog(
+            initialLocation = locationText,
+            initialLat = latitude,
+            initialLng = longitude,
+            initialRadius = locationRadius,
+            onDismissRequest = { showLocationPicker = false },
+            onLocationConfirmed = { name, lat, lng, radius ->
+                locationText = name ?: ""
+                latitude = lat
+                longitude = lng
+                locationRadius = radius
+                showLocationPicker = false
+            }
+        )
     }
 
     // Repeat Picker Dialog

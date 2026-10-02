@@ -18,6 +18,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
+    <!-- Location & Hardware Geofencing Permissions -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
     <application
         android:name=".KairoApplication"
         android:allowBackup="true"
@@ -65,7 +70,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Device Boot Completed Receiver to Reschedule Active Alarms -->
+        <!-- Device Boot Completed Receiver to Reschedule Active Alarms & Geofences -->
         <receiver
             android:name=".alarm.BootReceiver"
             android:exported="true">
@@ -74,6 +79,11 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+
+        <!-- Google Play Services Geofence Broadcast Receiver -->
+        <receiver
+            android:name=".location.GeofenceBroadcastReceiver"
+            android:exported="true" />
     </application>
 
 </manifest>

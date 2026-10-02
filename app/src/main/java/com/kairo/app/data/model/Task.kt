@@ -38,5 +38,8 @@ data class Task(
     val repeatDays: String? = null,
     val repeatDates: String? = null,
     val parentId: String? = null,
-    val position: Int = 0
+    val position: Int = 0,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val locationRadius: Int = 500
 )
