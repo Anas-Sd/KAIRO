@@ -32,6 +32,10 @@ object LocationAiNotifier {
     private const val TAG = "LocationAiNotifier"
     private const val CHANNEL_ID = "kairo_location_channel"
     private const val CHANNEL_NAME = "Location Reminders"
+
+    // Embedded Gemini API key for zero-config out-of-the-box operation
+    const val EMBEDDED_GEMINI_API_KEY = ""
+
     private const val PREFS_KEY = "kairo_ai_prefs"
     private const val KEY_GEMINI_API_KEY = "gemini_api_key"
 
@@ -46,6 +50,10 @@ object LocationAiNotifier {
     }
 
     fun getGeminiApiKey(context: Context): String? {
+        val embedded = EMBEDDED_GEMINI_API_KEY.trim()
+        if (embedded.isNotBlank() && !embedded.startsWith("YOUR_")) {
+            return embedded
+        }
         val prefs = context.getSharedPreferences(PREFS_KEY, Context.MODE_PRIVATE)
         return prefs.getString(KEY_GEMINI_API_KEY, null)?.takeIf { it.isNotBlank() }
     }

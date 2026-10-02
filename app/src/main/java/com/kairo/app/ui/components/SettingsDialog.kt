@@ -65,7 +65,6 @@ import androidx.compose.ui.window.Dialog
 import com.kairo.app.data.auth.AuthManager
 import com.kairo.app.data.remote.SupabaseClient
 import com.kairo.app.data.repository.TaskRepository
-import com.kairo.app.location.LocationAiNotifier
 import com.kairo.app.ui.theme.KairoCardSurface
 import com.kairo.app.ui.theme.KairoHighUrgent
 import com.kairo.app.ui.theme.KairoOutlineVariant
@@ -89,8 +88,6 @@ fun SettingsDialog(
     var showDeleteDataDialog by remember { mutableStateOf(false) }
     var showDeleteCompleteDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
-    var showApiKeyDialog by remember { mutableStateOf(false) }
-    var geminiApiKeyInput by remember { mutableStateOf(LocationAiNotifier.getGeminiApiKey(context) ?: "") }
 
     // Rotate Code state
     var newRotateCode by remember { mutableStateOf("") }
@@ -293,17 +290,6 @@ fun SettingsDialog(
                     title = "Delete Complete Code",
                     subtitle = "Permanently delete access code & all tasks",
                     onClick = { showDeleteCompleteDialog = true }
-                )
-
-                SettingsActionRow(
-                    icon = Icons.Default.Key,
-                    iconTint = Color(0xFF60A5FA),
-                    title = "Gemini AI Key",
-                    subtitle = if (LocationAiNotifier.getGeminiApiKey(context).isNullOrBlank()) "Add API key for AI-personalized reminders" else "Custom Gemini API key active",
-                    onClick = {
-                        geminiApiKeyInput = LocationAiNotifier.getGeminiApiKey(context) ?: ""
-                        showApiKeyDialog = true
-                    }
                 )
 
                 SettingsActionRow(
@@ -551,62 +537,6 @@ fun SettingsDialog(
             },
             dismissButton = {
                 OutlinedButton(onClick = { showLogoutDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
-    // ==========================================
-    // GEMINI AI KEY DIALOG
-    // ==========================================
-    if (showApiKeyDialog) {
-        AlertDialog(
-            onDismissRequest = { showApiKeyDialog = false },
-            title = {
-                Text("Gemini AI API Key", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            },
-            text = {
-                Column {
-                    Text(
-                        "Set your Google Gemini API key to enable personalized, smart proactive location alerts. If left blank, Kairo automatically uses built-in smart templates.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                    OutlinedTextField(
-                        value = geminiApiKeyInput,
-                        onValueChange = { geminiApiKeyInput = it },
-                        placeholder = { Text("AIzaSy...", color = Color.Gray, fontSize = 13.sp) },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = KairoPrimary,
-                            unfocusedBorderColor = KairoOutlineVariant
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        LocationAiNotifier.saveGeminiApiKey(context, geminiApiKeyInput)
-                        Toast.makeText(
-                            context,
-                            if (geminiApiKeyInput.isBlank()) "API Key cleared (using templates)" else "Gemini API Key saved!",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        showApiKeyDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary)
-                ) {
-                    Text("Save", color = Color.White)
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { showApiKeyDialog = false }) {
                     Text("Cancel")
                 }
             }
