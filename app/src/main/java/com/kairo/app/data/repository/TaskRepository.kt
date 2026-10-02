@@ -17,6 +17,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+import com.kairo.app.data.auth.AuthManager
+import com.kairo.app.data.local.LocalTaskDatabase
+import com.kairo.app.data.sync.SyncManager
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
 data class UndoAction(
     val previousTasks: List<Task>,
     val message: String
@@ -31,34 +37,48 @@ object TaskRepository {
     private val _undoAction = MutableStateFlow<UndoAction?>(null)
     val undoAction: Flow<UndoAction?> = _undoAction.asStateFlow()
 
+    private val localDb: LocalTaskDatabase
+        get() = LocalTaskDatabase.getInstance(KairoApplication.instance)
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+        isLenient = true
+    }
+
     operator fun invoke(): TaskRepository = this
     fun getInstance(): TaskRepository = this
 
     init {
+        SyncManager.onSyncComplete = {
+            loadFromLocalDb()
+        }
+        loadFromLocalDb()
         refreshFromSupabase()
     }
 
+    fun loadFromLocalDb() {
+        val userCode = AuthManager.getUserCode()
+        val localList = localDb.getTasksForUser(userCode)
+        _tasks.value = localList
+        Log.d("TaskRepository", "Loaded ${localList.size} tasks immediately from local SQLite database")
+    }
+
     fun clearTasksLocally() {
+        val userCode = AuthManager.getUserCode()
+        localDb.clearTasksForUser(userCode)
         _tasks.value = emptyList()
         _undoAction.value = null
     }
 
     fun refreshFromSupabase() {
-        val userCode = com.kairo.app.data.auth.AuthManager.getUserCode()
+        val userCode = AuthManager.getUserCode()
         if (userCode.isNullOrBlank()) {
             _tasks.value = emptyList()
             return
         }
-        scope.launch {
-            SupabaseClient.getTasks(userCode)
-                .onSuccess { remoteList ->
-                    _tasks.value = remoteList.map { it.toDomain() }
-                    Log.d("TaskRepository", "Loaded ${remoteList.size} tasks live from Supabase for user $userCode")
-                }
-                .onFailure { error ->
-                    Log.e("TaskRepository", "Failed loading from Supabase: ${error.message}")
-                }
-        }
+        loadFromLocalDb()
+        SyncManager.triggerSync()
     }
 
     // ==========================================
@@ -181,11 +201,14 @@ object TaskRepository {
             }
         }
 
-        // Sync affected tasks to Supabase
+        // Save to local SQLite and queue sync
         val affected = updatedList.filter { toComplete.contains(it.id) }
-        scope.launch {
-            SupabaseClient.batchUpdateTasks(affected.map { TaskDto.fromDomain(it) })
+        val userCode = AuthManager.getUserCode() ?: ""
+        localDb.saveTasksBatch(affected, userCode, syncStatus = "PENDING")
+        for (item in affected) {
+            localDb.enqueueSyncAction(item.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(item, userCode)), userCode)
         }
+        SyncManager.triggerSync()
     }
 
     fun toggleTaskCompletion(taskId: String) {
@@ -226,11 +249,14 @@ object TaskRepository {
             }
             _tasks.value = updatedList
 
-            // Sync to Supabase
+            // Save to local SQLite and queue sync
             val affected = updatedList.filter { toReopen.contains(it.id) }
-            scope.launch {
-                SupabaseClient.batchUpdateTasks(affected.map { TaskDto.fromDomain(it) })
+            val userCode = AuthManager.getUserCode() ?: ""
+            localDb.saveTasksBatch(affected, userCode, syncStatus = "PENDING")
+            for (item in affected) {
+                localDb.enqueueSyncAction(item.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(item, userCode)), userCode)
             }
+            SyncManager.triggerSync()
         }
     }
 
@@ -253,13 +279,11 @@ object TaskRepository {
             }
         }
 
-        scope.launch {
-            SupabaseClient.updateTaskCompletion(
-                taskId = taskId,
-                isCompleted = false,
-                section = TaskSection.OVERDUE.name,
-                completedAt = null
-            )
+        if (updatedTask != null) {
+            val userCode = AuthManager.getUserCode() ?: ""
+            localDb.saveTask(updatedTask!!, userCode, syncStatus = "PENDING")
+            localDb.enqueueSyncAction(taskId, "UPDATE", json.encodeToString(TaskDto.fromDomain(updatedTask!!, userCode)), userCode)
+            SyncManager.triggerSync()
         }
     }
 
@@ -294,13 +318,17 @@ object TaskRepository {
 
         _tasks.value = listOf(task) + updatedList
 
-        scope.launch {
-            SupabaseClient.insertTask(TaskDto.fromDomain(task))
-            if (toReopen.isNotEmpty()) {
-                val reopenedTasks = _tasks.value.filter { toReopen.contains(it.id) }
-                SupabaseClient.batchUpdateTasks(reopenedTasks.map { TaskDto.fromDomain(it) })
+        val userCode = AuthManager.getUserCode() ?: ""
+        localDb.saveTask(task, userCode, syncStatus = "PENDING")
+        localDb.enqueueSyncAction(task.id, "INSERT", json.encodeToString(TaskDto.fromDomain(task, userCode)), userCode)
+        if (toReopen.isNotEmpty()) {
+            val reopenedTasks = _tasks.value.filter { toReopen.contains(it.id) }
+            localDb.saveTasksBatch(reopenedTasks, userCode, syncStatus = "PENDING")
+            for (rt in reopenedTasks) {
+                localDb.enqueueSyncAction(rt.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(rt, userCode)), userCode)
             }
         }
+        SyncManager.triggerSync()
     }
 
     fun updateTask(task: Task) {
@@ -308,9 +336,10 @@ object TaskRepository {
             currentList.map { if (it.id == task.id) task else it }
         }
 
-        scope.launch {
-            SupabaseClient.updateTask(TaskDto.fromDomain(task))
-        }
+        val userCode = AuthManager.getUserCode() ?: ""
+        localDb.saveTask(task, userCode, syncStatus = "PENDING")
+        localDb.enqueueSyncAction(task.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(task, userCode)), userCode)
+        SyncManager.triggerSync()
     }
 
     fun reorderTasks(orderedTaskIds: List<String>) {
@@ -325,9 +354,12 @@ object TaskRepository {
         }
         _tasks.value = updated
         val changed = updated.filter { positionMap.containsKey(it.id) }
-        scope.launch {
-            SupabaseClient.batchUpdateTasks(changed.map { TaskDto.fromDomain(it) })
+        val userCode = AuthManager.getUserCode() ?: ""
+        localDb.saveTasksBatch(changed, userCode, syncStatus = "PENDING")
+        for (ct in changed) {
+            localDb.enqueueSyncAction(ct.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(ct, userCode)), userCode)
         }
+        SyncManager.triggerSync()
     }
 
     // ==========================================
@@ -386,14 +418,16 @@ object TaskRepository {
         _tasks.value = modifiedList
         _undoAction.value = UndoAction(snapshot, "Moved '${target.title}'")
 
-        // Sync batch to Supabase
-        scope.launch {
-            val changed = modifiedList.filter { updated ->
-                val prev = snapshot.find { it.id == updated.id }
-                prev == null || prev != updated
-            }
-            SupabaseClient.batchUpdateTasks(changed.map { TaskDto.fromDomain(it) })
+        val userCode = AuthManager.getUserCode() ?: ""
+        val changed = modifiedList.filter { updated ->
+            val prev = snapshot.find { it.id == updated.id }
+            prev == null || prev != updated
         }
+        localDb.saveTasksBatch(changed, userCode, syncStatus = "PENDING")
+        for (ct in changed) {
+            localDb.enqueueSyncAction(ct.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(ct, userCode)), userCode)
+        }
+        SyncManager.triggerSync()
 
         return Result.success(Unit)
     }
@@ -439,17 +473,23 @@ object TaskRepository {
         _tasks.value = modifiedList
         _undoAction.value = UndoAction(snapshot, "Deleted '${target.title}'")
 
-        // Sync deletion & reparenting to Supabase
-        scope.launch {
-            SupabaseClient.batchDeleteTasks(toDeleteIds.toList())
-            val changed = modifiedList.filter { updated ->
-                val prev = snapshot.find { it.id == updated.id }
-                prev == null || prev != updated
-            }
-            if (changed.isNotEmpty()) {
-                SupabaseClient.batchUpdateTasks(changed.map { TaskDto.fromDomain(it) })
+        // Persist deletion and reparenting to local SQLite and queue sync
+        val userCode = AuthManager.getUserCode() ?: ""
+        localDb.deleteTasksBatch(toDeleteIds.toList())
+        for (id in toDeleteIds) {
+            localDb.enqueueSyncAction(id, "DELETE", null, userCode)
+        }
+        val changed = modifiedList.filter { updated ->
+            val prev = snapshot.find { it.id == updated.id }
+            prev == null || prev != updated
+        }
+        if (changed.isNotEmpty()) {
+            localDb.saveTasksBatch(changed, userCode, syncStatus = "PENDING")
+            for (ct in changed) {
+                localDb.enqueueSyncAction(ct.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(ct, userCode)), userCode)
             }
         }
+        SyncManager.triggerSync()
     }
 
     // Recheck completion upward if all remaining subtasks under a parent are done
@@ -498,10 +538,12 @@ object TaskRepository {
         _tasks.value = restored
         _undoAction.value = null
 
-        scope.launch {
-            // Restore tasks to Supabase
-            SupabaseClient.batchUpdateTasks(restored.map { TaskDto.fromDomain(it) })
+        val userCode = AuthManager.getUserCode() ?: ""
+        localDb.saveTasksBatch(restored, userCode, syncStatus = "PENDING")
+        for (t in restored) {
+            localDb.enqueueSyncAction(t.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(t, userCode)), userCode)
         }
+        SyncManager.triggerSync()
     }
 
     fun commitUndo() {

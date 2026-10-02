@@ -22,10 +22,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.ui.graphics.Color
+import com.kairo.app.data.sync.SyncManager
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
@@ -46,7 +51,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -88,6 +92,8 @@ fun TasksScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val session by AuthManager.sessionState.collectAsState()
+    val isOnline by SyncManager.isOnline.collectAsState()
+    val isSyncing by SyncManager.isSyncing.collectAsState()
     val displayName = session?.name ?: "Tasks"
     var showSettingsDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -189,38 +195,56 @@ fun TasksScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
 
-                                // Connected to Supabase Status Pill
-                                if (uiState.isConnected) {
-                                    Box(
-                                        modifier = Modifier
-                                            .background(
-                                                color = KairoSecondary.copy(alpha = 0.12f),
-                                                shape = RoundedCornerShape(100.dp)
-                                            )
-                                            .border(
-                                                1.dp,
-                                                KairoSecondary.copy(alpha = 0.35f),
-                                                RoundedCornerShape(100.dp)
-                                            )
-                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                // Connection & Sync Status Pill
+                                val pillBg = when {
+                                    isSyncing -> KairoPrimary.copy(alpha = 0.15f)
+                                    !isOnline -> Color(0xFFF59E0B).copy(alpha = 0.15f)
+                                    else -> KairoSecondary.copy(alpha = 0.12f)
+                                }
+                                val pillBorder = when {
+                                    isSyncing -> KairoPrimary.copy(alpha = 0.4f)
+                                    !isOnline -> Color(0xFFF59E0B).copy(alpha = 0.4f)
+                                    else -> KairoSecondary.copy(alpha = 0.35f)
+                                }
+                                val pillTint = when {
+                                    isSyncing -> KairoPrimary
+                                    !isOnline -> Color(0xFFF59E0B)
+                                    else -> KairoSecondary
+                                }
+                                val pillIcon = when {
+                                    isSyncing -> Icons.Default.Sync
+                                    !isOnline -> Icons.Default.CloudOff
+                                    else -> Icons.Default.CloudDone
+                                }
+                                val pillText = when {
+                                    isSyncing -> "Syncing..."
+                                    !isOnline -> "Offline"
+                                    else -> "Synced"
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .background(color = pillBg, shape = RoundedCornerShape(100.dp))
+                                        .border(1.dp, pillBorder, RoundedCornerShape(100.dp))
+                                        .clickable { SyncManager.triggerSync() }
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.CloudDone,
-                                                contentDescription = "Connected",
-                                                tint = KairoSecondary,
-                                                modifier = Modifier.size(13.dp)
-                                            )
-                                            Text(
-                                                text = "Connected",
-                                                color = KairoSecondary,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
+                                        Icon(
+                                            imageVector = pillIcon,
+                                            contentDescription = pillText,
+                                            tint = pillTint,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Text(
+                                            text = pillText,
+                                            color = pillTint,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
                                     }
                                 }
                             }

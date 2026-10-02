@@ -12,5 +12,6 @@ class KairoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        com.kairo.app.data.sync.SyncManager.initialize(this)
     }
 }
