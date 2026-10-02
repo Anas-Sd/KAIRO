@@ -284,7 +284,7 @@ class TaskViewModel(
         val overdue = sortTasks(list.filter { isOverdue(it) }, sort)
         val today = sortTasks(list.filter { isToday(it) }, sort)
         val upcoming = sortTasks(list.filter { isUpcoming(it) }, sort)
-        val completed = sortTasks(list.filter { it.isCompleted }, sort)
+        val completed = list.filter { it.isCompleted }.sortedByDescending { it.completedAt ?: it.updatedAt }
 
         TasksUiState(
             overdueTasks = overdue,

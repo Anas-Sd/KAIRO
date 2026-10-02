@@ -1,6 +1,7 @@
 package com.kairo.app.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,8 +29,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -62,6 +61,7 @@ import com.kairo.app.ui.theme.KairoCardSurface
 import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoSecondary
+import com.kairo.app.ui.theme.KairoSurfaceContainerHighest
 import kotlinx.coroutines.delay
 
 @Composable
@@ -285,27 +285,29 @@ fun LocationPickerDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(
-                        200 to "200m (Close)",
-                        500 to "500m (Default)",
-                        1000 to "1 km (Wide)"
+                        200 to "200m",
+                        500 to "500m",
+                        1000 to "1 km"
                     ).forEach { (meters, label) ->
                         val isSelected = selectedRadius == meters
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { selectedRadius = meters },
-                            label = {
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp)
+                                .clickable { selectedRadius = meters },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) KairoPrimary.copy(alpha = 0.22f) else KairoSurfaceContainerHighest.copy(alpha = 0.45f),
+                            border = BorderStroke(1.dp, if (isSelected) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.4f))
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
                                 Text(
-                                    label,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    text = label,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = KairoPrimary,
-                                selectedLabelColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(100.dp)
-                        )
+                            }
+                        }
                     }
                 }
 

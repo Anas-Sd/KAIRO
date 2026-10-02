@@ -328,13 +328,13 @@ fun TaskCard(
                         )
                     }
 
-                    // Location Capsule (if present) - Sky blue bg with white text
+                    // Location Capsule: Sky blue bg with just location icon (similar to attachment icon)
                     val locationStr = task.location
                     if (!locationStr.isNullOrBlank()) {
                         TaskCapsule(
                             icon = Icons.Default.Place,
                             iconTint = Color.White,
-                            text = locationStr,
+                            text = null, // Only location icon inside capsule
                             containerColor = Color(0xFF0284C7), // Sky blue bg
                             contentColor = Color.White
                         )

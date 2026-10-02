@@ -35,57 +35,80 @@ object LocationSearchHelper {
         isLenient = true
     }
 
+    private fun getLastKnownLocation(context: Context): Pair<Double, Double>? {
+        return try {
+            val locManager = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager ?: return null
+            val providers = locManager.getProviders(true)
+            var bestLocation: android.location.Location? = null
+            for (provider in providers) {
+                val l = locManager.getLastKnownLocation(provider) ?: continue
+                if (bestLocation == null || l.accuracy < bestLocation.accuracy) {
+                    bestLocation = l
+                }
+            }
+            if (bestLocation != null) {
+                Pair(bestLocation.latitude, bestLocation.longitude)
+            } else null
+        } catch (_: SecurityException) {
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     suspend fun searchLocations(context: Context, query: String): List<LocationSearchResult> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.length < 2) return@withContext emptyList()
 
+        val userLoc = getLastKnownLocation(context)
         val results = mutableListOf<LocationSearchResult>()
 
-        // 1. Try Native Android Geocoder first
+        // 1. Try Native Android Geocoder first with location bias
         try {
             if (Geocoder.isPresent()) {
                 val geocoder = Geocoder(context, Locale.getDefault())
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    val addresses = geocoder.getFromLocationName(trimmed, 5)
-                    addresses?.forEach { addr ->
-                        val feature = addr.featureName ?: addr.thoroughfare ?: trimmed
-                        val full = (0..addr.maxAddressLineIndex).map { addr.getAddressLine(it) }.joinToString(", ")
-                        results.add(
-                            LocationSearchResult(
-                                title = feature,
-                                fullAddress = if (full.isNotBlank()) full else "${addr.locality ?: ""}, ${addr.adminArea ?: ""}".trim(',', ' '),
-                                latitude = addr.latitude,
-                                longitude = addr.longitude
-                            )
-                        )
+                val addresses = if (userLoc != null) {
+                    // Try nearby first (within ~1.5 degrees, ~150km)
+                    val localAddrs = try {
+                        @Suppress("DEPRECATION")
+                        geocoder.getFromLocationName(trimmed, 6, userLoc.first - 1.5, userLoc.second - 1.5, userLoc.first + 1.5, userLoc.second + 1.5)
+                    } catch (_: Exception) { null }
+
+                    if (!localAddrs.isNullOrEmpty()) {
+                        localAddrs
+                    } else {
+                        @Suppress("DEPRECATION")
+                        geocoder.getFromLocationName(trimmed, 6)
                     }
                 } else {
                     @Suppress("DEPRECATION")
-                    val addresses = geocoder.getFromLocationName(trimmed, 5)
-                    addresses?.forEach { addr ->
-                        val feature = addr.featureName ?: addr.thoroughfare ?: trimmed
-                        val full = (0..addr.maxAddressLineIndex).map { addr.getAddressLine(it) }.joinToString(", ")
-                        results.add(
-                            LocationSearchResult(
-                                title = feature,
-                                fullAddress = if (full.isNotBlank()) full else "${addr.locality ?: ""}, ${addr.adminArea ?: ""}".trim(',', ' '),
-                                latitude = addr.latitude,
-                                longitude = addr.longitude
-                            )
+                    geocoder.getFromLocationName(trimmed, 6)
+                }
+
+                addresses?.forEach { addr ->
+                    val feature = addr.featureName ?: addr.thoroughfare ?: trimmed
+                    val full = (0..addr.maxAddressLineIndex).map { addr.getAddressLine(it) }.joinToString(", ")
+                    results.add(
+                        LocationSearchResult(
+                            title = feature,
+                            fullAddress = if (full.isNotBlank()) full else "${addr.locality ?: ""}, ${addr.adminArea ?: ""}".trim(',', ' '),
+                            latitude = addr.latitude,
+                            longitude = addr.longitude
                         )
-                    }
+                    )
                 }
             }
         } catch (e: Exception) {
             Log.d(TAG, "Native geocoder error: ${e.message}")
         }
 
-        // 2. If native geocoder returns few or no results, query Photon OpenStreetMap API
-        if (results.size < 3) {
+        // 2. Query Photon OpenStreetMap API with lat/lon proximity bias
+        if (results.size < 4) {
             try {
                 val encodedQuery = java.net.URLEncoder.encode(trimmed, "UTF-8")
+                val biasParam = if (userLoc != null) "&lat=${userLoc.first}&lon=${userLoc.second}" else ""
                 val request = Request.Builder()
-                    .url("https://photon.komoot.io/api/?q=$encodedQuery&limit=6")
+                    .url("https://photon.komoot.io/api/?q=$encodedQuery$biasParam&limit=8")
                     .header("User-Agent", "KairoApp/1.0")
                     .get()
                     .build()
@@ -128,6 +151,15 @@ object LocationSearchHelper {
                 }
             } catch (e: Exception) {
                 Log.d(TAG, "Photon geocoding fallback error: ${e.message}")
+            }
+        }
+
+        // 3. Proximity Sort: If user location is known, sort results strictly by distance to user!
+        if (userLoc != null && results.isNotEmpty()) {
+            results.sortBy { res ->
+                val dist = FloatArray(1)
+                android.location.Location.distanceBetween(userLoc.first, userLoc.second, res.latitude, res.longitude, dist)
+                dist[0]
             }
         }
 
