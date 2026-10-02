@@ -38,12 +38,22 @@ object TaskRepository {
         refreshFromSupabase()
     }
 
+    fun clearTasksLocally() {
+        _tasks.value = emptyList()
+        _undoAction.value = null
+    }
+
     fun refreshFromSupabase() {
+        val userCode = com.kairo.app.data.auth.AuthManager.getUserCode()
+        if (userCode.isNullOrBlank()) {
+            _tasks.value = emptyList()
+            return
+        }
         scope.launch {
-            SupabaseClient.getTasks()
+            SupabaseClient.getTasks(userCode)
                 .onSuccess { remoteList ->
                     _tasks.value = remoteList.map { it.toDomain() }
-                    Log.d("TaskRepository", "Loaded ${remoteList.size} tasks live from Supabase")
+                    Log.d("TaskRepository", "Loaded ${remoteList.size} tasks live from Supabase for user $userCode")
                 }
                 .onFailure { error ->
                     Log.e("TaskRepository", "Failed loading from Supabase: ${error.message}")

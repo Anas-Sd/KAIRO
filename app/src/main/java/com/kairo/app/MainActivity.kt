@@ -14,7 +14,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.kairo.app.data.auth.AuthManager
 import com.kairo.app.ui.MainScreen
+import com.kairo.app.ui.screens.auth.LoginScreen
 import com.kairo.app.ui.theme.KAIROTheme
 
 class MainActivity : ComponentActivity() {
@@ -30,7 +34,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             KAIROTheme {
-                MainScreen()
+                val session by AuthManager.sessionState.collectAsState()
+                if (session == null) {
+                    LoginScreen()
+                } else {
+                    MainScreen()
+                }
             }
         }
     }

@@ -29,7 +29,8 @@ data class TaskDto(
     @SerialName("repeat_days") val repeatDays: String? = null,
     @SerialName("repeat_dates") val repeatDates: String? = null,
     @SerialName("parent_id") val parentId: String? = null,
-    @SerialName("position") val position: Int = 0
+    @SerialName("position") val position: Int = 0,
+    @SerialName("user_code") val userCode: String? = null
 ) {
     fun toDomain(): Task {
         return Task(
@@ -59,7 +60,7 @@ data class TaskDto(
     }
 
     companion object {
-        fun fromDomain(task: Task): TaskDto {
+        fun fromDomain(task: Task, userCode: String? = null): TaskDto {
             return TaskDto(
                 id = task.id,
                 title = task.title,
@@ -82,7 +83,8 @@ data class TaskDto(
                 repeatDays = task.repeatDays,
                 repeatDates = task.repeatDates,
                 parentId = task.parentId,
-                position = task.position
+                position = task.position,
+                userCode = userCode ?: com.kairo.app.data.auth.AuthManager.getUserCode()
             )
         }
     }

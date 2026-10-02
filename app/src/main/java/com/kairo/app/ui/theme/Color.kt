@@ -31,3 +31,8 @@ val KairoOnSurface = Color(0xFFE3E1EC)
 val KairoOnSurfaceVariant = Color(0xFFC8C4D9)
 val KairoOutline = Color(0xFF918EA2)
 val KairoOutlineVariant = Color(0xFF474556)
+
+// Surface & Priority aliases
+val KairoCardSurface = KairoSurfaceContainer
+val KairoHighUrgent = Color(0xFFEF4444)
+

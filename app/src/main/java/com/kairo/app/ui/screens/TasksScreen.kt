@@ -76,6 +76,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.compose.material3.ExperimentalMaterial3Api
+import com.kairo.app.data.auth.AuthManager
+import com.kairo.app.ui.components.SettingsDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,6 +87,9 @@ fun TasksScreen(
     viewModel: TaskViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val session by AuthManager.sessionState.collectAsState()
+    val displayName = session?.name ?: "Tasks"
+    var showSettingsDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val currentDateStr = SimpleDateFormat("EEEE, MMM d", Locale.getDefault()).format(Date())
 
@@ -178,7 +183,7 @@ fun TasksScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
-                                    text = "Tasks",
+                                    text = displayName,
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -250,7 +255,7 @@ fun TasksScreen(
                             }
 
                             IconButton(onClick = {
-                                Toast.makeText(context, "Settings coming soon", Toast.LENGTH_SHORT).show()
+                                showSettingsDialog = true
                             }) {
                                 Icon(
                                     imageVector = Icons.Default.Settings,
@@ -691,6 +696,13 @@ fun TasksScreen(
                         viewModel.confirmDelete(taskForDelete, deleteSubtasks)
                         Toast.makeText(context, "Task deleted", Toast.LENGTH_SHORT).show()
                     }
+                )
+            }
+
+            // Settings Dialog
+            if (showSettingsDialog) {
+                SettingsDialog(
+                    onDismissRequest = { showSettingsDialog = false }
                 )
             }
         }
