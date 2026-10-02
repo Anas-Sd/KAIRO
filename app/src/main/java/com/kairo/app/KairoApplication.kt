@@ -12,6 +12,10 @@ class KairoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        com.kairo.app.data.sync.SyncManager.initialize(this)
+        try {
+            com.kairo.app.data.sync.SyncManager.initialize(this)
+        } catch (e: Throwable) {
+            android.util.Log.e("KairoApplication", "Error initializing SyncManager: ${e.message}", e)
+        }
     }
 }

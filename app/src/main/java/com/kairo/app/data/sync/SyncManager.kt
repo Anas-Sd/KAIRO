@@ -44,29 +44,33 @@ object SyncManager {
     var onSyncComplete: (() -> Unit)? = null
 
     fun initialize(context: Context) {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        if (connectivityManager != null) {
-            val activeNetwork = connectivityManager.activeNetwork
-            val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
-            val initialOnline = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-            _isOnline.value = initialOnline
+        try {
+            val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            if (connectivityManager != null) {
+                val activeNetwork = connectivityManager.activeNetwork
+                val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
+                val initialOnline = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                _isOnline.value = initialOnline
 
-            val request = NetworkRequest.Builder()
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                .build()
+                val request = NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build()
 
-            connectivityManager.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) {
-                    Log.d(TAG, "Network became available. Triggering background sync.")
-                    _isOnline.value = true
-                    triggerSync()
-                }
+                connectivityManager.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        Log.d(TAG, "Network became available. Triggering background sync.")
+                        _isOnline.value = true
+                        triggerSync()
+                    }
 
-                override fun onLost(network: Network) {
-                    Log.d(TAG, "Network connection lost.")
-                    _isOnline.value = false
-                }
-            })
+                    override fun onLost(network: Network) {
+                        Log.d(TAG, "Network connection lost.")
+                        _isOnline.value = false
+                    }
+                })
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error initializing ConnectivityManager callback: ${e.message}", e)
         }
     }
 
