@@ -82,8 +82,14 @@ fun TasksScreen(
     val context = LocalContext.current
     val currentDateStr = SimpleDateFormat("EEEE, MMM d", Locale.getDefault()).format(Date())
 
-    // Back button handling: drill up breadcrumb level if inside subtasks
-    BackHandler(enabled = uiState.breadcrumbStack.isNotEmpty()) {
+    // Back button handling:
+    // 1. If search box is open, hitting back closes the search box
+    BackHandler(enabled = uiState.isSearchActive) {
+        viewModel.closeSearchBar()
+    }
+
+    // 2. If inside subtasks breadcrumb stack, drill up a level
+    BackHandler(enabled = !uiState.isSearchActive && uiState.breadcrumbStack.isNotEmpty()) {
         viewModel.popBreadcrumb()
     }
 
@@ -312,6 +318,7 @@ fun TasksScreen(
                                 onAddSubtask = { viewModel.openAddSubtask(task) },
                                 onAdjustParent = { viewModel.openAdjustParent(task) },
                                 onDrillDown = { viewModel.drillDown(task) },
+                                onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
                                 modifier = Modifier.animateItem()
                             )
                         }
@@ -354,6 +361,7 @@ fun TasksScreen(
                                 onAddSubtask = { viewModel.openAddSubtask(task) },
                                 onAdjustParent = { viewModel.openAdjustParent(task) },
                                 onDrillDown = { viewModel.drillDown(task) },
+                                onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
                                 modifier = Modifier.animateItem()
                             )
                         }
@@ -396,6 +404,7 @@ fun TasksScreen(
                                 onAddSubtask = { viewModel.openAddSubtask(task) },
                                 onAdjustParent = { viewModel.openAdjustParent(task) },
                                 onDrillDown = { viewModel.drillDown(task) },
+                                onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
                                 modifier = Modifier.animateItem()
                             )
                         }
@@ -438,6 +447,7 @@ fun TasksScreen(
                                 onAddSubtask = { viewModel.openAddSubtask(task) },
                                 onAdjustParent = { viewModel.openAdjustParent(task) },
                                 onDrillDown = { viewModel.drillDown(task) },
+                                onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
                                 modifier = Modifier.animateItem()
                             )
                         }

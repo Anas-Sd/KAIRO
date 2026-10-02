@@ -354,6 +354,21 @@ class TaskViewModel(
         }
     }
 
+    fun navigateToParent(parentId: String) {
+        val allTasks = repository.getAllTasks()
+        val parentTask = allTasks.find { it.id == parentId } ?: return
+        val ancestors = repository.getAncestorIds(parentId, allTasks)
+            .mapNotNull { id -> allTasks.find { it.id == id } }
+            .reversed()
+        _searchQuery.value = ""
+        _uiToggles.update {
+            it.copy(
+                breadcrumbStack = ancestors + parentTask,
+                isSearchActive = false
+            )
+        }
+    }
+
     // Subtasks & Adjust Parent
     fun openAddSubtask(parentTask: Task) {
         _uiToggles.update {
@@ -463,6 +478,11 @@ class TaskViewModel(
             if (!nextState) _searchQuery.value = ""
             current.copy(isSearchActive = nextState)
         }
+    }
+
+    fun closeSearchBar() {
+        _searchQuery.value = ""
+        _uiToggles.update { it.copy(isSearchActive = false) }
     }
 
     fun setShowCreateDialog(show: Boolean) {

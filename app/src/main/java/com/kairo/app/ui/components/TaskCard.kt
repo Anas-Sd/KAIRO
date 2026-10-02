@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.SubdirectoryArrowRight
+import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.AttachFile
@@ -101,6 +103,7 @@ fun TaskCard(
     subtaskProgress: Pair<Int, Int>? = null,
     parentTitle: String? = null,
     onDrillDown: () -> Unit = {},
+    onNavigateToParent: (parentId: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -175,6 +178,23 @@ fun TaskCard(
                 .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment = Alignment.Top
         ) {
+            // Left Adjustment Handle (3-dots handle to adjust parent / hierarchy)
+            Box(
+                modifier = Modifier
+                    .padding(top = 2.dp, end = 8.dp)
+                    .size(24.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { onAdjustParent() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DragIndicator,
+                    contentDescription = "Adjust parent",
+                    tint = Color(0xFF918EA2),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -252,17 +272,12 @@ fun TaskCard(
                 ) {
                     // Priority Capsule
                     val priorityBg = when (task.priority) {
-                        Priority.LOW -> KairoSecondary.copy(alpha = 0.15f)
-                        Priority.MEDIUM -> KairoPrimary.copy(alpha = 0.15f)
-                        Priority.HIGH -> Color(0xFFFFB77D).copy(alpha = 0.18f)
-                        Priority.URGENT -> KairoErrorContainer
+                        Priority.LOW -> Color(0xFF16A34A) // Green bg
+                        Priority.MEDIUM -> Color(0xFF2563EB) // Blue bg
+                        Priority.HIGH -> Color(0xFFDC2626) // Red bg
+                        Priority.URGENT -> Color(0xFFDC2626) // Same as Red
                     }
-                    val priorityText = when (task.priority) {
-                        Priority.LOW -> KairoSecondary
-                        Priority.MEDIUM -> KairoPrimary
-                        Priority.HIGH -> Color(0xFFFFB77D)
-                        Priority.URGENT -> KairoOnErrorContainer
-                    }
+                    val priorityText = Color.White // White text for all priorities
                     TaskCapsule(
                         text = task.priority.label,
                         containerColor = priorityBg,
@@ -296,27 +311,27 @@ fun TaskCard(
                         )
                     }
 
-                    // Location Capsule (if present)
+                    // Location Capsule (if present) - Sky blue bg with white text
                     val locationStr = task.location
                     if (!locationStr.isNullOrBlank()) {
                         TaskCapsule(
                             icon = Icons.Default.Place,
-                            iconTint = Color(0xFF918EA2),
+                            iconTint = Color.White,
                             text = locationStr,
-                            containerColor = KairoSurfaceContainerHigh,
-                            contentColor = Color(0xFFC8C4D9)
+                            containerColor = Color(0xFF0284C7), // Sky blue bg
+                            contentColor = Color.White
                         )
                     }
 
-                    // Attachment Capsule: If present, show ONLY the attachment symbol!
+                    // Attachment Capsule: Yellow bg with attachment symbol
                     val fileStr = task.attachmentName
                     if (!fileStr.isNullOrBlank()) {
                         TaskCapsule(
                             icon = Icons.Default.AttachFile,
-                            iconTint = Color(0xFFC8C4D9),
+                            iconTint = Color(0xFF1A1A24),
                             text = null, // Only the attachment icon inside the capsule
-                            containerColor = KairoSurfaceContainerHigh,
-                            contentColor = Color(0xFFC8C4D9)
+                            containerColor = Color(0xFFEAB308), // Yellow bg
+                            contentColor = Color(0xFF1A1A24)
                         )
                     }
 
@@ -331,14 +346,17 @@ fun TaskCard(
                         )
                     }
 
-                    // Parent breadcrumb label (when shown in search / flat views)
-                    if (!parentTitle.isNullOrBlank()) {
+                    // Parent breadcrumb label (when shown in search / flat views) - Green bg with white text & clickable
+                    if (!parentTitle.isNullOrBlank() && task.parentId != null) {
                         TaskCapsule(
                             icon = Icons.Default.Folder,
-                            iconTint = Color(0xFF918EA2),
+                            iconTint = Color.White,
                             text = "Under: $parentTitle",
-                            containerColor = KairoSurfaceContainerHigh,
-                            contentColor = Color(0xFFC8C4D9)
+                            containerColor = Color(0xFF16A34A), // Green bg
+                            contentColor = Color.White,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(100.dp))
+                                .clickable { onNavigateToParent(task.parentId) }
                         )
                     }
                 }

@@ -85,17 +85,25 @@ fun AdjustParentDialog(
         allTasks.any { it.parentId == task.id }
     }
 
-    // Excluded task IDs: self, all recursive descendants, and current parent
-    val excludedIds = remember(task, allTasks) {
+    // Loop forbidden IDs: self and all recursive descendants (strictly hidden everywhere to prevent loops)
+    val loopForbiddenIds = remember(task, allTasks) {
         val descendants = TaskRepository.getDescendantIds(task.id, allTasks)
         val set = mutableSetOf(task.id)
         set.addAll(descendants)
-        task.parentId?.let { set.add(it) }
         set
     }
 
-    // Expanded task IDs in the hierarchical tree view
-    val expandedIds = remember { mutableStateListOf<String>() }
+    val currentParentId = task.parentId
+
+    // Expanded task IDs in the hierarchical tree view (auto-expand current parent and ancestors so siblings are visible)
+    val expandedIds = remember(task, allTasks) {
+        val list = mutableStateListOf<String>()
+        task.parentId?.let { pId ->
+            list.add(pId)
+            list.addAll(TaskRepository.getAncestorIds(pId, allTasks))
+        }
+        list
+    }
 
     fun handlePick(newParentId: String?) {
         targetParentId = newParentId
@@ -285,7 +293,7 @@ fun AdjustParentDialog(
                         }
 
                         // 2. Hierarchical Tree of eligible tasks
-                        val topLevelTasks = allTasks.filter { it.parentId == null && !excludedIds.contains(it.id) }
+                        val topLevelTasks = allTasks.filter { it.parentId == null && !loopForbiddenIds.contains(it.id) }
                             .sortedBy { it.position }
 
                         if (topLevelTasks.isEmpty() && task.parentId == null) {
@@ -305,7 +313,8 @@ fun AdjustParentDialog(
                             }
                         } else {
                             fun renderTree(parentTask: Task, depth: Int) {
-                                val hasChildren = allTasks.any { it.parentId == parentTask.id && !excludedIds.contains(it.id) }
+                                val isCurrentParent = (parentTask.id == currentParentId)
+                                val hasChildren = allTasks.any { it.parentId == parentTask.id && !loopForbiddenIds.contains(it.id) }
                                 val isExpanded = expandedIds.contains(parentTask.id)
                                 val isSelected = (hasPickedTarget && selectedParentId == parentTask.id)
                                 val indentDp = (depth * 16).coerceAtMost(64).dp
@@ -317,7 +326,7 @@ fun AdjustParentDialog(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(start = indentDp)
-                                            .clickable {
+                                            .clickable(enabled = !isCurrentParent) {
                                                 selectedParentId = parentTask.id
                                                 hasPickedTarget = true
                                             }
@@ -357,29 +366,45 @@ fun AdjustParentDialog(
                                                     text = parentTask.title,
                                                     fontSize = 14.sp,
                                                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                                    color = Color.White,
+                                                    color = if (isCurrentParent) Color(0xFF918EA2) else Color.White,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
+
+                                                if (isCurrentParent) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = KairoSurfaceContainerHighest.copy(alpha = 0.6f)
+                                                    ) {
+                                                        Text(
+                                                            text = "Current parent",
+                                                            fontSize = 10.sp,
+                                                            color = Color(0xFFC8C4D9),
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
                                             }
 
-                                            RadioButton(
-                                                selected = isSelected,
-                                                onClick = {
-                                                    selectedParentId = parentTask.id
-                                                    hasPickedTarget = true
-                                                },
-                                                colors = RadioButtonDefaults.colors(
-                                                    selectedColor = TealActive,
-                                                    unselectedColor = Color(0xFF6B687C)
+                                            if (!isCurrentParent) {
+                                                RadioButton(
+                                                    selected = isSelected,
+                                                    onClick = {
+                                                        selectedParentId = parentTask.id
+                                                        hasPickedTarget = true
+                                                    },
+                                                    colors = RadioButtonDefaults.colors(
+                                                        selectedColor = TealActive,
+                                                        unselectedColor = Color(0xFF6B687C)
+                                                    )
                                                 )
-                                            )
+                                            }
                                         }
                                     }
                                 }
 
                                 if (hasChildren && isExpanded) {
-                                    val children = allTasks.filter { it.parentId == parentTask.id && !excludedIds.contains(it.id) }
+                                    val children = allTasks.filter { it.parentId == parentTask.id && !loopForbiddenIds.contains(it.id) }
                                         .sortedBy { it.position }
                                     children.forEach { child ->
                                         renderTree(child, depth + 1)
@@ -394,7 +419,7 @@ fun AdjustParentDialog(
                     } else {
                         // 3. Search Results: Flat list with full ancestor paths
                         val matchingTasks = allTasks.filter {
-                            !excludedIds.contains(it.id) && it.title.contains(searchQuery, ignoreCase = true)
+                            !loopForbiddenIds.contains(it.id) && it.id != currentParentId && it.title.contains(searchQuery, ignoreCase = true)
                         }
 
                         if (matchingTasks.isEmpty()) {
@@ -492,7 +517,7 @@ fun AdjustParentDialog(
                                 handlePick(selectedParentId)
                             }
                         },
-                        enabled = hasPickedTarget,
+                        enabled = hasPickedTarget && selectedParentId != currentParentId,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary)
