@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SubdirectoryArrowRight
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.AttachFile
@@ -203,11 +204,12 @@ fun TaskCard(
                 }
 
                 if (hasSubtasks) {
+                    Spacer(modifier = Modifier.height(2.dp))
                     Icon(
-                        imageVector = Icons.Default.ExpandMore,
+                        imageVector = Icons.Default.SubdirectoryArrowRight,
                         contentDescription = "Has subtasks",
                         tint = KairoPrimary,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                 }
             }
