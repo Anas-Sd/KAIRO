@@ -24,7 +24,12 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.zIndex
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -104,6 +109,9 @@ fun TaskCard(
     parentTitle: String? = null,
     onDrillDown: () -> Unit = {},
     onNavigateToParent: (parentId: String) -> Unit = {},
+    dragHandleModifier: Modifier = Modifier,
+    isBeingDragged: Boolean = false,
+    dragOffsetY: Float = 0f,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -160,6 +168,16 @@ fun TaskCard(
         modifier = modifier
             .fillMaxWidth()
             .then(
+                if (isBeingDragged) {
+                    Modifier
+                        .zIndex(2f)
+                        .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+                        .shadow(12.dp, RoundedCornerShape(16.dp))
+                } else {
+                    Modifier
+                }
+            )
+            .then(
                 if (hasSubtasks) {
                     Modifier.clickable { onDrillDown() }
                 } else {
@@ -168,9 +186,9 @@ fun TaskCard(
             ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = KairoSurfaceContainerLowest
+            containerColor = if (isBeingDragged) KairoSurfaceContainerHigh else KairoSurfaceContainerLowest
         ),
-        border = BorderStroke(1.dp, borderColor)
+        border = BorderStroke(1.dp, if (isBeingDragged) KairoPrimary else borderColor)
     ) {
         Row(
             modifier = Modifier
@@ -178,19 +196,18 @@ fun TaskCard(
                 .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment = Alignment.Top
         ) {
-            // Left Adjustment Handle (3-dots handle to adjust parent / hierarchy)
+            // Left Drag Handle (for reordering tasks up/down)
             Box(
                 modifier = Modifier
                     .padding(top = 2.dp, end = 8.dp)
                     .size(24.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .clickable { onAdjustParent() },
+                    .then(dragHandleModifier),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.DragIndicator,
-                    contentDescription = "Adjust parent",
-                    tint = Color(0xFF918EA2),
+                    contentDescription = "Drag to reorder",
+                    tint = if (isBeingDragged) KairoPrimary else Color(0xFF918EA2),
                     modifier = Modifier.size(18.dp)
                 )
             }

@@ -303,6 +303,23 @@ object TaskRepository {
         }
     }
 
+    fun reorderTasks(orderedTaskIds: List<String>) {
+        val now = System.currentTimeMillis()
+        val current = _tasks.value
+        val positionMap = orderedTaskIds.mapIndexed { index, id -> id to index }.toMap()
+        val updated = current.map { task ->
+            val newPos = positionMap[task.id]
+            if (newPos != null && newPos != task.position) {
+                task.copy(position = newPos, updatedAt = now)
+            } else task
+        }
+        _tasks.value = updated
+        val changed = updated.filter { positionMap.containsKey(it.id) }
+        scope.launch {
+            SupabaseClient.batchUpdateTasks(changed.map { TaskDto.fromDomain(it) })
+        }
+    }
+
     // ==========================================
     // MOVE TASK & ADJUST PARENT
     // ==========================================

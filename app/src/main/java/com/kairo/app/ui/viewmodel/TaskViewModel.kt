@@ -391,6 +391,10 @@ class TaskViewModel(
         }
     }
 
+    fun reorderTasks(orderedTaskIds: List<String>) {
+        repository.reorderTasks(orderedTaskIds)
+    }
+
     // Deletion Modal
     fun openDeleteConfirm(task: Task) {
         _uiToggles.update { it.copy(taskForDeleteConfirm = task) }

@@ -32,14 +32,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -91,6 +97,61 @@ fun TasksScreen(
     // 2. If inside subtasks breadcrumb stack, drill up a level
     BackHandler(enabled = !uiState.isSearchActive && uiState.breadcrumbStack.isNotEmpty()) {
         viewModel.popBreadcrumb()
+    }
+
+    // Drag-to-reorder state across sections
+    var draggingTaskId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var localReorderList by remember { mutableStateOf<List<com.kairo.app.data.model.Task>?>(null) }
+
+    fun buildDragHandleModifier(task: com.kairo.app.data.model.Task, sectionTasks: List<com.kairo.app.data.model.Task>): Modifier {
+        return Modifier.pointerInput(task.id) {
+            detectDragGestures(
+                onDragStart = {
+                    draggingTaskId = task.id
+                    dragOffsetY = 0f
+                    localReorderList = sectionTasks
+                },
+                onDrag = { change, dragAmount ->
+                    change.consume()
+                    dragOffsetY += dragAmount.y
+                    val currentList = localReorderList
+                    val currentId = draggingTaskId
+                    if (currentList != null && currentId != null) {
+                        val currentIndex = currentList.indexOfFirst { it.id == currentId }
+                        val itemThreshold = 140f
+                        if (dragOffsetY > itemThreshold && currentIndex in 0 until currentList.lastIndex) {
+                            val mutable = currentList.toMutableList()
+                            val targetIndex = currentIndex + 1
+                            val item = mutable.removeAt(currentIndex)
+                            mutable.add(targetIndex, item)
+                            localReorderList = mutable
+                            dragOffsetY -= itemThreshold
+                        } else if (dragOffsetY < -itemThreshold && currentIndex > 0) {
+                            val mutable = currentList.toMutableList()
+                            val targetIndex = currentIndex - 1
+                            val item = mutable.removeAt(currentIndex)
+                            mutable.add(targetIndex, item)
+                            localReorderList = mutable
+                            dragOffsetY += itemThreshold
+                        }
+                    }
+                },
+                onDragEnd = {
+                    localReorderList?.let { reordered ->
+                        viewModel.reorderTasks(reordered.map { it.id })
+                    }
+                    draggingTaskId = null
+                    dragOffsetY = 0f
+                    localReorderList = null
+                },
+                onDragCancel = {
+                    draggingTaskId = null
+                    dragOffsetY = 0f
+                    localReorderList = null
+                }
+            )
+        }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -283,11 +344,15 @@ fun TasksScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // 1. OVERDUE SECTION
-                if (uiState.overdueTasks.isNotEmpty()) {
+                val overdueList = if (draggingTaskId != null && localReorderList?.any { task -> uiState.overdueTasks.any { it.id == task.id } } == true) {
+                    localReorderList ?: uiState.overdueTasks
+                } else uiState.overdueTasks
+
+                if (overdueList.isNotEmpty()) {
                     item(key = "section_overdue_header") {
                         SectionHeader(
                             title = "Overdue",
-                            countText = "${uiState.overdueTasks.size} overdue",
+                            countText = "${overdueList.size} overdue",
                             sectionType = SectionType.OVERDUE,
                             isExpanded = uiState.overdueExpanded,
                             onToggle = { viewModel.toggleOverdue() }
@@ -295,12 +360,13 @@ fun TasksScreen(
                     }
 
                     if (uiState.overdueExpanded) {
-                        items(uiState.overdueTasks, key = { it.id }) { task ->
+                        items(overdueList, key = { it.id }) { task ->
                             val hasSubtasks = uiState.allTasks.any { it.parentId == task.id }
                             val subtaskProgress = if (hasSubtasks) TaskRepository.getSubtaskProgress(task.id, uiState.allTasks) else null
                             val parentTitle = if (uiState.breadcrumbStack.isEmpty() && task.parentId != null) {
                                 TaskRepository.getParentTask(task, uiState.allTasks)?.title
                             } else null
+                            val isBeingDragged = (task.id == draggingTaskId)
 
                             TaskCard(
                                 task = task,
@@ -319,6 +385,9 @@ fun TasksScreen(
                                 onAdjustParent = { viewModel.openAdjustParent(task) },
                                 onDrillDown = { viewModel.drillDown(task) },
                                 onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
+                                dragHandleModifier = buildDragHandleModifier(task, overdueList),
+                                isBeingDragged = isBeingDragged,
+                                dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
                                 modifier = Modifier.animateItem()
                             )
                         }
@@ -326,11 +395,15 @@ fun TasksScreen(
                 }
 
                 // 2. TODAY SECTION
-                if (uiState.todayTasks.isNotEmpty()) {
+                val todayList = if (draggingTaskId != null && localReorderList?.any { task -> uiState.todayTasks.any { it.id == task.id } } == true) {
+                    localReorderList ?: uiState.todayTasks
+                } else uiState.todayTasks
+
+                if (todayList.isNotEmpty()) {
                     item(key = "section_today_header") {
                         SectionHeader(
                             title = "Today",
-                            countText = "${uiState.todayTasks.size} tasks",
+                            countText = "${todayList.size} tasks",
                             sectionType = SectionType.TODAY,
                             isExpanded = uiState.todayExpanded,
                             onToggle = { viewModel.toggleToday() }
@@ -338,12 +411,13 @@ fun TasksScreen(
                     }
 
                     if (uiState.todayExpanded) {
-                        items(uiState.todayTasks, key = { it.id }) { task ->
+                        items(todayList, key = { it.id }) { task ->
                             val hasSubtasks = uiState.allTasks.any { it.parentId == task.id }
                             val subtaskProgress = if (hasSubtasks) TaskRepository.getSubtaskProgress(task.id, uiState.allTasks) else null
                             val parentTitle = if (uiState.breadcrumbStack.isEmpty() && task.parentId != null) {
                                 TaskRepository.getParentTask(task, uiState.allTasks)?.title
                             } else null
+                            val isBeingDragged = (task.id == draggingTaskId)
 
                             TaskCard(
                                 task = task,
@@ -362,6 +436,9 @@ fun TasksScreen(
                                 onAdjustParent = { viewModel.openAdjustParent(task) },
                                 onDrillDown = { viewModel.drillDown(task) },
                                 onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
+                                dragHandleModifier = buildDragHandleModifier(task, todayList),
+                                isBeingDragged = isBeingDragged,
+                                dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
                                 modifier = Modifier.animateItem()
                             )
                         }
@@ -369,11 +446,15 @@ fun TasksScreen(
                 }
 
                 // 3. UPCOMING SECTION
-                if (uiState.upcomingTasks.isNotEmpty()) {
+                val upcomingList = if (draggingTaskId != null && localReorderList?.any { task -> uiState.upcomingTasks.any { it.id == task.id } } == true) {
+                    localReorderList ?: uiState.upcomingTasks
+                } else uiState.upcomingTasks
+
+                if (upcomingList.isNotEmpty()) {
                     item(key = "section_upcoming_header") {
                         SectionHeader(
                             title = "Upcoming",
-                            countText = "${uiState.upcomingTasks.size} scheduled",
+                            countText = "${upcomingList.size} scheduled",
                             sectionType = SectionType.UPCOMING,
                             isExpanded = uiState.upcomingExpanded,
                             onToggle = { viewModel.toggleUpcoming() }
@@ -381,12 +462,13 @@ fun TasksScreen(
                     }
 
                     if (uiState.upcomingExpanded) {
-                        items(uiState.upcomingTasks, key = { it.id }) { task ->
+                        items(upcomingList, key = { it.id }) { task ->
                             val hasSubtasks = uiState.allTasks.any { it.parentId == task.id }
                             val subtaskProgress = if (hasSubtasks) TaskRepository.getSubtaskProgress(task.id, uiState.allTasks) else null
                             val parentTitle = if (uiState.breadcrumbStack.isEmpty() && task.parentId != null) {
                                 TaskRepository.getParentTask(task, uiState.allTasks)?.title
                             } else null
+                            val isBeingDragged = (task.id == draggingTaskId)
 
                             TaskCard(
                                 task = task,
@@ -405,6 +487,9 @@ fun TasksScreen(
                                 onAdjustParent = { viewModel.openAdjustParent(task) },
                                 onDrillDown = { viewModel.drillDown(task) },
                                 onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
+                                dragHandleModifier = buildDragHandleModifier(task, upcomingList),
+                                isBeingDragged = isBeingDragged,
+                                dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
                                 modifier = Modifier.animateItem()
                             )
                         }
@@ -412,11 +497,15 @@ fun TasksScreen(
                 }
 
                 // 4. COMPLETED SECTION
-                if (uiState.completedTasks.isNotEmpty()) {
+                val completedList = if (draggingTaskId != null && localReorderList?.any { task -> uiState.completedTasks.any { it.id == task.id } } == true) {
+                    localReorderList ?: uiState.completedTasks
+                } else uiState.completedTasks
+
+                if (completedList.isNotEmpty()) {
                     item(key = "section_completed_header") {
                         SectionHeader(
                             title = "Completed",
-                            countText = "${uiState.completedTasks.size} completed",
+                            countText = "${completedList.size} completed",
                             sectionType = SectionType.COMPLETED,
                             isExpanded = uiState.completedExpanded,
                             onToggle = { viewModel.toggleCompleted() }
@@ -424,12 +513,13 @@ fun TasksScreen(
                     }
 
                     if (uiState.completedExpanded) {
-                        items(uiState.completedTasks, key = { it.id }) { task ->
+                        items(completedList, key = { it.id }) { task ->
                             val hasSubtasks = uiState.allTasks.any { it.parentId == task.id }
                             val subtaskProgress = if (hasSubtasks) TaskRepository.getSubtaskProgress(task.id, uiState.allTasks) else null
                             val parentTitle = if (uiState.breadcrumbStack.isEmpty() && task.parentId != null) {
                                 TaskRepository.getParentTask(task, uiState.allTasks)?.title
                             } else null
+                            val isBeingDragged = (task.id == draggingTaskId)
 
                             TaskCard(
                                 task = task,
@@ -448,6 +538,9 @@ fun TasksScreen(
                                 onAdjustParent = { viewModel.openAdjustParent(task) },
                                 onDrillDown = { viewModel.drillDown(task) },
                                 onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
+                                dragHandleModifier = buildDragHandleModifier(task, completedList),
+                                isBeingDragged = isBeingDragged,
+                                dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
                                 modifier = Modifier.animateItem()
                             )
                         }
