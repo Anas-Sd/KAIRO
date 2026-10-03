@@ -50,13 +50,16 @@ object LocationAiNotifier {
     }
 
     fun getGeminiApiKey(context: Context): String? {
+        val prefs = context.getSharedPreferences(PREFS_KEY, Context.MODE_PRIVATE)
+        val userSaved = prefs.getString(KEY_GEMINI_API_KEY, null)?.takeIf { it.isNotBlank() }
+        if (!userSaved.isNullOrBlank()) return userSaved
+
         try {
             val decoded = String(android.util.Base64.decode(DEFAULT_ENCODED_KEY, android.util.Base64.DEFAULT), Charsets.UTF_8).trim()
-            if (decoded.isNotBlank()) return decoded
+            if (decoded.isNotBlank() && decoded.startsWith("AIzaSy")) return decoded
         } catch (_: Exception) {}
 
-        val prefs = context.getSharedPreferences(PREFS_KEY, Context.MODE_PRIVATE)
-        return prefs.getString(KEY_GEMINI_API_KEY, null)?.takeIf { it.isNotBlank() }
+        return null
     }
 
     fun saveGeminiApiKey(context: Context, apiKey: String) {
@@ -75,8 +78,19 @@ object LocationAiNotifier {
             val userName = AuthManager.getUserName() ?: "there"
             val localDb = LocalTaskDatabase.getInstance(context)
 
-            // 1. Fetch matching active tasks from local SQLite
+            // 1. Fetch matching active tasks from local SQLite (with fallback)
             val matchingTasks = localDb.getActiveTasksForGeofence(userCode, latitude, longitude)
+                .ifEmpty {
+                    localDb.getActiveTasksWithLocation(userCode).filter {
+                        it.location?.equals(locationName, ignoreCase = true) == true
+                    }
+                }
+                .ifEmpty {
+                    localDb.getActiveTasksWithLocation(null).filter {
+                        it.location?.equals(locationName, ignoreCase = true) == true
+                    }
+                }
+
             if (matchingTasks.isEmpty()) {
                 Log.d(TAG, "No active uncompleted tasks near $locationName. Skipping alert.")
                 return@withContext
@@ -129,7 +143,7 @@ object LocationAiNotifier {
             """.trimIndent()
 
             val request = Request.Builder()
-                .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=$apiKey")
+                .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey")
                 .post(requestJson.toRequestBody("application/json".toMediaType()))
                 .build()
 
@@ -184,8 +198,21 @@ object LocationAiNotifier {
                 description = "Proactive reminders triggered when arriving near saved locations"
                 enableVibration(true)
                 enableLights(true)
+                setShowBadge(true)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
             notificationManager.createNotificationChannel(channel)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.w(TAG, "POST_NOTIFICATIONS not granted. Cannot post notification.")
+                return
+            }
         }
 
         val tapIntent = Intent(context, MainActivity::class.java).apply {
@@ -202,18 +229,20 @@ object LocationAiNotifier {
         val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_map)
+            .setSmallIcon(com.kairo.app.R.mipmap.ic_launcher)
             .setContentTitle("📍 Near $locationName")
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setAutoCancel(true)
             .setSound(soundUri)
-            .setVibrate(longArrayOf(0, 250, 150, 250))
+            .setVibrate(longArrayOf(0, 300, 200, 300))
             .setContentIntent(pendingIntent)
             .build()
 
-        notificationManager.notify(locationName.hashCode(), notification)
-        Log.d(TAG, "Posted location reminder notification for $locationName")
+        val notifId = (locationName.hashCode() and 0x7FFFFFFF) + 10000
+        notificationManager.notify(notifId, notification)
+        Log.d(TAG, "Posted location reminder notification for $locationName (id: $notifId)")
     }
 }

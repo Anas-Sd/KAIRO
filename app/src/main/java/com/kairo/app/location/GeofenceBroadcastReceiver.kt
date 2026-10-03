@@ -29,6 +29,11 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             val prefs = context.getSharedPreferences(PREFS_COOLDOWN, Context.MODE_PRIVATE)
             prefs.edit().putLong(locationKey, System.currentTimeMillis()).apply()
         }
+
+        fun clearCooldown(context: Context, locationKey: String) {
+            val prefs = context.getSharedPreferences(PREFS_COOLDOWN, Context.MODE_PRIVATE)
+            prefs.edit().remove(locationKey).apply()
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -59,31 +64,38 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
         val triggeringLocation = geofencingEvent.triggeringLocation
 
-        for (geofence in triggeringGeofences) {
-            val requestId = geofence.requestId
-            // RequestId format: "LOCATION_NAME|LAT|LNG"
-            val parts = requestId.split("|")
-            val locationName = parts.getOrNull(0) ?: "Saved Location"
-            val lat = parts.getOrNull(1)?.toDoubleOrNull() ?: triggeringLocation?.latitude ?: 0.0
-            val lng = parts.getOrNull(2)?.toDoubleOrNull() ?: triggeringLocation?.longitude ?: 0.0
+        val pendingResult = goAsync()
+        scope.launch {
+            try {
+                for (geofence in triggeringGeofences) {
+                    val requestId = geofence.requestId
+                    // RequestId format: "LOCATION_NAME|LAT|LNG"
+                    val parts = requestId.split("|")
+                    val locationName = parts.getOrNull(0) ?: "Saved Location"
+                    val lat = parts.getOrNull(1)?.toDoubleOrNull() ?: triggeringLocation?.latitude ?: 0.0
+                    val lng = parts.getOrNull(2)?.toDoubleOrNull() ?: triggeringLocation?.longitude ?: 0.0
 
-            val locationKey = "cooldown_${locationName.lowercase().trim()}"
-            if (!shouldAlertLocation(context, locationKey)) {
-                Log.d(TAG, "2-hour cooldown is active for '$locationName'. Skipping notification.")
-                continue
-            }
+                    val locationKey = "cooldown_${locationName.lowercase().trim()}"
+                    if (!shouldAlertLocation(context, locationKey)) {
+                        Log.d(TAG, "2-hour cooldown is active for '$locationName'. Skipping notification.")
+                        continue
+                    }
 
-            // Record cooldown trigger
-            recordAlertTriggered(context, locationKey)
+                    // Record cooldown trigger
+                    recordAlertTriggered(context, locationKey)
 
-            // Trigger proactive AI notification
-            scope.launch {
-                LocationAiNotifier.notifyUserForLocation(
-                    context = context,
-                    locationName = locationName,
-                    latitude = lat,
-                    longitude = lng
-                )
+                    // Trigger proactive AI notification
+                    LocationAiNotifier.notifyUserForLocation(
+                        context = context,
+                        locationName = locationName,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing geofences: ${e.message}", e)
+            } finally {
+                pendingResult.finish()
             }
         }
     }

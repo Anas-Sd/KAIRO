@@ -51,6 +51,10 @@ object GeofenceManager {
             ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         } catch (_: Throwable) {
             false
@@ -58,7 +62,7 @@ object GeofenceManager {
     }
 
     @SuppressLint("MissingPermission")
-    fun syncGeofencesWithActiveTasks(context: Context) {
+    fun syncGeofencesWithActiveTasks(context: Context, forceImmediateCheck: Boolean = false) {
         scope.launch {
             try {
                 if (!hasLocationPermission(context)) {
@@ -71,8 +75,11 @@ object GeofenceManager {
                 val userCode = AuthManager.getUserCode()
                 val localDb = LocalTaskDatabase.getInstance(context)
 
-                // Get uncompleted tasks with valid coordinates
-                val locationTasks = localDb.getActiveTasksWithLocation(userCode)
+                // Get uncompleted tasks with valid coordinates (with fallback)
+                val locationTasks = localDb.getActiveTasksWithLocation(userCode).ifEmpty {
+                    localDb.getActiveTasksWithLocation(null)
+                }
+
                 if (locationTasks.isEmpty()) {
                     Log.d(TAG, "No active location tasks. Removing all active geofences.")
                     client.removeGeofences(pendingIntent)
@@ -91,7 +98,8 @@ object GeofenceManager {
                     val sample = tasksAtSpot.first()
                     val lat = sample.latitude ?: continue
                     val lng = sample.longitude ?: continue
-                    val radius = sample.locationRadius.toFloat().coerceAtLeast(100f)
+                    val maxRadius = tasksAtSpot.maxOfOrNull { it.locationRadius } ?: sample.locationRadius
+                    val radius = maxRadius.toFloat().coerceAtLeast(100f)
                     val locationName = sample.location ?: "Saved Place"
 
                     val requestId = "$locationName|$lat|$lng"
@@ -101,7 +109,7 @@ object GeofenceManager {
                         .setCircularRegion(lat, lng, radius)
                         .setExpirationDuration(Geofence.NEVER_EXPIRE)
                         .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_DWELL)
-                        .setLoiteringDelay(60 * 1000) // 1 minute dwell time
+                        .setLoiteringDelay(30 * 1000) // 30s dwell time
                         .build()
 
                     geofences.add(geofence)
@@ -121,8 +129,53 @@ object GeofenceManager {
                             Log.e(TAG, "Failed registering geofences: ${error.message}")
                         }
                 }
+
+                // Immediate Proximity Evaluation:
+                // If user is currently within radius (e.g. set 800m away with 1km radius), notify immediately!
+                checkImmediateProximity(context, uniqueLocations, forceImmediateCheck)
             } catch (e: Exception) {
                 Log.e(TAG, "Exception syncing geofences: ${e.message}", e)
+            }
+        }
+    }
+
+    private suspend fun checkImmediateProximity(
+        context: Context,
+        uniqueLocations: Map<String, List<com.kairo.app.data.model.Task>>,
+        forceImmediateCheck: Boolean
+    ) {
+        val userLocation = LocationSearchHelper.getUserLocation(context) ?: return
+        val (userLat, userLng) = userLocation
+        Log.d(TAG, "Evaluating immediate proximity at ($userLat, $userLng), forceImmediateCheck=$forceImmediateCheck")
+
+        for ((_, tasksAtSpot) in uniqueLocations) {
+            val sample = tasksAtSpot.first()
+            val lat = sample.latitude ?: continue
+            val lng = sample.longitude ?: continue
+            val maxRadius = tasksAtSpot.maxOfOrNull { it.locationRadius } ?: sample.locationRadius
+            val locationName = sample.location ?: "Saved Place"
+
+            val dist = LocationSearchHelper.calculateDistance(userLat, userLng, lat, lng)
+            Log.d(TAG, "Proximity check for '$locationName': distance=${dist.toInt()}m, triggerRadius=${maxRadius}m")
+
+            if (dist <= maxRadius) {
+                val locationKey = "cooldown_${locationName.lowercase().trim()}"
+                if (forceImmediateCheck) {
+                    GeofenceBroadcastReceiver.clearCooldown(context, locationKey)
+                }
+
+                if (GeofenceBroadcastReceiver.shouldAlertLocation(context, locationKey)) {
+                    Log.d(TAG, "User IS WITHIN radius ($dist <= $maxRadius) for '$locationName'! Firing proactive notification.")
+                    GeofenceBroadcastReceiver.recordAlertTriggered(context, locationKey)
+                    LocationAiNotifier.notifyUserForLocation(
+                        context = context,
+                        locationName = locationName,
+                        latitude = lat,
+                        longitude = lng
+                    )
+                } else {
+                    Log.d(TAG, "User is within radius for '$locationName', but 2-hour cooldown is active.")
+                }
             }
         }
     }
