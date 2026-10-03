@@ -33,7 +33,7 @@ data class TaskDto(
     @SerialName("user_code") val userCode: String? = null,
     @SerialName("latitude") val latitude: Double? = null,
     @SerialName("longitude") val longitude: Double? = null,
-    @SerialName("location_radius") val locationRadius: Int? = 500
+    @SerialName("radius_meters") val locationRadius: Int? = 500
 ) {
     fun toDomain(): Task {
         return Task(
