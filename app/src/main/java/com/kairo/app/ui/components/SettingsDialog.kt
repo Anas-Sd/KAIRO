@@ -1,6 +1,7 @@
 package com.kairo.app.ui.components
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SyncLock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -43,6 +45,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,17 +62,21 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.kairo.app.data.auth.AuthManager
 import com.kairo.app.data.remote.SupabaseClient
 import com.kairo.app.data.repository.TaskRepository
+import com.kairo.app.data.sync.SyncManager
 import com.kairo.app.ui.theme.KairoCardSurface
 import com.kairo.app.ui.theme.KairoHighUrgent
 import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @Composable
 fun SettingsDialog(
@@ -82,6 +89,15 @@ fun SettingsDialog(
 
     val userName = session?.name ?: "User"
     val userCode = session?.code ?: ""
+
+    val isOnline by SyncManager.isOnline.collectAsState()
+    val isSyncing by SyncManager.isSyncing.collectAsState()
+    val offlineTasks by SyncManager.offlineTasks.collectAsState()
+    val pendingCount by SyncManager.pendingSyncCount.collectAsState()
+
+    LaunchedEffect(Unit) {
+        SyncManager.refreshOfflineQueueStatus()
+    }
 
     var isCodeVisible by remember { mutableStateOf(false) }
     var showRotateDialog by remember { mutableStateOf(false) }
@@ -255,6 +271,193 @@ fun SettingsDialog(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp)
                             )
+                        }
+                    }
+                }
+
+                // ==========================================
+                // OFFLINE TASKS & SYNC SECTION
+                // ==========================================
+                Spacer(modifier = Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "OFFLINE TASKS & SYNC",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(100.dp),
+                        color = if (isOnline) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, if (isOnline) Color(0xFF10B981).copy(alpha = 0.4f) else Color(0xFFF59E0B).copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B))
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = if (isOnline) "Online" else "Offline",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.3f))
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (pendingCount == 0) "All tasks synchronized" else "$pendingCount task${if (pendingCount == 1) "" else "s"} stored offline",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (pendingCount == 0) "Local database is in sync with cloud DB" else "Pending database update — stored safely locally",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        val result = SyncManager.performSync(forceCheckNetwork = true)
+                                        if (result.isSuccess) {
+                                            val count = result.getOrDefault(0)
+                                            Toast.makeText(context, if (count > 0) "Synced $count tasks with database!" else "Database is already up to date", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            if (!isOnline) {
+                                                Toast.makeText(context, "Device offline. Tasks are safely saved locally.", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "Sync check completed", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                enabled = !isSyncing,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                if (isSyncing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        color = Color.White,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Syncing", fontSize = 12.sp)
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Sync,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Sync Now", fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        if (offlineTasks.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Text(
+                                text = "PENDING OFFLINE TASKS",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.8.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                offlineTasks.take(15).forEach { item ->
+                                    val (badgeBg, badgeFg, badgeText) = when {
+                                        item.action.contains("Created", ignoreCase = true) -> Triple(Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981), "NEW")
+                                        item.action.contains("Updated", ignoreCase = true) -> Triple(Color(0xFF38BDF8).copy(alpha = 0.15f), Color(0xFF38BDF8), "EDIT")
+                                        item.action.contains("Deleted", ignoreCase = true) -> Triple(Color(0xFFEF4444).copy(alpha = 0.15f), Color(0xFFEF4444), "DELETE")
+                                        else -> Triple(Color(0xFFF59E0B).copy(alpha = 0.15f), Color(0xFFF59E0B), "OFFLINE")
+                                    }
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(
+                                                MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                                RoundedCornerShape(8.dp)
+                                            )
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = badgeBg
+                                        ) {
+                                            Text(
+                                                text = badgeText,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = badgeFg,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(10.dp))
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = item.title,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+                                            val timeStr = timeFormat.format(java.util.Date(item.timestamp))
+                                            Text(
+                                                text = "${item.action} • $timeStr",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

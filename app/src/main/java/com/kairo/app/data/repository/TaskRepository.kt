@@ -557,7 +557,8 @@ object TaskRepository {
         val userCode = AuthManager.getUserCode() ?: ""
         localDb.deleteTasksBatch(toDeleteIds.toList())
         for (id in toDeleteIds) {
-            localDb.enqueueSyncAction(id, "DELETE", null, userCode)
+            val taskTitle = current.find { it.id == id }?.title ?: target.title
+            localDb.enqueueSyncAction(id, "DELETE", taskTitle, userCode)
         }
         val changed = modifiedList.filter { updated ->
             val prev = snapshot.find { it.id == updated.id }

@@ -94,6 +94,7 @@ fun TasksScreen(
     val session by AuthManager.sessionState.collectAsState()
     val isOnline by SyncManager.isOnline.collectAsState()
     val isSyncing by SyncManager.isSyncing.collectAsState()
+    val pendingSyncCount by SyncManager.pendingSyncCount.collectAsState()
     val displayName = session?.name ?: "Tasks"
     var showSettingsDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -218,7 +219,8 @@ fun TasksScreen(
                                 }
                                 val pillText = when {
                                     isSyncing -> "Syncing..."
-                                    !isOnline -> "Offline"
+                                    !isOnline -> if (pendingSyncCount > 0) "Offline ($pendingSyncCount)" else "Offline"
+                                    pendingSyncCount > 0 -> "Syncing ($pendingSyncCount)"
                                     else -> "Synced"
                                 }
 
@@ -226,7 +228,7 @@ fun TasksScreen(
                                     modifier = Modifier
                                         .background(color = pillBg, shape = RoundedCornerShape(100.dp))
                                         .border(1.dp, pillBorder, RoundedCornerShape(100.dp))
-                                        .clickable { SyncManager.triggerSync() }
+                                        .clickable { showSettingsDialog = true }
                                         .padding(horizontal = 8.dp, vertical = 3.dp)
                                 ) {
                                     Row(
@@ -653,7 +655,8 @@ fun TasksScreen(
                             longitude = longitude,
                             locationRadius = locationRadius
                         )
-                        Toast.makeText(context, "Task created successfully", Toast.LENGTH_SHORT).show()
+                        val msg = if (isOnline) "Task created successfully" else "Task saved offline • Stored in Settings > Offline Tasks"
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -695,7 +698,8 @@ fun TasksScreen(
                             longitude = longitude,
                             locationRadius = locationRadius
                         )
-                        Toast.makeText(context, "Task updated successfully", Toast.LENGTH_SHORT).show()
+                        val msg = if (isOnline) "Task updated successfully" else "Task updated offline • Stored in Settings > Offline Tasks"
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -709,7 +713,8 @@ fun TasksScreen(
                     onDismiss = { viewModel.dismissAdjustParent() },
                     onMoveConfirmed = { newParentId, moveSubtasks ->
                         viewModel.moveTask(taskForAdjust.id, newParentId, moveSubtasks)
-                        Toast.makeText(context, "Task moved successfully", Toast.LENGTH_SHORT).show()
+                        val msg = if (isOnline) "Task moved successfully" else "Task moved offline • Stored in Settings > Offline Tasks"
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -724,7 +729,8 @@ fun TasksScreen(
                     onDismiss = { viewModel.dismissDeleteConfirm() },
                     onConfirmDelete = { deleteSubtasks ->
                         viewModel.confirmDelete(taskForDelete, deleteSubtasks)
-                        Toast.makeText(context, "Task deleted", Toast.LENGTH_SHORT).show()
+                        val msg = if (isOnline) "Task deleted" else "Task deleted offline • Stored in Settings > Offline Tasks"
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 )
             }

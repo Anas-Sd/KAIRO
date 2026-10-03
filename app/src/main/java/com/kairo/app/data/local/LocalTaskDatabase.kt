@@ -18,6 +18,15 @@ data class PendingSyncAction(
     val createdAt: Long
 )
 
+data class OfflineTaskItem(
+    val taskId: String,
+    val title: String,
+    val action: String, // "Created Offline", "Updated Offline", "Deleted Offline", "Stored Offline"
+    val timestamp: Long,
+    val notes: String? = null,
+    val location: String? = null
+)
+
 class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
@@ -340,11 +349,62 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
     // ==========================================
 
     @Synchronized
+    fun getSyncActionForTask(taskId: String): PendingSyncAction? {
+        val db = readableDatabase
+        db.rawQuery("SELECT * FROM $TABLE_SYNC_QUEUE WHERE $COL_QUEUE_TASK_ID = ? LIMIT 1", arrayOf(taskId)).use { cursor ->
+            if (cursor.moveToFirst()) {
+                return PendingSyncAction(
+                    id = cursor.getLong(cursor.getColumnIndexOrThrow(COL_QUEUE_ID)),
+                    taskId = cursor.getString(cursor.getColumnIndexOrThrow(COL_QUEUE_TASK_ID)),
+                    action = cursor.getString(cursor.getColumnIndexOrThrow(COL_QUEUE_ACTION)),
+                    payloadJson = cursor.getString(cursor.getColumnIndexOrThrow(COL_QUEUE_PAYLOAD)),
+                    userCode = cursor.getString(cursor.getColumnIndexOrThrow(COL_QUEUE_USER_CODE)),
+                    createdAt = cursor.getLong(cursor.getColumnIndexOrThrow(COL_QUEUE_CREATED_AT))
+                )
+            }
+        }
+        return null
+    }
+
+    @Synchronized
     fun enqueueSyncAction(taskId: String, action: String, payloadJson: String?, userCode: String) {
         val db = writableDatabase
-        // Remove redundant intermediate queue items for this task if a new update arrives
-        if (action == "DELETE") {
-            db.delete(TABLE_SYNC_QUEUE, "$COL_QUEUE_TASK_ID = ?", arrayOf(taskId))
+        val existingAction = getSyncActionForTask(taskId)
+        if (existingAction != null) {
+            if (existingAction.action == "INSERT") {
+                if (action == "DELETE") {
+                    // Task was created offline and deleted offline; simply remove from queue
+                    db.delete(TABLE_SYNC_QUEUE, "$COL_QUEUE_TASK_ID = ?", arrayOf(taskId))
+                    Log.d(TAG, "Task $taskId created and deleted offline. Dropped from sync queue.")
+                    runCatching { com.kairo.app.data.sync.SyncManager.refreshOfflineQueueStatus() }
+                    return
+                } else if (action == "UPDATE") {
+                    // Task was created offline and updated offline; update payload of INSERT
+                    val values = ContentValues().apply {
+                        put(COL_QUEUE_PAYLOAD, payloadJson)
+                        put(COL_QUEUE_CREATED_AT, System.currentTimeMillis())
+                    }
+                    db.update(TABLE_SYNC_QUEUE, values, "$COL_QUEUE_TASK_ID = ?", arrayOf(taskId))
+                    Log.d(TAG, "Updated pending INSERT payload for task: $taskId")
+                    runCatching { com.kairo.app.data.sync.SyncManager.refreshOfflineQueueStatus() }
+                    return
+                }
+            } else if (existingAction.action == "UPDATE") {
+                if (action == "UPDATE") {
+                    // Update latest payload
+                    val values = ContentValues().apply {
+                        put(COL_QUEUE_PAYLOAD, payloadJson)
+                        put(COL_QUEUE_CREATED_AT, System.currentTimeMillis())
+                    }
+                    db.update(TABLE_SYNC_QUEUE, values, "$COL_QUEUE_TASK_ID = ?", arrayOf(taskId))
+                    Log.d(TAG, "Updated pending UPDATE payload for task: $taskId")
+                    runCatching { com.kairo.app.data.sync.SyncManager.refreshOfflineQueueStatus() }
+                    return
+                } else if (action == "DELETE") {
+                    // Replace UPDATE with DELETE
+                    db.delete(TABLE_SYNC_QUEUE, "$COL_QUEUE_TASK_ID = ?", arrayOf(taskId))
+                }
+            }
         }
 
         val values = ContentValues().apply {
@@ -356,16 +416,20 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         }
         db.insert(TABLE_SYNC_QUEUE, null, values)
         Log.d(TAG, "Enqueued sync action: $action for task: $taskId")
+        runCatching { com.kairo.app.data.sync.SyncManager.refreshOfflineQueueStatus() }
     }
 
     @Synchronized
-    fun getPendingSyncActions(userCode: String): List<PendingSyncAction> {
+    fun getPendingSyncActions(userCode: String?): List<PendingSyncAction> {
         val list = mutableListOf<PendingSyncAction>()
         val db = readableDatabase
-        db.rawQuery(
-            "SELECT * FROM $TABLE_SYNC_QUEUE WHERE $COL_QUEUE_USER_CODE = ? ORDER BY $COL_QUEUE_ID ASC",
-            arrayOf(userCode)
-        ).use { cursor ->
+        val query = if (userCode.isNullOrBlank()) {
+            "SELECT * FROM $TABLE_SYNC_QUEUE WHERE $COL_QUEUE_USER_CODE IS NULL OR $COL_QUEUE_USER_CODE = '' ORDER BY $COL_QUEUE_ID ASC"
+        } else {
+            "SELECT * FROM $TABLE_SYNC_QUEUE WHERE $COL_QUEUE_USER_CODE = ? OR $COL_QUEUE_USER_CODE IS NULL OR $COL_QUEUE_USER_CODE = '' ORDER BY $COL_QUEUE_ID ASC"
+        }
+        val args = if (userCode.isNullOrBlank()) null else arrayOf(userCode)
+        db.rawQuery(query, args).use { cursor ->
             while (cursor.moveToNext()) {
                 list.add(
                     PendingSyncAction(
@@ -386,6 +450,88 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
     fun removeSyncAction(actionId: Long) {
         val db = writableDatabase
         db.delete(TABLE_SYNC_QUEUE, "$COL_QUEUE_ID = ?", arrayOf(actionId.toString()))
+        runCatching { com.kairo.app.data.sync.SyncManager.refreshOfflineQueueStatus() }
+    }
+
+    @Synchronized
+    fun getPendingSyncCount(userCode: String?): Int {
+        val db = readableDatabase
+        val query = if (userCode.isNullOrBlank()) {
+            "SELECT COUNT(*) FROM $TABLE_SYNC_QUEUE WHERE $COL_QUEUE_USER_CODE IS NULL OR $COL_QUEUE_USER_CODE = ''"
+        } else {
+            "SELECT COUNT(*) FROM $TABLE_SYNC_QUEUE WHERE $COL_QUEUE_USER_CODE = ? OR $COL_QUEUE_USER_CODE IS NULL OR $COL_QUEUE_USER_CODE = ''"
+        }
+        val args = if (userCode.isNullOrBlank()) null else arrayOf(userCode)
+        db.rawQuery(query, args).use { cursor ->
+            if (cursor.moveToFirst()) {
+                return cursor.getInt(0)
+            }
+        }
+        return 0
+    }
+
+    @Synchronized
+    fun getOfflinePendingTasks(userCode: String?): List<OfflineTaskItem> {
+        val pendingActions = getPendingSyncActions(userCode)
+        val allTasksMap = getTasksForUser(userCode).associateBy { it.id }
+        val result = mutableListOf<OfflineTaskItem>()
+        val processedTaskIds = mutableSetOf<String>()
+
+        for (action in pendingActions) {
+            processedTaskIds.add(action.taskId)
+            val actionLabel = when (action.action) {
+                "INSERT" -> "Created Offline"
+                "UPDATE" -> "Updated Offline"
+                "DELETE" -> "Deleted Offline"
+                else -> action.action
+            }
+
+            val localTask = allTasksMap[action.taskId]
+            val title = if (localTask != null && localTask.title.isNotBlank()) {
+                localTask.title
+            } else if (!action.payloadJson.isNullOrBlank()) {
+                try {
+                    val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+                    val dto = json.decodeFromString<com.kairo.app.data.remote.TaskDto>(action.payloadJson)
+                    dto.title.ifBlank { "Task" }
+                } catch (_: Exception) {
+                    action.payloadJson.take(35)
+                }
+            } else {
+                "Task (${action.taskId.take(6)})"
+            }
+
+            result.add(
+                OfflineTaskItem(
+                    taskId = action.taskId,
+                    title = title,
+                    action = actionLabel,
+                    timestamp = action.createdAt,
+                    notes = localTask?.notes,
+                    location = localTask?.location
+                )
+            )
+        }
+
+        // Also check if any task in tasks table has PENDING status not captured in queue
+        val pendingStatusTasks = allTasksMap.values.filter { it.id !in processedTaskIds }
+        for (task in pendingStatusTasks) {
+            val status = getTaskSyncStatus(task.id)
+            if (status == "PENDING") {
+                result.add(
+                    OfflineTaskItem(
+                        taskId = task.id,
+                        title = task.title,
+                        action = "Stored Offline",
+                        timestamp = task.updatedAt,
+                        notes = task.notes,
+                        location = task.location
+                    )
+                )
+            }
+        }
+
+        return result.sortedByDescending { it.timestamp }
     }
 
     // ==========================================
