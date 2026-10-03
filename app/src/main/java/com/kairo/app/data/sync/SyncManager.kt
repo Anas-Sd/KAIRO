@@ -1,211 +1,43 @@
 package com.kairo.app.data.sync
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
-import android.util.Log
-import com.kairo.app.KairoApplication
-import com.kairo.app.data.auth.AuthManager
-import com.kairo.app.data.local.LocalTaskDatabase
-import com.kairo.app.data.remote.SupabaseClient
-import com.kairo.app.data.remote.TaskDto
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.kairo.app.data.local.OfflineTaskItem
+import com.kairo.app.feature.sync.TaskSyncFacade
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.json.Json
 
+/**
+ * Backward compatibility forwarder for [com.kairo.app.feature.sync.TaskSyncFacade].
+ * All synchronization logic now lives in the Cloud Sync feature box `com.kairo.app.feature.sync`.
+ */
 object SyncManager {
 
-    private const val TAG = "SyncManager"
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val syncMutex = Mutex()
+    val isOnline: StateFlow<Boolean>
+        get() = TaskSyncFacade.isOnline
 
-    private val json = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-        isLenient = true
-    }
+    val isSyncing: StateFlow<Boolean>
+        get() = TaskSyncFacade.isSyncing
 
-    private val _isOnline = MutableStateFlow(true)
-    val isOnline: StateFlow<Boolean> = _isOnline.asStateFlow()
+    val offlineTasks: StateFlow<List<OfflineTaskItem>>
+        get() = TaskSyncFacade.offlineTasks
 
-    private val _isSyncing = MutableStateFlow(false)
-    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+    val pendingSyncCount: StateFlow<Int>
+        get() = TaskSyncFacade.pendingSyncCount
 
-    private val _offlineTasks = MutableStateFlow<List<com.kairo.app.data.local.OfflineTaskItem>>(emptyList())
-    val offlineTasks: StateFlow<List<com.kairo.app.data.local.OfflineTaskItem>> = _offlineTasks.asStateFlow()
-
-    private val _pendingSyncCount = MutableStateFlow(0)
-    val pendingSyncCount: StateFlow<Int> = _pendingSyncCount.asStateFlow()
-
-    // Callback invoked when local database has been updated by remote changes
-    var onSyncComplete: (() -> Unit)? = null
-
-    fun checkCurrentOnlineStatus(context: Context): Boolean {
-        return try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
-            val activeNet = cm.activeNetwork ?: return false
-            val caps = cm.getNetworkCapabilities(activeNet) ?: return false
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    fun refreshOfflineQueueStatus() {
-        try {
-            val userCode = AuthManager.getUserCode()
-            val localDb = LocalTaskDatabase.getInstance(KairoApplication.instance)
-            val items = localDb.getOfflinePendingTasks(userCode)
-            _offlineTasks.value = items
-            _pendingSyncCount.value = items.size
-        } catch (e: Throwable) {
-            Log.e(TAG, "Error refreshing offline queue status: ${e.message}")
-        }
-    }
-
-    fun initialize(context: Context) {
-        try {
-            _isOnline.value = checkCurrentOnlineStatus(context)
-            refreshOfflineQueueStatus()
-
-            val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            if (connectivityManager != null) {
-                val request = NetworkRequest.Builder()
-                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                    .build()
-
-                connectivityManager.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
-                    override fun onAvailable(network: Network) {
-                        Log.d(TAG, "Network became available. Triggering background sync.")
-                        _isOnline.value = true
-                        refreshOfflineQueueStatus()
-                        triggerSync()
-                    }
-
-                    override fun onLost(network: Network) {
-                        Log.d(TAG, "Network connection lost.")
-                        _isOnline.value = checkCurrentOnlineStatus(context)
-                        refreshOfflineQueueStatus()
-                    }
-
-                    override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-                        val hasInternet = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                        _isOnline.value = hasInternet
-                        refreshOfflineQueueStatus()
-                    }
-                })
-            }
-        } catch (e: Throwable) {
-            Log.e(TAG, "Error initializing ConnectivityManager callback: ${e.message}", e)
-        }
-    }
-
-    fun triggerSync() {
-        scope.launch {
-            performSync()
-        }
-    }
-
-    suspend fun performSync(forceCheckNetwork: Boolean = false): Result<Int> = syncMutex.withLock {
-        val userCode = AuthManager.getUserCode()
-        val context = KairoApplication.instance
-        if (forceCheckNetwork) {
-            _isOnline.value = checkCurrentOnlineStatus(context)
+    var onSyncComplete: (() -> Unit)?
+        get() = TaskSyncFacade.onSyncComplete
+        set(value) {
+            TaskSyncFacade.onSyncComplete = value
         }
 
-        if (userCode.isNullOrBlank()) {
-            refreshOfflineQueueStatus()
-            return Result.success(0)
-        }
+    fun initialize(context: Context) = TaskSyncFacade.initialize(context)
 
-        if (!_isOnline.value) {
-            Log.d(TAG, "Device is offline. Skipping remote sync.")
-            refreshOfflineQueueStatus()
-            return Result.failure(Exception("Device is offline"))
-        }
+    fun triggerSync() = TaskSyncFacade.triggerSync()
 
-        _isSyncing.value = true
-        val localDb = LocalTaskDatabase.getInstance(KairoApplication.instance)
-        var syncedActionsCount = 0
+    suspend fun performSync(forceCheckNetwork: Boolean = false): Result<Int> =
+        TaskSyncFacade.performSync(forceCheckNetwork)
 
-        try {
-            // ==========================================
-            // 1. OUTBOUND SYNC: Drain Local Queue
-            // ==========================================
-            val pendingActions = localDb.getPendingSyncActions(userCode)
-            Log.d(TAG, "Processing ${pendingActions.size} pending outbound sync actions for $userCode")
+    fun refreshOfflineQueueStatus() = TaskSyncFacade.refreshOfflineQueueStatus()
 
-            for (action in pendingActions) {
-                try {
-                    when (action.action) {
-                        "INSERT", "UPDATE" -> {
-                            val dto = if (!action.payloadJson.isNullOrBlank()) {
-                                try {
-                                    json.decodeFromString<TaskDto>(action.payloadJson)
-                                } catch (_: Exception) {
-                                    val localTask = localDb.getTasksForUser(userCode).find { it.id == action.taskId }
-                                    if (localTask != null) TaskDto.fromDomain(localTask, userCode) else null
-                                }
-                            } else {
-                                val localTask = localDb.getTasksForUser(userCode).find { it.id == action.taskId }
-                                if (localTask != null) TaskDto.fromDomain(localTask, userCode) else null
-                            }
-
-                            if (dto != null) {
-                                if (action.action == "INSERT") {
-                                    SupabaseClient.insertTask(dto).getOrThrow()
-                                } else {
-                                    SupabaseClient.updateTask(dto).getOrThrow()
-                                }
-                                localDb.updateSyncStatus(action.taskId, "SYNCED")
-                                syncedActionsCount++
-                            }
-                            localDb.removeSyncAction(action.id)
-                        }
-
-                        "DELETE" -> {
-                            SupabaseClient.deleteTask(action.taskId).getOrThrow()
-                            localDb.removeSyncAction(action.id)
-                            syncedActionsCount++
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to sync action ${action.id} (${action.action}): ${e.message}")
-                    // Keep in queue to retry on next sync cycle
-                }
-            }
-
-            // ==========================================
-            // 2. INBOUND SYNC: Pull Cloud Changes
-            // ==========================================
-            val remoteResult = SupabaseClient.getTasks(userCode)
-            remoteResult.onSuccess { remoteList ->
-                val domainTasks = remoteList.map { it.toDomain() }
-                localDb.mergeRemoteTasks(domainTasks, userCode)
-                Log.d(TAG, "Successfully synced ${domainTasks.size} remote tasks to local database.")
-                onSyncComplete?.invoke()
-            }.onFailure { error ->
-                Log.e(TAG, "Failed to pull remote tasks: ${error.message}")
-            }
-
-            refreshOfflineQueueStatus()
-            Result.success(syncedActionsCount)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error during sync cycle: ${e.message}", e)
-            refreshOfflineQueueStatus()
-            Result.failure(e)
-        } finally {
-            _isSyncing.value = false
-            refreshOfflineQueueStatus()
-        }
-    }
+    fun checkCurrentOnlineStatus(context: Context): Boolean =
+        TaskSyncFacade.checkCurrentOnlineStatus(context)
 }
