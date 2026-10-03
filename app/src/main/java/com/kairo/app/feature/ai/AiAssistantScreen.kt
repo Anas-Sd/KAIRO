@@ -315,7 +315,7 @@ fun AiAssistantScreen(
                             text = if (isVoiceModeActive) {
                                 if (isListening) "🎙️ Listening to you..." else if (isSpeaking) "🔊 Speaking..." else "Voice mode ready"
                             } else {
-                                "Groq 70B • Gemini Vision • Offline Fallback"
+                                "Groq 120B • Gemini Vision • Offline Fallback"
                             },
                             fontSize = 11.sp,
                             color = if (isVoiceModeActive) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant

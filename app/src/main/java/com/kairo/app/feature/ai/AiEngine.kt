@@ -66,7 +66,7 @@ object AiEngine {
 
         return try {
             val decoded = String(Base64.decode(DEFAULT_GEMINI_ENCODED, Base64.DEFAULT), Charsets.UTF_8).trim()
-            if (decoded.isNotBlank() && decoded.startsWith("AIzaSy")) decoded else null
+            if (decoded.isNotBlank()) decoded else null
         } catch (_: Exception) {
             null
         }
@@ -97,36 +97,36 @@ object AiEngine {
             }
         }
 
-        // 2. Tier 1: Groq Llama-3.3-70b-versatile (Ultra-fast primary)
+        // 2. Groq Multi-Model Tier (openai/gpt-oss-120b -> openai/gpt-oss-20b -> qwen/qwen3.8-27b)
         val groqKey = getGroqApiKey()
         if (groqKey.isNotBlank()) {
-            try {
-                val groq70bResp = callGroq(groqKey, "llama-3.3-70b-versatile", userMessage, history)
-                if (groq70bResp != null) {
-                    return@withContext groq70bResp.copy(latencyMs = System.currentTimeMillis() - startTime)
+            val groqModels = listOf(
+                "openai/gpt-oss-120b" to "Groq 120B",
+                "openai/gpt-oss-20b" to "Groq 20B Failover",
+                "qwen/qwen3.8-27b" to "Groq Qwen 27B",
+                "llama-3.3-70b-versatile" to "Groq Llama 70B",
+                "llama-3.1-8b-instant" to "Groq Llama 8B"
+            )
+
+            for ((idx, modelPair) in groqModels.withIndex()) {
+                val (modelName, displayName) = modelPair
+                try {
+                    val groqResp = callGroq(groqKey, modelName, userMessage, history)
+                    if (groqResp != null) {
+                        val warning = if (idx > 0) "Switched to high-speed failover ($displayName)." else null
+                        return@withContext groqResp.copy(
+                            providerUsed = displayName,
+                            quotaWarning = warning,
+                            latencyMs = System.currentTimeMillis() - startTime
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Groq model $modelName error: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Groq 70B error: ${e.message}")
             }
         }
 
-        // 3. Tier 2: Groq Llama-3.1-8b-instant (Lightweight high-quota fallback)
-        if (groqKey.isNotBlank()) {
-            try {
-                val groq8bResp = callGroq(groqKey, "llama-3.1-8b-instant", userMessage, history)
-                if (groq8bResp != null) {
-                    return@withContext groq8bResp.copy(
-                        providerUsed = "Groq (8B Failover)",
-                        quotaWarning = "Primary quota throttled; seamlessly switched to high-speed failover.",
-                        latencyMs = System.currentTimeMillis() - startTime
-                    )
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Groq 8B error: ${e.message}")
-            }
-        }
-
-        // 4. Tier 3: Gemini Flash text fallback
+        // 3. Google Gemini Flash Tier (gemini-3.8-flash -> gemini-flash-latest)
         val geminiKey = getGeminiApiKey()
         if (geminiKey != null) {
             try {
@@ -134,7 +134,7 @@ object AiEngine {
                 if (geminiResp != null) {
                     return@withContext geminiResp.copy(
                         providerUsed = "Gemini Flash",
-                        quotaWarning = "Groq limit reached; switched to Gemini Flash.",
+                        quotaWarning = "Groq quota limit reached; switched to Gemini Flash.",
                         latencyMs = System.currentTimeMillis() - startTime
                     )
                 }
@@ -143,7 +143,7 @@ object AiEngine {
             }
         }
 
-        // 5. Tier 4: Local Deterministic NLP Rule Engine (Zero-API Offline Fallback)
+        // 4. Tier 4: Local Deterministic NLP Rule Engine (Zero-API Offline Fallback)
         val localResp = executeLocalNlpFallback(userMessage)
         return@withContext localResp.copy(
             providerUsed = "Local Offline Engine",
@@ -278,7 +278,7 @@ object AiEngine {
         userPrompt: String,
         bitmap: Bitmap
     ): AiResponse? {
-        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
+        val geminiModels = listOf("gemini-3.8-flash", "gemini-flash-latest")
 
         // Compress bitmap to JPEG to minimize token burn
         val outputStream = ByteArrayOutputStream()
@@ -312,45 +312,50 @@ object AiEngine {
             })
         }
 
-        val request = Request.Builder()
-            .url(endpoint)
-            .post(payload.toString().toRequestBody("application/json".toMediaType()))
-            .build()
+        for (model in geminiModels) {
+            val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
+            val request = Request.Builder()
+                .url(endpoint)
+                .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                .build()
 
-        val response = withTimeoutOrNull(10000L) {
-            httpClient.newCall(request).execute()
-        } ?: return null
+            val response = withTimeoutOrNull(10000L) {
+                httpClient.newCall(request).execute()
+            } ?: continue
 
-        if (!response.isSuccessful) return null
+            if (!response.isSuccessful) continue
 
-        val respBody = response.body?.string().orEmpty()
-        val parsed = JSONObject(respBody)
-        val text = parsed.optJSONArray("candidates")?.optJSONObject(0)
-            ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)
-            ?.optString("text") ?: return null
+            val respBody = response.body?.string().orEmpty()
+            val parsed = JSONObject(respBody)
+            val text = parsed.optJSONArray("candidates")?.optJSONObject(0)
+                ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)
+                ?.optString("text") ?: continue
 
-        // Try extracting JSON from response to automatically batch-create tasks
-        try {
-            val jsonStart = text.indexOf('{')
-            val jsonEnd = text.lastIndexOf('}')
-            if (jsonStart >= 0 && jsonEnd > jsonStart) {
-                val extractedJson = JSONObject(text.substring(jsonStart, jsonEnd + 1))
-                if (extractedJson.has("tasks")) {
-                    val batchResult = AiToolExecutor.execute("batch_create_tasks", extractedJson)
-                    return AiResponse(
-                        text = "I scanned your image!\n\n${batchResult.message}",
-                        providerUsed = "Gemini 1.5 Flash (Vision)",
-                        latencyMs = 0L
-                    )
+            // Try extracting JSON from response to automatically batch-create tasks
+            try {
+                val jsonStart = text.indexOf('{')
+                val jsonEnd = text.lastIndexOf('}')
+                if (jsonStart >= 0 && jsonEnd > jsonStart) {
+                    val extractedJson = JSONObject(text.substring(jsonStart, jsonEnd + 1))
+                    if (extractedJson.has("tasks")) {
+                        val batchResult = AiToolExecutor.execute("batch_create_tasks", extractedJson)
+                        return AiResponse(
+                            text = "I scanned your image!\n\n${batchResult.message}",
+                            providerUsed = "Gemini Flash (Vision)",
+                            latencyMs = 0L
+                        )
+                    }
                 }
-            }
-        } catch (_: Exception) {}
+            } catch (_: Exception) {}
 
-        return AiResponse(
-            text = text.trim(),
-            providerUsed = "Gemini 1.5 Flash (Vision)",
-            latencyMs = 0L
-        )
+            return AiResponse(
+                text = text.trim(),
+                providerUsed = "Gemini Flash (Vision)",
+                latencyMs = 0L
+            )
+        }
+
+        return null
     }
 
     // ==========================================
@@ -362,7 +367,7 @@ object AiEngine {
         userMessage: String,
         history: List<Pair<String, Boolean>>
     ): AiResponse? {
-        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
+        val geminiModels = listOf("gemini-3.8-flash", "gemini-flash-latest")
 
         val systemPrompt = buildSystemPrompt()
         val fullPrompt = "$systemPrompt\n\nUser: $userMessage\nAnswer with actionable steps:"
@@ -379,28 +384,33 @@ object AiEngine {
             })
         }
 
-        val request = Request.Builder()
-            .url(endpoint)
-            .post(payload.toString().toRequestBody("application/json".toMediaType()))
-            .build()
+        for (model in geminiModels) {
+            val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
+            val request = Request.Builder()
+                .url(endpoint)
+                .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                .build()
 
-        val response = withTimeoutOrNull(6000L) {
-            httpClient.newCall(request).execute()
-        } ?: return null
+            val response = withTimeoutOrNull(6000L) {
+                httpClient.newCall(request).execute()
+            } ?: continue
 
-        if (!response.isSuccessful) return null
+            if (!response.isSuccessful) continue
 
-        val respBody = response.body?.string().orEmpty()
-        val parsed = JSONObject(respBody)
-        val text = parsed.optJSONArray("candidates")?.optJSONObject(0)
-            ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)
-            ?.optString("text") ?: return null
+            val respBody = response.body?.string().orEmpty()
+            val parsed = JSONObject(respBody)
+            val text = parsed.optJSONArray("candidates")?.optJSONObject(0)
+                ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)
+                ?.optString("text") ?: continue
 
-        return AiResponse(
-            text = text.trim(),
-            providerUsed = "Gemini 1.5 Flash",
-            latencyMs = 0L
-        )
+            return AiResponse(
+                text = text.trim(),
+                providerUsed = "Gemini Flash",
+                latencyMs = 0L
+            )
+        }
+
+        return null
     }
 
     // ==========================================
@@ -409,6 +419,15 @@ object AiEngine {
 
     private fun executeLocalNlpFallback(input: String): AiResponse {
         val lower = input.trim().lowercase()
+
+        // 0. Friendly greeting
+        if (lower in listOf("hi", "hello", "hey", "hola", "hey buddy", "who are you")) {
+            return AiResponse(
+                text = "Hey Buddy! I'm your KAIRO task assistant. What can I help you organize or update today?",
+                providerUsed = "Local Offline Engine",
+                latencyMs = 5L
+            )
+        }
 
         // 1. Analytics / Summary
         if (lower.contains("summary") || lower.contains("analytics") || lower.contains("how many tasks") || lower.contains("status")) {
