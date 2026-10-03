@@ -87,7 +87,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.kairo.app.data.auth.AuthManager
+import com.kairo.app.feature.auth.AuthFeatureFacade as AuthManager
 import com.kairo.app.data.local.OfflineTaskItem
 import com.kairo.app.data.remote.SupabaseClient
 import com.kairo.app.data.repository.TaskRepository
