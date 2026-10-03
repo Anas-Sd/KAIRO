@@ -32,7 +32,7 @@ class BootReceiver : BroadcastReceiver() {
                     }
 
                     // Resync location geofences
-                    com.kairo.app.location.GeofenceManager.syncGeofencesWithActiveTasks(context)
+                    com.kairo.app.feature.tasks.location.TaskLocationFacade.syncGeofencesWithActiveTasks(context)
                 } catch (e: Exception) {
                     Log.e("BootReceiver", "Error rescheduling alarms on boot: ${e.message}", e)
                 } finally {

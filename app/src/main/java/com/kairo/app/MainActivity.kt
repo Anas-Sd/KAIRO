@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
         val coarseGranted = grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (fineGranted || coarseGranted) {
             try {
-                com.kairo.app.location.GeofenceManager.syncGeofencesWithActiveTasks(this)
+                com.kairo.app.feature.tasks.location.TaskLocationFacade.syncGeofencesWithActiveTasks(this)
             } catch (e: Throwable) {
                 android.util.Log.e("MainActivity", "Error syncing geofences: ${e.message}", e)
             }
@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
         try {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                com.kairo.app.location.GeofenceManager.syncGeofencesWithActiveTasks(this)
+                com.kairo.app.feature.tasks.location.TaskLocationFacade.syncGeofencesWithActiveTasks(this)
             }
         } catch (e: Throwable) {
             android.util.Log.e("MainActivity", "Error syncing geofences: ${e.message}", e)

@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import com.kairo.app.data.auth.AuthManager
 import com.kairo.app.data.local.LocalTaskDatabase
 import com.kairo.app.data.sync.SyncManager
+import com.kairo.app.feature.tasks.location.TaskLocationFacade
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -62,7 +63,7 @@ object TaskRepository {
         val localList = localDb.getTasksForUser(userCode)
         _tasks.value = localList
         Log.d("TaskRepository", "Loaded ${localList.size} tasks immediately from local SQLite database")
-        com.kairo.app.location.GeofenceManager.syncGeofencesWithActiveTasks(KairoApplication.instance)
+        TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
     }
 
     fun clearTasksLocally() {
@@ -210,7 +211,7 @@ object TaskRepository {
             localDb.enqueueSyncAction(item.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(item, userCode)), userCode)
         }
         SyncManager.triggerSync()
-        com.kairo.app.location.GeofenceManager.syncGeofencesWithActiveTasks(KairoApplication.instance)
+        TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
     }
 
     fun toggleTaskCompletion(taskId: String) {
@@ -259,7 +260,7 @@ object TaskRepository {
                 localDb.enqueueSyncAction(item.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(item, userCode)), userCode)
             }
             SyncManager.triggerSync()
-            com.kairo.app.location.GeofenceManager.syncGeofencesWithActiveTasks(KairoApplication.instance)
+            TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
         }
     }
 
@@ -400,7 +401,7 @@ object TaskRepository {
         }
         SyncManager.triggerSync()
         val hasLocation = task.latitude != null && task.longitude != null
-        com.kairo.app.location.GeofenceManager.syncGeofencesWithActiveTasks(
+        TaskLocationFacade.syncGeofencesWithActiveTasks(
             KairoApplication.instance,
             forceImmediateCheck = hasLocation
         )
@@ -416,7 +417,7 @@ object TaskRepository {
         localDb.enqueueSyncAction(task.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(task, userCode)), userCode)
         SyncManager.triggerSync()
         val hasLocation = task.latitude != null && task.longitude != null
-        com.kairo.app.location.GeofenceManager.syncGeofencesWithActiveTasks(
+        TaskLocationFacade.syncGeofencesWithActiveTasks(
             KairoApplication.instance,
             forceImmediateCheck = hasLocation
         )
@@ -571,7 +572,7 @@ object TaskRepository {
             }
         }
         SyncManager.triggerSync()
-        com.kairo.app.location.GeofenceManager.syncGeofencesWithActiveTasks(KairoApplication.instance)
+        TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
     }
 
     // Recheck completion upward if all remaining subtasks under a parent are done
@@ -626,7 +627,7 @@ object TaskRepository {
             localDb.enqueueSyncAction(t.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(t, userCode)), userCode)
         }
         SyncManager.triggerSync()
-        com.kairo.app.location.GeofenceManager.syncGeofencesWithActiveTasks(KairoApplication.instance)
+        TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
     }
 
     fun commitUndo() {

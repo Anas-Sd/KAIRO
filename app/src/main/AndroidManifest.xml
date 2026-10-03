@@ -83,6 +83,9 @@
 
         <!-- Google Play Services Geofence Broadcast Receiver -->
         <receiver
+            android:name=".feature.tasks.location.GeofenceBroadcastReceiver"
+            android:exported="true" />
+        <receiver
             android:name=".location.GeofenceBroadcastReceiver"
             android:exported="true" />
     </application>
