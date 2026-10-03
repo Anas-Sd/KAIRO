@@ -44,6 +44,15 @@
 
         <!-- Full-screen Alarm Overlay Activity waking device even when locked -->
         <activity
+            android:name=".feature.tasks.alarm.AlarmActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:showOnLockScreen="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.KAIRO"
+            android:launchMode="singleTop" />
+        <activity
             android:name=".ui.screens.alarm.AlarmActivity"
             android:exported="false"
             android:showWhenLocked="true"
@@ -55,11 +64,25 @@
 
         <!-- Foreground Ringing & Audio Service -->
         <service
+            android:name=".feature.tasks.alarm.AlarmRingingService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
+        <service
             android:name=".alarm.AlarmRingingService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
 
         <!-- Alarm Broadcast Receiver -->
+        <receiver
+            android:name=".feature.tasks.alarm.AlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.kairo.app.ACTION_TRIGGER_ALARM" />
+                <action android:name="com.kairo.app.ACTION_COMPLETE_ALARM" />
+                <action android:name="com.kairo.app.ACTION_SNOOZE_ALARM" />
+                <action android:name="com.kairo.app.ACTION_DISMISS_ALARM" />
+            </intent-filter>
+        </receiver>
         <receiver
             android:name=".alarm.AlarmReceiver"
             android:exported="false">
