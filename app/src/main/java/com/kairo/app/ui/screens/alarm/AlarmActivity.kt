@@ -76,6 +76,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kairo.app.alarm.AlarmReceiver
 import com.kairo.app.alarm.AlarmRingingService
+import com.kairo.app.alarm.AlarmScheduler
+import com.kairo.app.data.repository.TaskRepository
 import com.kairo.app.ui.theme.KAIROTheme
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoError
@@ -144,18 +146,26 @@ class AlarmActivity : ComponentActivity() {
                     location = location,
                     attachment = attachment,
                     onComplete = {
+                        AlarmRingingService.stop(this@AlarmActivity)
                         if (taskId.isNotBlank()) {
-                            com.kairo.app.data.repository.TaskRepository.markTaskCompleted(taskId)
+                            AlarmScheduler.cancelAlarm(this@AlarmActivity, taskId)
+                            TaskRepository.markTaskCompleted(taskId)
                         }
-                        val completeIntent = Intent(this, AlarmReceiver::class.java).apply {
+                        val completeIntent = Intent(this@AlarmActivity, AlarmReceiver::class.java).apply {
                             action = AlarmReceiver.ACTION_COMPLETE_ALARM
                             putExtra(AlarmReceiver.EXTRA_TASK_ID, taskId)
                         }
                         sendBroadcast(completeIntent)
+                        android.widget.Toast.makeText(this@AlarmActivity, "Task marked as completed", android.widget.Toast.LENGTH_SHORT).show()
                         finish()
                     },
                     onSnooze = { minutes ->
-                        val snoozeIntent = Intent(this, AlarmReceiver::class.java).apply {
+                        AlarmRingingService.stop(this@AlarmActivity)
+                        val snoozeMillis = System.currentTimeMillis() + (minutes * 60 * 1000L)
+                        if (taskId.isNotBlank()) {
+                            TaskRepository.snoozeTask(taskId, snoozeMillis)
+                        }
+                        val snoozeIntent = Intent(this@AlarmActivity, AlarmReceiver::class.java).apply {
                             action = AlarmReceiver.ACTION_SNOOZE_ALARM
                             putExtra(AlarmReceiver.EXTRA_TASK_ID, taskId)
                             putExtra(AlarmReceiver.EXTRA_SNOOZE_MINUTES, minutes)
@@ -164,30 +174,40 @@ class AlarmActivity : ComponentActivity() {
                             putExtra(AlarmReceiver.EXTRA_TASK_PRIORITY, priority)
                             putExtra(AlarmReceiver.EXTRA_TASK_DUE_DATE, dueDate)
                             putExtra(AlarmReceiver.EXTRA_TASK_DUE_TIME, dueTime)
+                            putExtra(AlarmReceiver.EXTRA_TASK_LOCATION, location)
+                            putExtra(AlarmReceiver.EXTRA_TASK_ATTACHMENT, attachment)
+                            putExtra(AlarmReceiver.EXTRA_ALARM_URI, intent.getStringExtra(AlarmRingingService.EXTRA_ALARM_URI))
                         }
                         sendBroadcast(snoozeIntent)
+                        android.widget.Toast.makeText(this@AlarmActivity, "Alarm snoozed for $minutes minutes", android.widget.Toast.LENGTH_SHORT).show()
                         finish()
                     },
                     onDismiss = {
+                        AlarmRingingService.stop(this@AlarmActivity)
                         if (taskId.isNotBlank()) {
-                            com.kairo.app.data.repository.TaskRepository.markTaskOverdue(taskId)
+                            AlarmScheduler.cancelAlarm(this@AlarmActivity, taskId)
+                            TaskRepository.markTaskOverdue(taskId)
                         }
-                        val dismissIntent = Intent(this, AlarmReceiver::class.java).apply {
+                        val dismissIntent = Intent(this@AlarmActivity, AlarmReceiver::class.java).apply {
                             action = AlarmReceiver.ACTION_DISMISS_ALARM
                             putExtra(AlarmReceiver.EXTRA_TASK_ID, taskId)
                         }
                         sendBroadcast(dismissIntent)
+                        android.widget.Toast.makeText(this@AlarmActivity, "Alarm dismissed • Task moved to Overdue", android.widget.Toast.LENGTH_SHORT).show()
                         finish()
                     },
                     onCloseHeader = {
+                        AlarmRingingService.stop(this@AlarmActivity)
                         if (taskId.isNotBlank()) {
-                            com.kairo.app.data.repository.TaskRepository.markTaskOverdue(taskId)
+                            AlarmScheduler.cancelAlarm(this@AlarmActivity, taskId)
+                            TaskRepository.markTaskOverdue(taskId)
                         }
-                        val dismissIntent = Intent(this, AlarmReceiver::class.java).apply {
+                        val dismissIntent = Intent(this@AlarmActivity, AlarmReceiver::class.java).apply {
                             action = AlarmReceiver.ACTION_DISMISS_ALARM
                             putExtra(AlarmReceiver.EXTRA_TASK_ID, taskId)
                         }
                         sendBroadcast(dismissIntent)
+                        android.widget.Toast.makeText(this@AlarmActivity, "Alarm dismissed • Task moved to Overdue", android.widget.Toast.LENGTH_SHORT).show()
                         finish()
                     }
                 )
@@ -215,6 +235,7 @@ class AlarmActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        AlarmRingingService.stop(this)
         super.onDestroy()
         try {
             unregisterReceiver(finishReceiver)
@@ -237,6 +258,10 @@ fun AlarmTriggerScreen(
     onDismiss: () -> Unit,
     onCloseHeader: () -> Unit
 ) {
+    androidx.activity.compose.BackHandler {
+        onDismiss()
+    }
+
     var showSnoozeDialog by remember { mutableStateOf(false) }
     var currentTimeStr by remember { mutableStateOf(SimpleDateFormat("hh:mm", Locale.getDefault()).format(Date())) }
     var currentAmPm by remember { mutableStateOf(SimpleDateFormat("a", Locale.getDefault()).format(Date())) }

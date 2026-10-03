@@ -133,7 +133,15 @@ class TaskViewModel(
 
     private fun isOverdue(task: Task): Boolean {
         if (task.isCompleted) return false
-        val nowCal = Calendar.getInstance()
+        if (task.section == TaskSection.OVERDUE) return true
+        if (task.dueDate.contains("Yesterday", ignoreCase = true)) return true
+
+        val now = System.currentTimeMillis()
+        val trigger = AlarmScheduler.calculateTriggerMillis(task.dueDate, task.dueTime, task.dueDateMillis)
+        if (trigger != null && trigger < now) {
+            return true
+        }
+
         val todayStart = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
@@ -142,28 +150,14 @@ class TaskViewModel(
         }.timeInMillis
 
         val taskDue = getEffectiveDueDateMillis(task)
-        if (taskDue < todayStart) return true
-        if (taskDue in todayStart until (todayStart + 86400000L)) {
-            val dueTime = task.dueTime
-            if (!dueTime.isNullOrBlank()) {
-                val parts = dueTime.split(":")
-                if (parts.size == 2) {
-                    val h = parts[0].trim().toIntOrNull() ?: 0
-                    val m = parts[1].trim().toIntOrNull() ?: 0
-                    val nowH = nowCal.get(Calendar.HOUR_OF_DAY)
-                    val nowM = nowCal.get(Calendar.MINUTE)
-                    if (nowH > h || (nowH == h && nowM > m)) {
-                        return true
-                    }
-                }
-            }
-        }
-        return false
+        return taskDue < todayStart
     }
 
     private fun isToday(task: Task): Boolean {
         if (task.isCompleted) return false
         if (isOverdue(task)) return false
+        if (task.section == TaskSection.TODAY) return true
+        if (task.dueDate.contains("Today", ignoreCase = true)) return true
         val todayStart = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
@@ -176,6 +170,7 @@ class TaskViewModel(
 
     private fun isTomorrow(task: Task): Boolean {
         if (task.isCompleted) return false
+        if (isOverdue(task)) return false
         val tomorrowStart = Calendar.getInstance().apply {
             add(Calendar.DAY_OF_YEAR, 1)
             set(Calendar.HOUR_OF_DAY, 0)
@@ -189,15 +184,9 @@ class TaskViewModel(
 
     private fun isUpcoming(task: Task): Boolean {
         if (task.isCompleted) return false
-        val tomorrowStart = Calendar.getInstance().apply {
-            add(Calendar.DAY_OF_YEAR, 1)
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        val taskDue = getEffectiveDueDateMillis(task)
-        return taskDue >= tomorrowStart
+        if (isOverdue(task)) return false
+        if (isToday(task)) return false
+        return true
     }
 
     private fun sortTasks(list: List<Task>, sort: TaskSort): List<Task> {

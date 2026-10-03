@@ -46,12 +46,30 @@ class AlarmRingingService : Service() {
         const val EXTRA_ALARM_URI = "extra_alarm_uri"
 
         private const val TAG = "AlarmRingingService"
+
+        @Volatile
+        private var instance: AlarmRingingService? = null
+
+        fun stop(context: Context) {
+            Log.i(TAG, "AlarmRingingService.stop called")
+            try {
+                instance?.stopRingingAndSelf()
+            } catch (_: Exception) {}
+            try {
+                context.stopService(Intent(context, AlarmRingingService::class.java))
+            } catch (_: Exception) {}
+            try {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                nm?.cancel(NOTIFICATION_ID)
+            } catch (_: Exception) {}
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         createNotificationChannel()
         initVibrator()
     }
@@ -386,12 +404,23 @@ class AlarmRingingService : Service() {
             vibrator?.cancel()
         } catch (_: Exception) {}
 
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (_: Exception) {}
+
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.cancel(NOTIFICATION_ID)
+        } catch (_: Exception) {}
+
         stopSelf()
     }
 
     override fun onDestroy() {
         stopRingingAndSelf()
+        if (instance == this) {
+            instance = null
+        }
         super.onDestroy()
     }
 }

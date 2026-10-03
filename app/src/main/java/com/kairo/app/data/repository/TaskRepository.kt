@@ -262,6 +262,9 @@ object TaskRepository {
     }
 
     fun markTaskOverdue(taskId: String) {
+        runCatching {
+            AlarmScheduler.cancelAlarm(KairoApplication.instance, taskId)
+        }
         val now = System.currentTimeMillis()
         var updatedTask: Task? = null
 
@@ -280,10 +283,74 @@ object TaskRepository {
             }
         }
 
+        val userCode = AuthManager.getUserCode() ?: ""
+        if (updatedTask == null) {
+            val fromDb = localDb.getTasksForUser(userCode).find { it.id == taskId }
+            if (fromDb != null) {
+                val modified = fromDb.copy(
+                    isCompleted = false,
+                    section = TaskSection.OVERDUE,
+                    completedAt = null,
+                    updatedAt = now
+                )
+                updatedTask = modified
+                _tasks.update { current ->
+                    if (current.any { it.id == taskId }) {
+                        current.map { if (it.id == taskId) modified else it }
+                    } else {
+                        current + modified
+                    }
+                }
+            }
+        }
+
         if (updatedTask != null) {
-            val userCode = AuthManager.getUserCode() ?: ""
             localDb.saveTask(updatedTask!!, userCode, syncStatus = "PENDING")
             localDb.enqueueSyncAction(taskId, "UPDATE", json.encodeToString(TaskDto.fromDomain(updatedTask!!, userCode)), userCode)
+            SyncManager.triggerSync()
+        }
+    }
+
+    fun snoozeTask(taskId: String, snoozeMillis: Long) {
+        val now = System.currentTimeMillis()
+        var updatedTask: Task? = null
+
+        _tasks.update { currentList ->
+            currentList.map { task ->
+                if (task.id == taskId) {
+                    val modified = task.copy(
+                        dueDateMillis = snoozeMillis,
+                        updatedAt = now
+                    )
+                    updatedTask = modified
+                    modified
+                } else task
+            }
+        }
+
+        val userCode = AuthManager.getUserCode() ?: ""
+        if (updatedTask == null) {
+            val fromDb = localDb.getTasksForUser(userCode).find { it.id == taskId }
+            if (fromDb != null) {
+                val modified = fromDb.copy(
+                    dueDateMillis = snoozeMillis,
+                    updatedAt = now
+                )
+                updatedTask = modified
+                _tasks.update { current ->
+                    if (current.any { it.id == taskId }) {
+                        current.map { if (it.id == taskId) modified else it }
+                    } else {
+                        current + modified
+                    }
+                }
+            }
+        }
+
+        if (updatedTask != null) {
+            localDb.saveTask(updatedTask!!, userCode, syncStatus = "PENDING")
+            localDb.enqueueSyncAction(taskId, "UPDATE", json.encodeToString(TaskDto.fromDomain(updatedTask!!, userCode)), userCode)
+            AlarmScheduler.scheduleAlarm(KairoApplication.instance, updatedTask!!, snoozeMillis)
             SyncManager.triggerSync()
         }
     }

@@ -134,26 +134,45 @@ class AlarmReceiver : BroadcastReceiver() {
 
         val taskId = intent.getStringExtra(EXTRA_TASK_ID).orEmpty()
         val snoozeMinutes = intent.getIntExtra(EXTRA_SNOOZE_MINUTES, 10)
-        val title = intent.getStringExtra(EXTRA_TASK_TITLE).orEmpty().ifBlank { "Task Reminder" }
-        val notes = intent.getStringExtra(EXTRA_TASK_NOTES)
-        val priorityStr = intent.getStringExtra(EXTRA_TASK_PRIORITY).orEmpty()
-        val priority = runCatching { Priority.valueOf(priorityStr) }.getOrDefault(Priority.MEDIUM)
-        val dueDate = intent.getStringExtra(EXTRA_TASK_DUE_DATE).orEmpty()
-        val dueTime = intent.getStringExtra(EXTRA_TASK_DUE_TIME).orEmpty()
-
         val snoozeMillis = System.currentTimeMillis() + (snoozeMinutes * 60 * 1000L)
 
-        val placeholderTask = Task(
-            id = taskId,
-            title = title,
-            notes = notes,
-            priority = priority,
-            dueDate = dueDate,
-            dueTime = dueTime,
-            dueDateMillis = snoozeMillis
-        )
+        if (taskId.isNotBlank()) {
+            val pendingResult = goAsync()
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    TaskRepository.snoozeTask(taskId, snoozeMillis)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in handleSnoozeAlarm: ${e.message}", e)
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+        } else {
+            val title = intent.getStringExtra(EXTRA_TASK_TITLE).orEmpty().ifBlank { "Task Reminder" }
+            val notes = intent.getStringExtra(EXTRA_TASK_NOTES)
+            val priorityStr = intent.getStringExtra(EXTRA_TASK_PRIORITY).orEmpty()
+            val priority = runCatching { Priority.valueOf(priorityStr) }.getOrDefault(Priority.MEDIUM)
+            val dueDate = intent.getStringExtra(EXTRA_TASK_DUE_DATE).orEmpty()
+            val dueTime = intent.getStringExtra(EXTRA_TASK_DUE_TIME).orEmpty()
+            val location = intent.getStringExtra(EXTRA_TASK_LOCATION)
+            val attachment = intent.getStringExtra(EXTRA_TASK_ATTACHMENT)
+            val alarmToneUri = intent.getStringExtra(EXTRA_ALARM_URI)
 
-        AlarmScheduler.scheduleAlarm(context, placeholderTask, overrideTriggerMillis = snoozeMillis)
+            val placeholderTask = Task(
+                id = taskId,
+                title = title,
+                notes = notes,
+                priority = priority,
+                dueDate = dueDate,
+                dueTime = dueTime,
+                dueDateMillis = snoozeMillis,
+                location = location,
+                attachmentName = attachment,
+                alarmToneUri = alarmToneUri
+            )
+
+            AlarmScheduler.scheduleAlarm(context, placeholderTask, overrideTriggerMillis = snoozeMillis)
+        }
         Toast.makeText(context, "Alarm snoozed for $snoozeMinutes minutes", Toast.LENGTH_SHORT).show()
     }
 
@@ -180,10 +199,7 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     private fun stopRinging(context: Context) {
-        val stopIntent = Intent(context, AlarmRingingService::class.java).apply {
-            action = AlarmRingingService.ACTION_STOP_RINGING
-        }
-        context.startService(stopIntent)
+        AlarmRingingService.stop(context)
     }
 
     private fun notifyAlarmOverlayFinish(context: Context) {
