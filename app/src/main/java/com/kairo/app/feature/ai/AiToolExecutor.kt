@@ -72,6 +72,66 @@ object AiToolExecutor {
         }
     }
 
+    private fun normalize(s: String?): String {
+        return (s ?: "").lowercase().replace(Regex("[^a-z0-9]"), "")
+    }
+
+    private fun levenshteinDistance(s1: String, s2: String): Int {
+        val a = s1.lowercase()
+        val b = s2.lowercase()
+        val costs = IntArray(b.length + 1) { it }
+        for (i in 1..a.length) {
+            costs[0] = i
+            var nw = i - 1
+            for (j in 1..b.length) {
+                val cj = Math.min(1 + Math.min(costs[j], costs[j - 1]), if (a[i - 1] == b[j - 1]) nw else nw + 1)
+                nw = costs[j]
+                costs[j] = cj
+            }
+        }
+        return costs[b.length]
+    }
+
+    private fun findMatchingTask(query: String, candidateTasks: List<Task>): Task? {
+        val q = query.trim()
+        if (q.isBlank()) return null
+
+        // 1. Direct ID match
+        val byId = candidateTasks.find { it.id == q }
+        if (byId != null) return byId
+
+        // 2. Exact Title Match
+        val byExactTitle = candidateTasks.find { it.title.equals(q, ignoreCase = true) }
+        if (byExactTitle != null) return byExactTitle
+
+        val normQ = normalize(q)
+        if (normQ.isBlank()) return null
+
+        // 3. Substring / Containment Match
+        val byContains = candidateTasks.find {
+            val normT = normalize(it.title)
+            normT.contains(normQ) || normQ.contains(normT)
+        }
+        if (byContains != null) return byContains
+
+        // 4. Fuzzy Levenshtein Match (inspired by AUTO_TRACK)
+        var bestTask: Task? = null
+        var bestScore = 0.0
+        for (task in candidateTasks) {
+            val normT = normalize(task.title)
+            val maxLen = Math.max(normQ.length, normT.length)
+            if (maxLen == 0) continue
+            val dist = levenshteinDistance(normQ, normT)
+            val similarity = 1.0 - (dist.toDouble() / maxLen.toDouble())
+            if ((dist <= 2 || similarity >= 0.70) && similarity > bestScore) {
+                bestScore = similarity
+                bestTask = task
+            }
+        }
+
+        return bestTask
+    }
+
     private fun handleCreateTask(args: JSONObject): ToolExecutionResult {
         val title = args.optString("title", "").trim()
         if (title.isBlank()) {
@@ -90,18 +150,14 @@ object AiToolExecutor {
         var parentId = args.optNullableString("parentId")
         val parentTitle = args.optNullableString("parentTitle")
 
-        // Subtask resolution: resolve parent by title if ID is not matching or parentTitle is supplied
+        // Subtask resolution: resolve parent using fuzzy matching
         val allTasks = TaskRepository.getAllTasks()
         if (parentId != null && TaskRepository.getTaskById(parentId) == null) {
-            val matched = allTasks.find {
-                it.title.equals(parentId, ignoreCase = true) || it.title.contains(parentId, ignoreCase = true)
-            }
+            val matched = findMatchingTask(parentId, allTasks)
             if (matched != null) parentId = matched.id
         }
         if (parentId == null && parentTitle != null) {
-            val matched = allTasks.find {
-                it.title.equals(parentTitle, ignoreCase = true) || it.title.contains(parentTitle, ignoreCase = true)
-            }
+            val matched = findMatchingTask(parentTitle, allTasks)
             if (matched != null) parentId = matched.id
         }
 
@@ -187,9 +243,7 @@ object AiToolExecutor {
     private fun handleUpdateTask(args: JSONObject): ToolExecutionResult {
         val taskId = args.optString("taskId", "").trim()
         val allTasks = TaskRepository.getAllTasks().sortedByDescending { it.createdAt }
-        val task = TaskRepository.getTaskById(taskId)
-            ?: allTasks.find { it.title.equals(taskId, ignoreCase = true) }
-            ?: allTasks.find { it.title.contains(taskId, ignoreCase = true) }
+        val task = findMatchingTask(taskId, allTasks)
             ?: return ToolExecutionResult(false, "Task with ID or title '$taskId' not found.")
 
         var updated = task
@@ -223,9 +277,7 @@ object AiToolExecutor {
     private fun handleToggleCompletion(args: JSONObject): ToolExecutionResult {
         val taskId = args.optString("taskId", "").trim()
         val allTasks = TaskRepository.getAllTasks().sortedByDescending { it.createdAt }
-        val task = TaskRepository.getTaskById(taskId)
-            ?: allTasks.find { it.title.equals(taskId, ignoreCase = true) }
-            ?: allTasks.find { it.title.contains(taskId, ignoreCase = true) }
+        val task = findMatchingTask(taskId, allTasks)
             ?: allTasks.firstOrNull()
             ?: return ToolExecutionResult(false, "Task with ID '$taskId' not found.")
 
@@ -244,13 +296,10 @@ object AiToolExecutor {
                 allTasks.firstOrNull()
             }
             rawTaskId.isNotBlank() -> {
-                TaskRepository.getTaskById(rawTaskId)
-                    ?: allTasks.find { it.title.equals(rawTaskId, ignoreCase = true) }
-                    ?: allTasks.find { it.title.contains(rawTaskId, ignoreCase = true) }
+                findMatchingTask(rawTaskId, allTasks)
             }
             titleQuery.isNotBlank() -> {
-                allTasks.find { it.title.equals(titleQuery, ignoreCase = true) }
-                    ?: allTasks.find { it.title.contains(titleQuery, ignoreCase = true) }
+                findMatchingTask(titleQuery, allTasks)
             }
             else -> allTasks.firstOrNull()
         } ?: return ToolExecutionResult(false, "No task found to delete.")
