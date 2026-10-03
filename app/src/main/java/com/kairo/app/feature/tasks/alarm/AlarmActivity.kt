@@ -267,6 +267,40 @@ fun AlarmTriggerScreen(
     var currentAmPm by remember { mutableStateOf(SimpleDateFormat("a", Locale.getDefault()).format(Date())) }
     var currentDateStr by remember { mutableStateOf(SimpleDateFormat("EEEE, MMM d", Locale.getDefault()).format(Date())) }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        try {
+            com.kairo.app.feature.ai.AiVoiceManager.startListening(context) { heard ->
+                val lower = heard.lowercase().trim()
+                when {
+                    lower.contains("done") || lower.contains("complete") || lower.contains("finish") -> {
+                        com.kairo.app.feature.ai.AiVoiceManager.speak("Marking task as completed") {
+                            onComplete()
+                        }
+                    }
+                    lower.contains("snooze") -> {
+                        val minutes = Regex("(\\d+)").find(lower)?.value?.toIntOrNull() ?: 2
+                        com.kairo.app.feature.ai.AiVoiceManager.speak("Snoozing for $minutes minutes") {
+                            onSnooze(minutes)
+                        }
+                    }
+                    lower.contains("dismiss") || lower.contains("stop") || lower.contains("cancel") -> {
+                        com.kairo.app.feature.ai.AiVoiceManager.speak("Alarm dismissed") {
+                            onDismiss()
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            com.kairo.app.feature.ai.AiVoiceManager.stopListening()
+            com.kairo.app.feature.ai.AiVoiceManager.stopSpeaking()
+        }
+    }
+
     // Live Clock Ticker
     LaunchedEffect(Unit) {
         while (true) {
@@ -627,6 +661,32 @@ fun AlarmTriggerScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Hands-Free Voice Commands Banner
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp)
+                        .background(KairoPrimary.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                        .border(1.dp, KairoPrimary.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = "Voice Listening",
+                        tint = KairoPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Voice Ready: Say 'Done', 'Dismiss', or 'Snooze 2 min'",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = KairoPrimary
+                    )
+                }
+
                 // 1. Primary CTA: Mark as Completed
                 Button(
                     onClick = onComplete,

@@ -26,6 +26,16 @@ fun MainScreen() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Tasks.route
 
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        com.kairo.app.feature.ai.AiVoiceManager.setWakeWordListener {
+            navController.navigate(Screen.AiAssistant.route) {
+                launchSingleTop = true
+            }
+            com.kairo.app.feature.ai.AiVoiceManager.setVoiceMode(true)
+            com.kairo.app.feature.ai.AiVoiceManager.speak("Hey Buddy! What can I do for you?")
+        }
+    }
+
     Scaffold(
         containerColor = KairoBackground,
         bottomBar = {

@@ -85,6 +85,11 @@ class MainActivity : ComponentActivity() {
             permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
 
+        // Microphone Permission for AI Voice-to-Voice & Wake Word
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.RECORD_AUDIO)
+        }
+
         if (permissions.isNotEmpty()) {
             requestPermissionsLauncher.launch(permissions.toTypedArray())
         }

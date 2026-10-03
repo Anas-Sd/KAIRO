@@ -8,7 +8,8 @@ import androidx.compose.ui.Modifier
  * AiFeatureFacade
  *
  * The single public service window ("door") for the AI Assistant Box.
- * The rest of the app interacts with Gemini AI capabilities via this facade.
+ * Exposes real-time agentic task execution, multi-LLM engine, voice communication,
+ * and persistent memory.
  */
 object AiFeatureFacade {
 
@@ -25,10 +26,27 @@ object AiFeatureFacade {
         prompt: String,
         maxTokens: Int = 120
     ): String? {
-        return AiClient.generateContent(context, prompt, maxTokens)
+        val response = AiEngine.chat(prompt)
+        return response.text
     }
 
     fun getApiKey(context: Context): String? {
-        return AiClient.getApiKey(context)
+        return AiEngine.getGroqApiKey(context)
+    }
+
+    fun startVoiceListening(context: Context, onResult: (String) -> Unit) {
+        AiVoiceManager.startListening(context, onResult)
+    }
+
+    fun stopVoiceListening() {
+        AiVoiceManager.stopListening()
+    }
+
+    fun speak(text: String, onDone: (() -> Unit)? = null) {
+        AiVoiceManager.speak(text, onDone)
+    }
+
+    fun learnUserRule(rule: String) {
+        AiMemoryManager.learnRule(rule)
     }
 }
