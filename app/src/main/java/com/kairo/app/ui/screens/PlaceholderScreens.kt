@@ -59,9 +59,8 @@ fun AiAssistantScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    PlaceholderScreen(
-        title = "KAIRO Agentic AI",
-        subtitle = "Your proactive personal AI manager: natural language task scheduling, habit nudges, and intelligent breakdown.",
+    com.kairo.app.feature.ai.AiFeatureFacade.AiAssistantView(
+        onBack = onBack,
         modifier = modifier
     )
 }
