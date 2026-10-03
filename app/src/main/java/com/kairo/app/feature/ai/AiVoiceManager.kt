@@ -3,6 +3,8 @@ package com.kairo.app.feature.ai
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -17,13 +19,16 @@ import java.util.Locale
 
 /**
  * Manages low-latency real-time voice communication:
- * 1. Speech-to-Text (STT) for continuous voice input.
+ * 1. Speech-to-Text (STT) for continuous voice input with partial transcription streaming.
  * 2. Text-to-Speech (TTS) for instant spoken responses with zero lag.
- * 3. "Hey Buddy" foreground wake-phrase listener.
+ * 3. Automatic turn-taking voice loop that never disconnects mid-conversation.
+ * 4. "Hey Buddy" foreground wake-phrase listener.
  */
 object AiVoiceManager : TextToSpeech.OnInitListener {
 
     private const val TAG = "AiVoiceManager"
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     private var tts: TextToSpeech? = null
     private var isTtsInitialized = false
 
@@ -32,6 +37,9 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
 
     private val _isSpeaking = MutableStateFlow(false)
     val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
+
+    private val _partialSpeech = MutableStateFlow("")
+    val partialSpeech: StateFlow<String> = _partialSpeech.asStateFlow()
 
     private var speechRecognizer: SpeechRecognizer? = null
     private var onSpeechResultListener: ((String) -> Unit)? = null
@@ -55,7 +63,7 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
             val result = tts?.setLanguage(Locale.US)
             if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
                 isTtsInitialized = true
-                tts?.setSpeechRate(1.05f) // crisp, low-latency conversational cadence
+                tts?.setSpeechRate(1.05f) // crisp conversational cadence
                 tts?.setPitch(1.0f)
             }
         }
@@ -63,15 +71,16 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
 
     /**
      * Speaks text aloud with zero perceptible delay.
-     * When speaking ends, automatically triggers [onDone] to resume listening.
+     * When speaking ends, automatically triggers [onDone] on the Main Thread after a brief 250ms echo-gap.
      */
     fun speak(text: String, onDone: (() -> Unit)? = null) {
         val cleanText = text.replace(Regex("[*#_`~]"), "").trim()
         if (cleanText.isBlank() || tts == null || !isTtsInitialized) {
-            onDone?.invoke()
+            mainHandler.post { onDone?.invoke() }
             return
         }
 
+        stopListening()
         val utteranceId = "kairo_utterance_${System.currentTimeMillis()}"
 
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -81,12 +90,21 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
 
             override fun onDone(utteranceId: String?) {
                 _isSpeaking.value = false
-                onDone?.invoke()
+                // Echo protection gap: wait 250ms so speaker audio does not bleed into the mic
+                mainHandler.postDelayed({
+                    if (isVoiceModeActive) {
+                        onDone?.invoke()
+                    }
+                }, 250L)
             }
 
             override fun onError(utteranceId: String?) {
                 _isSpeaking.value = false
-                onDone?.invoke()
+                mainHandler.postDelayed({
+                    if (isVoiceModeActive) {
+                        onDone?.invoke()
+                    }
+                }, 250L)
             }
         })
 
@@ -107,8 +125,14 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
         context: Context,
         onResult: (String) -> Unit
     ) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { startListening(context, onResult) }
+            return
+        }
+
         stopSpeaking()
         this.onSpeechResultListener = onResult
+        _partialSpeech.value = ""
 
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             Log.w(TAG, "Speech recognition not available on this device.")
@@ -133,31 +157,57 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
 
                     override fun onError(error: Int) {
                         _isListening.value = false
-                        Log.d(TAG, "SpeechRecognizer error: $error")
-                        // If voice mode is still active, retry listening after brief pause
-                        if (isVoiceModeActive && error == SpeechRecognizer.ERROR_NO_MATCH) {
-                            startListening(context, onResult)
+                        _partialSpeech.value = ""
+                        Log.d(TAG, "SpeechRecognizer error code: $error")
+                        // Automatically re-arm listener so recurring voice mode never dies
+                        if (isVoiceModeActive && !_isSpeaking.value) {
+                            mainHandler.postDelayed({
+                                if (isVoiceModeActive && !_isSpeaking.value) {
+                                    startListening(context, onResult)
+                                }
+                            }, 400L)
                         }
                     }
 
                     override fun onResults(results: Bundle?) {
                         _isListening.value = false
+                        _partialSpeech.value = ""
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         val heard = matches?.firstOrNull()?.trim()
                         if (!heard.isNullOrBlank()) {
                             onSpeechResultListener?.invoke(heard)
+                        } else if (isVoiceModeActive && !_isSpeaking.value) {
+                            // If empty, re-listen seamlessly
+                            mainHandler.postDelayed({
+                                if (isVoiceModeActive && !_isSpeaking.value) {
+                                    startListening(context, onResult)
+                                }
+                            }, 300L)
                         }
                     }
 
-                    override fun onPartialResults(partialResults: Bundle?) {}
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        val partial = matches?.firstOrNull()?.trim()
+                        if (!partial.isNullOrBlank()) {
+                            _partialSpeech.value = partial
+                        }
+                    }
+
                     override fun onEvent(eventType: Int, params: Bundle?) {}
                 })
             }
 
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-US")
+                putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, false)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2500L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1500L)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
             }
 
@@ -175,6 +225,7 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
             speechRecognizer = null
         } catch (_: Exception) {}
         _isListening.value = false
+        _partialSpeech.value = ""
     }
 
     fun setVoiceMode(active: Boolean) {

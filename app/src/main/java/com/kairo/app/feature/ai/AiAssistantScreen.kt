@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
@@ -76,6 +77,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -117,18 +119,19 @@ fun AiAssistantScreen(
 
     val isListening by AiVoiceManager.isListening.collectAsState()
     val isSpeaking by AiVoiceManager.isSpeaking.collectAsState()
+    val partialSpeech by AiVoiceManager.partialSpeech.collectAsState()
     var isVoiceModeActive by remember { mutableStateOf(AiVoiceManager.isVoiceModeActive) }
 
-    val messages = remember {
-        mutableStateListOf(
-            ChatMessage(
-                text = "Hey Buddy! I'm your KAIRO personal task executive. I can create, organize, group, snooze, or query your tasks. You can speak to me or send photos of lists.",
-                isUser = false,
-                providerUsed = "KAIRO Executive Core"
-            )
-        )
-    }
+    // Persistent conversation history
+    val messages = AiChatRepository.messages
     val listState = rememberLazyListState()
+
+    // Auto-scroll to bottom whenever messages update
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
 
     // Pulse animation for active voice mode
     val micPulse = remember { Animatable(1f) }
@@ -173,16 +176,15 @@ fun AiAssistantScreen(
         AiVoiceManager.startListening(context) { heardSpeech ->
             val clean = heardSpeech.trim()
             if (clean.isNotBlank()) {
-                messages.add(ChatMessage(text = clean, isUser = true))
+                AiChatRepository.addMessage(ChatMessage(text = clean, isUser = true))
                 isLoading = true
 
                 scope.launch {
-                    listState.animateScrollToItem(messages.size - 1)
-                    val history = messages.map { it.text to it.isUser }
+                    val history = AiChatRepository.getConversationHistory()
                     val response = AiEngine.chat(clean, null, history)
                     isLoading = false
 
-                    messages.add(
+                    AiChatRepository.addMessage(
                         ChatMessage(
                             text = response.text,
                             isUser = false,
@@ -194,9 +196,8 @@ fun AiAssistantScreen(
                             pendingActionJson = response.pendingActionJson
                         )
                     )
-                    listState.animateScrollToItem(messages.size - 1)
 
-                    // Speak aloud with zero delay, then automatically resume listening
+                    // Speak aloud with zero delay, then automatically resume listening on Main thread
                     AiVoiceManager.speak(response.text) {
                         if (isVoiceModeActive) {
                             startListeningLoop()
@@ -204,6 +205,13 @@ fun AiAssistantScreen(
                     }
                 }
             }
+        }
+    }
+
+    // Auto-start listening if voice mode is already active upon entering screen
+    LaunchedEffect(Unit) {
+        if (isVoiceModeActive) {
+            startListeningLoop()
         }
     }
 
@@ -226,19 +234,18 @@ fun AiAssistantScreen(
         if (isLoading) return
 
         val userPrompt = trimmed.ifEmpty { "Extract all items from this image into my tasks." }
-        messages.add(ChatMessage(text = userPrompt, isUser = true))
+        AiChatRepository.addMessage(ChatMessage(text = userPrompt, isUser = true))
         inputText = ""
         val imageToProcess = attachedBitmap
         attachedBitmap = null
         isLoading = true
 
         scope.launch {
-            listState.animateScrollToItem(messages.size - 1)
-            val history = messages.map { it.text to it.isUser }
+            val history = AiChatRepository.getConversationHistory()
             val response = AiEngine.chat(userPrompt, imageToProcess, history)
             isLoading = false
 
-            messages.add(
+            AiChatRepository.addMessage(
                 ChatMessage(
                     text = response.text,
                     isUser = false,
@@ -250,7 +257,6 @@ fun AiAssistantScreen(
                     pendingActionJson = response.pendingActionJson
                 )
             )
-            listState.animateScrollToItem(messages.size - 1)
 
             if (isVoiceModeActive) {
                 AiVoiceManager.speak(response.text) {
@@ -322,6 +328,17 @@ fun AiAssistantScreen(
                         )
                     }
 
+                    // Clear Chat History Button
+                    IconButton(
+                        onClick = { AiChatRepository.clearAll() }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteSweep,
+                            contentDescription = "Clear Chat",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
                     // Voice Mode Toggle Button
                     IconButton(
                         onClick = { toggleVoiceMode() },
@@ -367,9 +384,9 @@ fun AiAssistantScreen(
                                 val result = AiToolExecutor.execute(toolName, actionObj)
                                 val idx = messages.indexOfFirst { it.id == message.id }
                                 if (idx >= 0) {
-                                    messages[idx] = message.copy(isConfirmed = true)
+                                    AiChatRepository.updateMessage(idx, message.copy(isConfirmed = true))
                                 }
-                                messages.add(
+                                AiChatRepository.addMessage(
                                     ChatMessage(
                                         text = "✓ Action Confirmed: ${result.message}",
                                         isUser = false,
@@ -383,9 +400,9 @@ fun AiAssistantScreen(
                         onCancelAction = {
                             val idx = messages.indexOfFirst { it.id == message.id }
                             if (idx >= 0) {
-                                messages[idx] = message.copy(isConfirmed = true)
+                                AiChatRepository.updateMessage(idx, message.copy(isConfirmed = true))
                             }
-                            messages.add(
+                            AiChatRepository.addMessage(
                                 ChatMessage(
                                     text = "Cancelled action.",
                                     isUser = false,
@@ -478,6 +495,33 @@ fun AiAssistantScreen(
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+            }
+
+            // Live Speech Streaming Indicator
+            if (isListening && partialSpeech.isNotBlank()) {
+                Surface(
+                    color = KairoPrimary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🎙️", fontSize = 14.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "\"$partialSpeech\"",
+                            fontSize = 13.sp,
+                            fontStyle = FontStyle.Italic,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }

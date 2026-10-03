@@ -63,18 +63,11 @@ object AiToolExecutor {
         val priority = try { Priority.valueOf(priorityStr) } catch (_: Exception) { Priority.LOW }
         val dueDateRaw = args.optNullableString("dueDate")
         val dueDate = DateUtils.formatDisplayDate(dueDateRaw)
+        val dueDateMillis = DateUtils.parseDueDateMillis(dueDateRaw)
         val dueTime = args.optNullableString("dueTime")
         val location = args.optNullableString("location")
         val repeatType = args.optNullableString("repeatType")
         val parentId = args.optNullableString("parentId")
-
-        val targetCal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 12)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        val dueDateMillis = targetCal.timeInMillis
 
         val task = Task(
             title = title,
@@ -103,7 +96,8 @@ object AiToolExecutor {
             val parentTask = Task(
                 title = parentTitle,
                 priority = Priority.MEDIUM,
-                dueDate = DateUtils.getTodayDisplayDate()
+                dueDate = DateUtils.getTodayDisplayDate(),
+                dueDateMillis = System.currentTimeMillis()
             )
             TaskRepository.addTask(parentTask)
             parentId = parentTask.id
@@ -118,7 +112,9 @@ object AiToolExecutor {
             val notes = item.optNullableString("notes")
             val priorityStr = item.optString("priority", "LOW").uppercase()
             val priority = try { Priority.valueOf(priorityStr) } catch (_: Exception) { Priority.LOW }
-            val dueDate = DateUtils.formatDisplayDate(item.optNullableString("dueDate"))
+            val dueDateRaw = item.optNullableString("dueDate")
+            val dueDate = DateUtils.formatDisplayDate(dueDateRaw)
+            val dueDateMillis = DateUtils.parseDueDateMillis(dueDateRaw)
             val dueTime = item.optNullableString("dueTime")
 
             val task = Task(
@@ -126,6 +122,7 @@ object AiToolExecutor {
                 notes = notes,
                 priority = priority,
                 dueDate = dueDate,
+                dueDateMillis = dueDateMillis,
                 dueTime = dueTime,
                 parentId = parentId
             )
@@ -154,8 +151,10 @@ object AiToolExecutor {
             updated = updated.copy(priority = p)
         }
         if (args.has("dueDate")) {
-            val d = DateUtils.formatDisplayDate(args.optNullableString("dueDate"))
-            updated = updated.copy(dueDate = d)
+            val dRaw = args.optNullableString("dueDate")
+            val d = DateUtils.formatDisplayDate(dRaw)
+            val dMillis = DateUtils.parseDueDateMillis(dRaw)
+            updated = updated.copy(dueDate = d, dueDateMillis = dMillis)
         }
         if (args.has("dueTime")) updated = updated.copy(dueTime = args.optNullableString("dueTime"))
         if (args.has("location")) updated = updated.copy(location = args.optNullableString("location"))

@@ -489,16 +489,34 @@ object AiEngine {
         val learnedRules = AiMemoryManager.getFormattedRulesForPrompt()
         val compactTasks = AiToolExecutor.buildCompactTasksContext()
 
+        val now = java.util.Calendar.getInstance()
+        val dayOfWeek = java.text.SimpleDateFormat("EEEE", java.util.Locale.US).format(now.time)
+        val todayFull = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.US).format(now.time)
+        val todayShort = java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(now.time)
+        val currentTime = java.text.SimpleDateFormat("h:mm a", java.util.Locale.US).format(now.time)
+
+        val calTom = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, 1) }
+        val tomorrowShort = java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(calTom.time)
+
         return """
             You are KAIRO's intelligent Agentic Task Executive. You have FULL PERMISSION to create, edit, reorder, group, snooze, complete, and delete tasks in the user's workspace.
             
+            ### REAL-TIME TEMPORAL CONTEXT:
+            - Current Date: $dayOfWeek, $todayFull
+            - Current Time: $currentTime
+            - "today" = "$todayShort"
+            - "tomorrow" = "$tomorrowShort"
+            - ALWAYS output dueDate in standard "MMM d" format (e.g. "$todayShort", "$tomorrowShort", "Oct 10") or ISO "YYYY-MM-DD" format.
+            - ALWAYS output dueTime in 24-hour "HH:mm" (e.g. "17:00") or 12-hour "hh:mm a" (e.g. "05:00 PM").
+            
             ### CORE DIRECTIVES:
-            1. BE PROACTIVE & ACTIONABLE: Always call the provided tools to perform requested actions immediately. Do not just talk about doing it—DO IT.
-            2. MANDATORY FIELDS & CLARIFICATIONS:
-               - When creating a task, if the user leaves out a critical due date/time or the request is ambiguous, ASK them politely and concisely before guessing.
+            1. BE PROACTIVE & ACTIONABLE: When the user asks to create, update, snooze, delete, or complete tasks, call the tools immediately. Do not just talk about it—execute it!
+            2. TEMPORAL ACCURACY: When a user says "tomorrow", use "$tomorrowShort". When they say a weekday (e.g. "Friday"), calculate the exact date for that upcoming weekday based on today ($dayOfWeek).
+            3. MANDATORY FIELDS & CLARIFICATIONS:
+               - When creating a task, if the user does NOT specify a date, default to "$todayShort". If time is mentioned, include it.
                - If an action could be destructive (like deleting an entire project), ask for confirmation.
-            3. AGENTIC MEMORY: If the user gives a rule or preference (e.g. "Don't schedule tasks before 10 AM", "Groceries are always low priority"), call the 'remember_user_rule' tool to save it permanently.
-            4. VOICE-READY RESPONSES: Keep conversational outputs concise, crisp, and direct (1-2 sentences) so they can be spoken aloud seamlessly without delay.
+            4. AGENTIC MEMORY: If the user gives a rule or preference (e.g. "Don't schedule tasks before 10 AM", "Groceries are always low priority"), call the 'remember_user_rule' tool to save it permanently.
+            5. VOICE-READY RESPONSES: Keep conversational outputs concise, crisp, and direct (1-2 sentences) so they can be spoken aloud seamlessly without delay.
             
             ### CURRENT TASKS IN WORKSPACE:
             $compactTasks
