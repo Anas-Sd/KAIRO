@@ -27,6 +27,7 @@ class AlarmRingingService : Service() {
 
     private var mediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
+    private var currentTaskId: String? = null
 
     companion object {
         const val CHANNEL_ID = "kairo_alarm_channel"
@@ -112,6 +113,7 @@ class AlarmRingingService : Service() {
         }
 
         val taskId = intent.getStringExtra(EXTRA_TASK_ID).orEmpty()
+        currentTaskId = taskId
         val title = intent.getStringExtra(EXTRA_TASK_TITLE).orEmpty().ifBlank { "Task Reminder" }
         val notes = intent.getStringExtra(EXTRA_TASK_NOTES)
         val priority = intent.getStringExtra(EXTRA_TASK_PRIORITY).orEmpty()
@@ -375,7 +377,18 @@ class AlarmRingingService : Service() {
             }
         }
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val deleteIntent = Intent(this, AlarmReceiver::class.java).apply {
+            action = AlarmReceiver.ACTION_DISMISS_ALARM
+            putExtra(EXTRA_TASK_ID, taskId)
+        }
+        val deletePendingIntent = PendingIntent.getBroadcast(
+            this,
+            (taskId + "_delete").hashCode(),
+            deleteIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(displayText.ifBlank { "Task alarm is ringing" })
@@ -385,12 +398,34 @@ class AlarmRingingService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(false)
             .setOngoing(true)
+            .setDeleteIntent(deletePendingIntent)
             .setFullScreenIntent(fullScreenPendingIntent, true)
             .setContentIntent(fullScreenPendingIntent)
             .addAction(R.mipmap.ic_launcher, "Done", donePendingIntent)
             .addAction(R.mipmap.ic_launcher, "10m", snoozePendingIntent)
             .addAction(R.mipmap.ic_launcher, "Dismiss", dismissPendingIntent)
             .build()
+
+        notification.flags = notification.flags or
+                Notification.FLAG_ONGOING_EVENT or
+                Notification.FLAG_NO_CLEAR or
+                Notification.FLAG_FOREGROUND_SERVICE
+
+        return notification
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.i(TAG, "onTaskRemoved called - app swiped from recents")
+        val taskId = currentTaskId
+        if (!taskId.isNullOrBlank()) {
+            val dismissIntent = Intent(this, AlarmReceiver::class.java).apply {
+                action = AlarmReceiver.ACTION_DISMISS_ALARM
+                putExtra(EXTRA_TASK_ID, taskId)
+            }
+            sendBroadcast(dismissIntent)
+        }
+        stopRingingAndSelf()
+        super.onTaskRemoved(rootIntent)
     }
 
     private fun stopRingingAndSelf() {
