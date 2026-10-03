@@ -198,15 +198,16 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
                 })
             }
 
+            val deviceLocaleTag = Locale.getDefault().toLanguageTag().ifBlank { "en-US" }
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-US")
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, deviceLocaleTag)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, deviceLocaleTag)
                 putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, false)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2500L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1500L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1200L)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
             }
@@ -230,7 +231,9 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
 
     fun setVoiceMode(active: Boolean) {
         this.isVoiceModeActive = active
-        if (!active) {
+        if (active) {
+            stopWakeWordDetection()
+        } else {
             stopListening()
             stopSpeaking()
         }
@@ -240,8 +243,108 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
     // "HEY BUDDY" WAKE PHRASE MONITOR
     // ==========================================
 
+    private var wakeWordRecognizer: SpeechRecognizer? = null
+    private var isWakeWordActive = false
+    private var wakeWordContext: Context? = null
+
     fun setWakeWordListener(listener: (() -> Unit)?) {
         this.onWakeWordListener = listener
+    }
+
+    /**
+     * Starts continuous low-overhead foreground wake-word detector.
+     * When "Hey Buddy" is heard, triggers [onWakeWordListener] and stops itself.
+     */
+    fun startWakeWordDetection(context: Context) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { startWakeWordDetection(context) }
+            return
+        }
+        if (isVoiceModeActive || _isListening.value || _isSpeaking.value) {
+            return
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            Log.w(TAG, "SpeechRecognizer not available for wake word.")
+            return
+        }
+
+        wakeWordContext = context.applicationContext
+        isWakeWordActive = true
+        initiateWakeWordRecognizer()
+    }
+
+    private fun initiateWakeWordRecognizer() {
+        val ctx = wakeWordContext ?: return
+        if (!isWakeWordActive || isVoiceModeActive || _isSpeaking.value) return
+
+        try {
+            wakeWordRecognizer?.destroy()
+            wakeWordRecognizer = SpeechRecognizer.createSpeechRecognizer(ctx).apply {
+                setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {}
+                    override fun onBeginningOfSpeech() {}
+                    override fun onRmsChanged(rmsdB: Float) {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() {}
+
+                    override fun onError(error: Int) {
+                        Log.d(TAG, "Wake word recognizer error: $error")
+                        if (isWakeWordActive && !isVoiceModeActive && !_isSpeaking.value) {
+                            mainHandler.postDelayed({
+                                initiateWakeWordRecognizer()
+                            }, 500L)
+                        }
+                    }
+
+                    override fun onResults(results: Bundle?) {
+                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
+                        val detected = matches.any { checkWakeWord(it) }
+                        if (detected) {
+                            stopWakeWordDetection()
+                            mainHandler.post { onWakeWordListener?.invoke() }
+                        } else if (isWakeWordActive && !isVoiceModeActive && !_isSpeaking.value) {
+                            mainHandler.postDelayed({
+                                initiateWakeWordRecognizer()
+                            }, 300L)
+                        }
+                    }
+
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
+                        val detected = matches.any { checkWakeWord(it) }
+                        if (detected) {
+                            stopWakeWordDetection()
+                            mainHandler.post { onWakeWordListener?.invoke() }
+                        }
+                    }
+
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                })
+            }
+
+            val deviceLocaleTag = Locale.getDefault().toLanguageTag().ifBlank { "en-US" }
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, deviceLocaleTag)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, deviceLocaleTag)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, ctx.packageName)
+            }
+
+            wakeWordRecognizer?.startListening(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initiating wake word recognizer: ${e.message}")
+        }
+    }
+
+    fun stopWakeWordDetection() {
+        isWakeWordActive = false
+        try {
+            wakeWordRecognizer?.stopListening()
+            wakeWordRecognizer?.destroy()
+            wakeWordRecognizer = null
+        } catch (_: Exception) {}
     }
 
     /**
@@ -249,10 +352,14 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
      */
     fun checkWakeWord(text: String): Boolean {
         val lower = text.trim().lowercase()
-        if (lower.contains("hey buddy") || lower.contains("hi buddy") || lower.contains("ok buddy")) {
-            onWakeWordListener?.invoke()
-            return true
-        }
-        return false
+        return lower.contains("hey buddy") ||
+                lower.contains("hi buddy") ||
+                lower.contains("ok buddy") ||
+                lower.contains("hello buddy") ||
+                lower.contains("hey body") ||
+                lower.contains("hi body") ||
+                lower.contains("hey kairo") ||
+                lower.contains("hi kairo") ||
+                lower.contains("kairo")
     }
 }

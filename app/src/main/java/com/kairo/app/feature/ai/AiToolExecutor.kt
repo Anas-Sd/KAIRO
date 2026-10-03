@@ -1,5 +1,7 @@
 package com.kairo.app.feature.ai
 
+import com.kairo.app.KairoApplication
+import com.kairo.app.alarm.AlarmScheduler
 import com.kairo.app.data.model.Priority
 import com.kairo.app.data.model.Task
 import com.kairo.app.data.model.TaskSection
@@ -52,6 +54,24 @@ object AiToolExecutor {
         return if (has(key) && !isNull(key)) optString(key).trim().takeIf { it.isNotBlank() } else null
     }
 
+    private fun computeSection(dueDate: String, dueDateMillis: Long?): TaskSection {
+        val todayStart = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val todayEnd = todayStart + 86400000L
+
+        val targetMillis = dueDateMillis ?: if (dueDate.isNotBlank()) DateUtils.parseDueDateMillis(dueDate) else null
+        return when {
+            dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
+            dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
+            dueDate.contains("Tomorrow", ignoreCase = true) -> TaskSection.UPCOMING
+            targetMillis != null && targetMillis < todayStart -> TaskSection.OVERDUE
+            targetMillis != null && targetMillis in todayStart until todayEnd -> TaskSection.TODAY
+            targetMillis != null && targetMillis >= todayEnd -> TaskSection.UPCOMING
+            else -> TaskSection.TODAY
+        }
+    }
+
     private fun handleCreateTask(args: JSONObject): ToolExecutionResult {
         val title = args.optString("title", "").trim()
         if (title.isBlank()) {
@@ -67,12 +87,31 @@ object AiToolExecutor {
         val dueTime = args.optNullableString("dueTime")
         val location = args.optNullableString("location")
         val repeatType = args.optNullableString("repeatType")
-        val parentId = args.optNullableString("parentId")
+        var parentId = args.optNullableString("parentId")
+        val parentTitle = args.optNullableString("parentTitle")
+
+        // Subtask resolution: resolve parent by title if ID is not matching or parentTitle is supplied
+        val allTasks = TaskRepository.getAllTasks()
+        if (parentId != null && TaskRepository.getTaskById(parentId) == null) {
+            val matched = allTasks.find {
+                it.title.equals(parentId, ignoreCase = true) || it.title.contains(parentId, ignoreCase = true)
+            }
+            if (matched != null) parentId = matched.id
+        }
+        if (parentId == null && parentTitle != null) {
+            val matched = allTasks.find {
+                it.title.equals(parentTitle, ignoreCase = true) || it.title.contains(parentTitle, ignoreCase = true)
+            }
+            if (matched != null) parentId = matched.id
+        }
+
+        val section = computeSection(dueDate, dueDateMillis)
 
         val task = Task(
             title = title,
             notes = notes,
             priority = priority,
+            section = section,
             dueDate = dueDate,
             dueDateMillis = dueDateMillis,
             dueTime = dueTime,
@@ -82,7 +121,12 @@ object AiToolExecutor {
         )
 
         TaskRepository.addTask(task)
-        val parentNote = if (parentId != null) " as subtask" else ""
+        try {
+            AlarmScheduler.scheduleAlarm(KairoApplication.instance, task)
+        } catch (_: Exception) {}
+
+        val parentName = parentId?.let { pid -> TaskRepository.getTaskById(pid)?.title }
+        val parentNote = if (parentName != null) " under '$parentName'" else if (parentId != null) " as subtask" else ""
         return ToolExecutionResult(true, "Created task '$title' ($dueDate, $priority Priority)$parentNote.")
     }
 
@@ -96,6 +140,7 @@ object AiToolExecutor {
             val parentTask = Task(
                 title = parentTitle,
                 priority = Priority.MEDIUM,
+                section = TaskSection.TODAY,
                 dueDate = DateUtils.getTodayDisplayDate(),
                 dueDateMillis = System.currentTimeMillis()
             )
@@ -116,17 +161,22 @@ object AiToolExecutor {
             val dueDate = DateUtils.formatDisplayDate(dueDateRaw)
             val dueDateMillis = DateUtils.parseDueDateMillis(dueDateRaw)
             val dueTime = item.optNullableString("dueTime")
+            val section = computeSection(dueDate, dueDateMillis)
 
             val task = Task(
                 title = title,
                 notes = notes,
                 priority = priority,
+                section = section,
                 dueDate = dueDate,
                 dueDateMillis = dueDateMillis,
                 dueTime = dueTime,
                 parentId = parentId
             )
             TaskRepository.addTask(task)
+            try {
+                AlarmScheduler.scheduleAlarm(KairoApplication.instance, task)
+            } catch (_: Exception) {}
             count++
         }
 
@@ -136,8 +186,11 @@ object AiToolExecutor {
 
     private fun handleUpdateTask(args: JSONObject): ToolExecutionResult {
         val taskId = args.optString("taskId", "").trim()
+        val allTasks = TaskRepository.getAllTasks().sortedByDescending { it.createdAt }
         val task = TaskRepository.getTaskById(taskId)
-            ?: return ToolExecutionResult(false, "Task with ID '$taskId' not found.")
+            ?: allTasks.find { it.title.equals(taskId, ignoreCase = true) }
+            ?: allTasks.find { it.title.contains(taskId, ignoreCase = true) }
+            ?: return ToolExecutionResult(false, "Task with ID or title '$taskId' not found.")
 
         var updated = task
         if (args.has("title")) {
@@ -154,31 +207,56 @@ object AiToolExecutor {
             val dRaw = args.optNullableString("dueDate")
             val d = DateUtils.formatDisplayDate(dRaw)
             val dMillis = DateUtils.parseDueDateMillis(dRaw)
-            updated = updated.copy(dueDate = d, dueDateMillis = dMillis)
+            val sec = computeSection(d, dMillis)
+            updated = updated.copy(dueDate = d, dueDateMillis = dMillis, section = sec)
         }
         if (args.has("dueTime")) updated = updated.copy(dueTime = args.optNullableString("dueTime"))
         if (args.has("location")) updated = updated.copy(location = args.optNullableString("location"))
 
         TaskRepository.updateTask(updated)
+        try {
+            AlarmScheduler.scheduleAlarm(KairoApplication.instance, updated)
+        } catch (_: Exception) {}
         return ToolExecutionResult(true, "Updated task '${updated.title}'.")
     }
 
     private fun handleToggleCompletion(args: JSONObject): ToolExecutionResult {
         val taskId = args.optString("taskId", "").trim()
+        val allTasks = TaskRepository.getAllTasks().sortedByDescending { it.createdAt }
         val task = TaskRepository.getTaskById(taskId)
+            ?: allTasks.find { it.title.equals(taskId, ignoreCase = true) }
+            ?: allTasks.find { it.title.contains(taskId, ignoreCase = true) }
+            ?: allTasks.firstOrNull()
             ?: return ToolExecutionResult(false, "Task with ID '$taskId' not found.")
 
-        TaskRepository.toggleTaskCompletion(taskId)
+        TaskRepository.toggleTaskCompletion(task.id)
         val newState = if (task.isCompleted) "active" else "completed"
         return ToolExecutionResult(true, "Marked task '${task.title}' as $newState.")
     }
 
     private fun handleDeleteTask(args: JSONObject): ToolExecutionResult {
-        val taskId = args.optString("taskId", "").trim()
-        val task = TaskRepository.getTaskById(taskId)
-            ?: return ToolExecutionResult(false, "Task with ID '$taskId' not found.")
+        val rawTaskId = args.optString("taskId", "").trim()
+        val titleQuery = args.optString("title", "").trim()
+        val allTasks = TaskRepository.getAllTasks().sortedByDescending { it.createdAt }
 
-        val subtasks = TaskRepository.getAllTasks().filter { it.parentId == taskId }
+        val task = when {
+            rawTaskId.equals("latest", ignoreCase = true) || rawTaskId.equals("last", ignoreCase = true) -> {
+                allTasks.firstOrNull()
+            }
+            rawTaskId.isNotBlank() -> {
+                TaskRepository.getTaskById(rawTaskId)
+                    ?: allTasks.find { it.title.equals(rawTaskId, ignoreCase = true) }
+                    ?: allTasks.find { it.title.contains(rawTaskId, ignoreCase = true) }
+            }
+            titleQuery.isNotBlank() -> {
+                allTasks.find { it.title.equals(titleQuery, ignoreCase = true) }
+                    ?: allTasks.find { it.title.contains(titleQuery, ignoreCase = true) }
+            }
+            else -> allTasks.firstOrNull()
+        } ?: return ToolExecutionResult(false, "No task found to delete.")
+
+        val actualTaskId = task.id
+        val subtasks = TaskRepository.getAllTasks().filter { it.parentId == actualTaskId }
         val confirmed = args.optBoolean("confirmed", false)
 
         if (subtasks.isNotEmpty() && !confirmed) {
@@ -187,11 +265,14 @@ object AiToolExecutor {
                 message = "Task '${task.title}' has ${subtasks.size} subtasks. Confirmation required.",
                 requiresConfirmation = true,
                 confirmationPrompt = "Task '${task.title}' contains ${subtasks.size} subtask(s). Are you sure you want to delete it and all its subtasks?",
-                pendingActionJson = args.put("confirmed", true).toString()
+                pendingActionJson = args.put("confirmed", true).put("taskId", actualTaskId).toString()
             )
         }
 
-        TaskRepository.deleteTask(taskId)
+        TaskRepository.deleteTask(actualTaskId)
+        try {
+            AlarmScheduler.cancelAlarm(KairoApplication.instance, actualTaskId)
+        } catch (_: Exception) {}
         return ToolExecutionResult(true, "Deleted task '${task.title}'.")
     }
 
@@ -214,6 +295,9 @@ object AiToolExecutor {
             val id = ids.optString(i)
             if (id.isNotBlank()) {
                 TaskRepository.deleteTask(id)
+                try {
+                    AlarmScheduler.cancelAlarm(KairoApplication.instance, id)
+                } catch (_: Exception) {}
                 count++
             }
         }
@@ -285,8 +369,9 @@ object AiToolExecutor {
         val all = TaskRepository.getAllTasks()
         if (all.isEmpty()) return "Currently no tasks in workspace."
 
+        val sorted = all.sortedByDescending { it.createdAt }
         val jsonArray = JSONArray()
-        for (t in all.take(40)) { // limit to most recent/relevant 40 tasks to optimize tokens
+        for ((idx, t) in sorted.take(40).withIndex()) {
             val obj = JSONObject()
             obj.put("id", t.id)
             obj.put("title", t.title)
@@ -295,6 +380,7 @@ object AiToolExecutor {
             if (!t.dueTime.isNullOrBlank()) obj.put("dueTime", t.dueTime)
             obj.put("done", t.isCompleted)
             if (t.parentId != null) obj.put("parentId", t.parentId)
+            if (idx == 0) obj.put("isLatestCreated", true)
             jsonArray.put(obj)
         }
         return jsonArray.toString()

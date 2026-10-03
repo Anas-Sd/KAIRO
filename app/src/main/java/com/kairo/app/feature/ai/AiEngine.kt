@@ -518,7 +518,15 @@ object AiEngine {
             4. AGENTIC MEMORY: If the user gives a rule or preference (e.g. "Don't schedule tasks before 10 AM", "Groceries are always low priority"), call the 'remember_user_rule' tool to save it permanently.
             5. VOICE-READY RESPONSES: Keep conversational outputs concise, crisp, and direct (1-2 sentences) so they can be spoken aloud seamlessly without delay.
             
-            ### CURRENT TASKS IN WORKSPACE:
+            ### SPEECH-TO-TEXT (STT) ROBUSTNESS & PHONETIC CORRECTION:
+            User input is transcribed from live speech and may have phonetic distortions, misheard words, or accent artifacts:
+            - "subskhand region" / "subskhand" / "sub-task under" -> "subtask under [existing task]" (e.g. "add a subtask under gym that i need to do" -> call create_task with title and parentTitle: "gym" or parentId: "gym").
+            - "ask you have done" / "delete latest task" / "delete last task" -> call delete_task with taskId: "latest".
+            - If spoken words sound phonetically similar to a task in CURRENT TASKS IN WORKSPACE (e.g. "gym", "groceries", "reading"), resolve to that existing task!
+            - "mark done" / "finish" / "completed" -> toggle_task_completion.
+            - Always infer the user's intent proactively and execute the task operation immediately!
+            
+            ### CURRENT TASKS IN WORKSPACE (ordered latest first):
             $compactTasks
             $learnedRules
         """.trimIndent()
@@ -542,7 +550,8 @@ object AiEngine {
                         put("dueDate", JSONObject().put("type", "string").put("description", "Due date (e.g. Oct 4)"))
                         put("dueTime", JSONObject().put("type", "string").put("description", "Due time (e.g. 14:30 or 10:00 AM)"))
                         put("location", JSONObject().put("type", "string").put("description", "Location label or address"))
-                        put("parentId", JSONObject().put("type", "string").put("description", "Parent task ID if creating a subtask"))
+                        put("parentId", JSONObject().put("type", "string").put("description", "Parent task ID or parent task name (e.g. 'gym') if creating a subtask"))
+                        put("parentTitle", JSONObject().put("type", "string").put("description", "Parent task title if creating a subtask under an existing task"))
                     })
                     put("required", JSONArray(listOf("title")))
                 })
@@ -612,7 +621,8 @@ object AiEngine {
                 put("parameters", JSONObject().apply {
                     put("type", "object")
                     put("properties", JSONObject().apply {
-                        put("taskId", JSONObject().put("type", "string"))
+                        put("taskId", JSONObject().put("type", "string").put("description", "Task ID, task title, or 'latest' for the most recently created task"))
+                        put("title", JSONObject().put("type", "string").put("description", "Optional task title if taskId is unknown"))
                     })
                     put("required", JSONArray(listOf("taskId")))
                 })

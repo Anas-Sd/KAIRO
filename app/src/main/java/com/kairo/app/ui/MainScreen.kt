@@ -26,6 +26,8 @@ fun MainScreen() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Tasks.route
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+
     androidx.compose.runtime.LaunchedEffect(Unit) {
         com.kairo.app.feature.ai.AiVoiceManager.setWakeWordListener {
             navController.navigate(Screen.AiAssistant.route) {
@@ -33,6 +35,25 @@ fun MainScreen() {
             }
             com.kairo.app.feature.ai.AiVoiceManager.setVoiceMode(true)
             com.kairo.app.feature.ai.AiVoiceManager.speak("Hey Buddy! What can I do for you?")
+        }
+    }
+
+    androidx.compose.runtime.DisposableEffect(currentRoute) {
+        if (currentRoute != Screen.AiAssistant.route) {
+            val hasAudioPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.RECORD_AUDIO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            if (hasAudioPerm) {
+                com.kairo.app.feature.ai.AiVoiceManager.startWakeWordDetection(context)
+            }
+        } else {
+            com.kairo.app.feature.ai.AiVoiceManager.stopWakeWordDetection()
+        }
+
+        onDispose {
+            com.kairo.app.feature.ai.AiVoiceManager.stopWakeWordDetection()
         }
     }
 
