@@ -266,10 +266,11 @@ fun TaskDetailsBottomSheet(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     // Due Date & Time
+                    val formattedDate = com.kairo.app.ui.utils.DateUtils.formatDisplayDate(task.dueDate, task.dueDateMillis)
                     val dueString = if (!task.dueTime.isNullOrBlank()) {
-                        "${task.dueDate} at ${task.dueTime}"
+                        "$formattedDate at ${task.dueTime}"
                     } else {
-                        task.dueDate
+                        formattedDate
                     }
                     InfoRow(
                         icon = Icons.Default.CalendarToday,

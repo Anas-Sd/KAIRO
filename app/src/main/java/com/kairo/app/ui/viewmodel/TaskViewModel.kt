@@ -115,15 +115,26 @@ class TaskViewModel(
             }
             else -> {
                 try {
-                    val formats = arrayOf("dd/MM/yyyy", "yyyy-MM-dd", "MMM dd, yyyy", "dd MMM yyyy", "EEE, MMM d")
-                    var parsed: Long? = null
+                    val formats = arrayOf("MMM d", "MMM dd", "dd/MM/yyyy", "yyyy-MM-dd", "MMM dd, yyyy", "dd MMM yyyy", "EEE, MMM d")
+                    var parsedTime: Long? = null
                     for (fmt in formats) {
                         try {
-                            parsed = SimpleDateFormat(fmt, Locale.getDefault()).parse(dueDateStr)?.time
-                            if (parsed != null) break
+                            val parsedDate = SimpleDateFormat(fmt, Locale.getDefault()).parse(dueDateStr)
+                            if (parsedDate != null) {
+                                val pCal = Calendar.getInstance().apply { time = parsedDate }
+                                if (pCal.get(Calendar.YEAR) <= 1970) {
+                                    pCal.set(Calendar.YEAR, Calendar.getInstance().get(Calendar.YEAR))
+                                }
+                                pCal.set(Calendar.HOUR_OF_DAY, 12)
+                                pCal.set(Calendar.MINUTE, 0)
+                                pCal.set(Calendar.SECOND, 0)
+                                pCal.set(Calendar.MILLISECOND, 0)
+                                parsedTime = pCal.timeInMillis
+                                break
+                            }
                         } catch (_: Exception) {}
                     }
-                    parsed ?: fallback
+                    parsedTime ?: fallback
                 } catch (_: Exception) {
                     fallback
                 }
@@ -524,9 +535,20 @@ class TaskViewModel(
         locationRadius: Int = 500
     ) {
         if (title.isBlank()) return
+        val targetMillis = dueDateMillis ?: computeDueDateMillis(dueDate)
+        val todayStart = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val todayEnd = todayStart + 86400000L
+
         val assignedSection = when {
-            dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
             dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
+            dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
+            targetMillis < todayStart -> TaskSection.OVERDUE
+            targetMillis >= todayStart && targetMillis < todayEnd -> TaskSection.TODAY
             else -> TaskSection.UPCOMING
         }
         val updated = task.copy(
@@ -534,7 +556,7 @@ class TaskViewModel(
             notes = notes,
             priority = priority,
             dueDate = dueDate,
-            dueDateMillis = dueDateMillis ?: computeDueDateMillis(dueDate),
+            dueDateMillis = targetMillis,
             dueTime = dueTime,
             location = location,
             attachmentName = attachmentName,
@@ -578,9 +600,20 @@ class TaskViewModel(
         locationRadius: Int = 500
     ) {
         if (title.isBlank()) return
+        val targetMillis = dueDateMillis ?: computeDueDateMillis(dueDate)
+        val todayStart = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val todayEnd = todayStart + 86400000L
+
         val assignedSection = when {
-            dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
             dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
+            dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
+            targetMillis < todayStart -> TaskSection.OVERDUE
+            targetMillis >= todayStart && targetMillis < todayEnd -> TaskSection.TODAY
             else -> TaskSection.UPCOMING
         }
         val siblingCount = repository.getAllTasks().count { it.parentId == parentId }
@@ -589,7 +622,7 @@ class TaskViewModel(
             notes = notes,
             priority = priority,
             dueDate = dueDate,
-            dueDateMillis = dueDateMillis ?: computeDueDateMillis(dueDate),
+            dueDateMillis = targetMillis,
             dueTime = dueTime,
             location = location,
             attachmentName = attachmentName,

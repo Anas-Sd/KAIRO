@@ -116,7 +116,9 @@ fun EditTaskDialog(
     var priorityMenuExpanded by remember { mutableStateOf(false) }
 
     // Date & Time state
-    var selectedDateText by remember { mutableStateOf(task.dueDate) }
+    var selectedDateText by remember {
+        mutableStateOf(com.kairo.app.ui.utils.DateUtils.formatDisplayDate(task.dueDate, task.dueDateMillis))
+    }
     var selectedDateMillis by remember { mutableStateOf(task.dueDateMillis) }
     var selectedTimeText by remember {
         mutableStateOf(
@@ -274,20 +276,7 @@ fun EditTaskDialog(
                 }
                 selectedDateMillis = chosenCal.timeInMillis
 
-                val todayCal = Calendar.getInstance().apply {
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }
-                val diffDays = ((chosenCal.timeInMillis - todayCal.timeInMillis) / (24 * 60 * 60 * 1000)).toInt()
-
-                selectedDateText = when (diffDays) {
-                    0 -> "Today"
-                    1 -> "Tomorrow"
-                    -1 -> "Yesterday"
-                    else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(chosenCal.time)
-                }
+                selectedDateText = SimpleDateFormat("MMM d", Locale.getDefault()).format(chosenCal.time)
 
                 // Follow up with Time Picker
                 TimePickerDialog(

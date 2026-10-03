@@ -23,6 +23,9 @@ import com.kairo.app.data.sync.SyncManager
 import com.kairo.app.feature.tasks.location.TaskLocationFacade
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 data class UndoAction(
     val previousTasks: List<Task>,
@@ -232,19 +235,11 @@ object TaskRepository {
             // Rule 2: Unticking a subtask -> parent & all done ancestors become not done
             toReopen.addAll(getAncestorIds(taskId, currentTasks))
 
-            fun determineOpenSection(dueDate: String): TaskSection {
-                return when {
-                    dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
-                    dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
-                    else -> TaskSection.UPCOMING
-                }
-            }
-
             val updatedList = currentTasks.map { t ->
                 if (toReopen.contains(t.id)) {
                     t.copy(
                         isCompleted = false,
-                        section = determineOpenSection(t.dueDate),
+                        section = determineOpenSection(t.dueDate, t.dueDateMillis),
                         completedAt = null,
                         updatedAt = now
                     )
@@ -380,7 +375,7 @@ object TaskRepository {
             if (toReopen.contains(t.id)) {
                 t.copy(
                     isCompleted = false,
-                    section = if (t.dueDate.contains("Yesterday", true)) TaskSection.OVERDUE else TaskSection.TODAY,
+                    section = determineOpenSection(t.dueDate, t.dueDateMillis),
                     completedAt = null,
                     updatedAt = now
                 )
@@ -599,7 +594,7 @@ object TaskRepository {
                 if (parent.isCompleted) {
                     tasks[parentIdx] = parent.copy(
                         isCompleted = false,
-                        section = TaskSection.TODAY,
+                        section = determineOpenSection(parent.dueDate, parent.dueDateMillis),
                         completedAt = null,
                         updatedAt = now
                     )
@@ -640,5 +635,40 @@ object TaskRepository {
 
     fun getAllTasks(): List<Task> {
         return _tasks.value
+    }
+
+    private fun determineOpenSection(dueDate: String, dueDateMillis: Long? = null): TaskSection {
+        val todayStart = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val targetMillis = dueDateMillis ?: try {
+            val formats = arrayOf("MMM d", "MMM dd", "dd/MM/yyyy", "yyyy-MM-dd")
+            var parsedTime: Long? = null
+            for (fmt in formats) {
+                try {
+                    val parsedDate = java.text.SimpleDateFormat(fmt, java.util.Locale.getDefault()).parse(dueDate)
+                    if (parsedDate != null) {
+                        val pCal = java.util.Calendar.getInstance().apply { time = parsedDate }
+                        if (pCal.get(java.util.Calendar.YEAR) <= 1970) {
+                            pCal.set(java.util.Calendar.YEAR, java.util.Calendar.getInstance().get(java.util.Calendar.YEAR))
+                        }
+                        parsedTime = pCal.timeInMillis
+                        break
+                    }
+                } catch (_: Exception) {}
+            }
+            parsedTime
+        } catch (_: Exception) { null }
+
+        return when {
+            dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
+            dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
+            targetMillis != null && targetMillis < todayStart -> TaskSection.OVERDUE
+            targetMillis != null && targetMillis >= todayStart && targetMillis < (todayStart + 86400000L) -> TaskSection.TODAY
+            else -> TaskSection.UPCOMING
+        }
     }
 }

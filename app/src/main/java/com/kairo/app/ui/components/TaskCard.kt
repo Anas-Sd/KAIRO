@@ -302,27 +302,23 @@ fun TaskCard(
                     )
 
                     // Date & Time Capsules
-                    val isUpcomingTask = task.section == TaskSection.UPCOMING ||
-                        (!task.dueDate.equals("Today", ignoreCase = true) && task.dueDate.isNotBlank())
-
-                    // Date Capsule (always visible for upcoming tasks or non-today tasks)
-                    if (isUpcomingTask || isOverdue) {
+                    val formattedDate = com.kairo.app.ui.utils.DateUtils.formatDisplayDate(task.dueDate, task.dueDateMillis)
+                    if (formattedDate.isNotBlank()) {
                         TaskCapsule(
                             icon = if (isOverdue) Icons.Default.Warning else Icons.Default.CalendarToday,
                             iconTint = if (isOverdue) KairoError else KairoPrimary,
-                            text = task.dueDate,
+                            text = formattedDate,
                             containerColor = KairoSurfaceContainerHigh,
                             contentColor = if (isOverdue) KairoError else Color(0xFFC8C4D9)
                         )
                     }
 
-                    // Time Capsule (if due time is present, or if it is a Today task)
-                    val displayTime = task.dueTime ?: if (!isUpcomingTask && !isOverdue) task.dueDate else null
-                    if (!displayTime.isNullOrBlank()) {
+                    // Time Capsule (if due time is present)
+                    if (!task.dueTime.isNullOrBlank()) {
                         TaskCapsule(
                             icon = Icons.Default.Schedule,
                             iconTint = KairoPrimary,
-                            text = displayTime,
+                            text = task.dueTime,
                             containerColor = KairoSurfaceContainerHigh,
                             contentColor = Color(0xFFC8C4D9)
                         )
