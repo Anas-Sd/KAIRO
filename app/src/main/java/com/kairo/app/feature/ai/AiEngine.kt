@@ -97,15 +97,14 @@ object AiEngine {
             }
         }
 
-        // 2. Groq Multi-Model Tier (openai/gpt-oss-120b -> openai/gpt-oss-20b -> qwen/qwen3.8-27b)
+        // 2. Groq Multi-Model Tier (llama-3.3-70b-versatile -> llama-3.1-8b-instant -> mixtral-8x7b-32768)
         val groqKey = getGroqApiKey()
         if (groqKey.isNotBlank()) {
             val groqModels = listOf(
-                "openai/gpt-oss-120b" to "Groq 120B",
-                "openai/gpt-oss-20b" to "Groq 20B Failover",
-                "qwen/qwen3.8-27b" to "Groq Qwen 27B",
-                "llama-3.3-70b-versatile" to "Groq Llama 70B",
-                "llama-3.1-8b-instant" to "Groq Llama 8B"
+                "llama-3.3-70b-versatile" to "Groq Llama 3.3 70B",
+                "llama-3.1-8b-instant" to "Groq Llama 3.1 8B Instant",
+                "mixtral-8x7b-32768" to "Groq Mixtral 8x7B",
+                "gemma2-9b-it" to "Groq Gemma 2 9B"
             )
 
             for ((idx, modelPair) in groqModels.withIndex()) {
@@ -126,7 +125,7 @@ object AiEngine {
             }
         }
 
-        // 3. Google Gemini Flash Tier (gemini-3.8-flash -> gemini-flash-latest)
+        // 3. Google Gemini Flash Tier (gemini-2.0-flash -> gemini-1.5-flash)
         val geminiKey = getGeminiApiKey()
         if (geminiKey != null) {
             try {
@@ -134,7 +133,7 @@ object AiEngine {
                 if (geminiResp != null) {
                     return@withContext geminiResp.copy(
                         providerUsed = "Gemini Flash",
-                        quotaWarning = "Groq quota limit reached; switched to Gemini Flash.",
+                        quotaWarning = "Switched to Gemini Flash.",
                         latencyMs = System.currentTimeMillis() - startTime
                     )
                 }
@@ -278,7 +277,7 @@ object AiEngine {
         userPrompt: String,
         bitmap: Bitmap
     ): AiResponse? {
-        val geminiModels = listOf("gemini-3.8-flash", "gemini-flash-latest")
+        val geminiModels = listOf("gemini-2.0-flash", "gemini-1.5-flash")
 
         // Compress bitmap to JPEG to minimize token burn
         val outputStream = ByteArrayOutputStream()
@@ -367,7 +366,7 @@ object AiEngine {
         userMessage: String,
         history: List<Pair<String, Boolean>>
     ): AiResponse? {
-        val geminiModels = listOf("gemini-3.8-flash", "gemini-flash-latest")
+        val geminiModels = listOf("gemini-2.0-flash", "gemini-1.5-flash")
 
         val systemPrompt = buildSystemPrompt()
         val fullPrompt = "$systemPrompt\n\nUser: $userMessage\nAnswer with actionable steps:"
@@ -464,18 +463,30 @@ object AiEngine {
             val cleanTitle = input.trim()
                 .replaceFirst("(?i)^(add task|create task|add|create|remind me to)\\s+".toRegex(), "")
                 .trim()
-            if (cleanTitle.isNotBlank()) {
+            val timeMatch = Regex("(?:at|by)\\s+(\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?)", RegexOption.IGNORE_CASE).find(cleanTitle)
+            val dateMatch = Regex("\\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\\b", RegexOption.IGNORE_CASE).find(cleanTitle)
+            if (timeMatch != null && dateMatch != null) {
+                val extractedTime = timeMatch.groupValues[1].trim()
+                val extractedDate = dateMatch.value.trim().replaceFirstChar { it.uppercase() }
+                val taskTitle = cleanTitle.replace(timeMatch.value, "").replace(dateMatch.value, "").trim()
                 val res = AiToolExecutor.execute("create_task", JSONObject().apply {
-                    put("title", cleanTitle)
-                    put("dueDate", com.kairo.app.ui.utils.DateUtils.getTodayDisplayDate())
-                    put("priority", "LOW")
+                    put("title", taskTitle)
+                    put("dueDate", extractedDate)
+                    put("dueTime", extractedTime)
+                    put("priority", "MEDIUM")
                 })
                 return AiResponse(res.message, "Offline Local Engine", 5L)
+            } else if (cleanTitle.isNotBlank()) {
+                return AiResponse(
+                    text = "When would you like to schedule '$cleanTitle'? Please specify the due date and time.",
+                    providerUsed = "Offline Local Engine",
+                    latencyMs = 5L
+                )
             }
         }
 
         return AiResponse(
-            text = "You are currently offline. You can say 'add [task name]', 'done [task name]', 'delete [task name]', or 'summary'.",
+            text = "You are currently offline. You can say 'add [task name] tomorrow at 5 PM', 'done [task name]', 'delete [task name]', or 'summary'.",
             providerUsed = "Offline Local Engine",
             latencyMs = 5L
         )
@@ -498,6 +509,14 @@ object AiEngine {
         val calTom = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, 1) }
         val tomorrowShort = java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(calTom.time)
 
+        val upcomingDaysBuilder = java.lang.StringBuilder()
+        for (i in 1..7) {
+            val c = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, i) }
+            val dow = java.text.SimpleDateFormat("EEEE", java.util.Locale.US).format(c.time)
+            val dShort = java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(c.time)
+            upcomingDaysBuilder.append("- $dow = \"$dShort\"\n")
+        }
+
         return """
             You are KAIRO's intelligent Agentic Task Executive. You have FULL PERMISSION to create, edit, reorder, group, snooze, complete, and delete tasks in the user's workspace.
             
@@ -506,15 +525,25 @@ object AiEngine {
             - Current Time: $currentTime
             - "today" = "$todayShort"
             - "tomorrow" = "$tomorrowShort"
+            - Upcoming 7 days calendar mapping:
+$upcomingDaysBuilder
             - ALWAYS output dueDate in standard "MMM d" format (e.g. "$todayShort", "$tomorrowShort", "Oct 10") or ISO "YYYY-MM-DD" format.
             - ALWAYS output dueTime in 24-hour "HH:mm" (e.g. "17:00") or 12-hour "hh:mm a" (e.g. "05:00 PM").
             
             ### CORE DIRECTIVES:
             1. BE PROACTIVE & ACTIONABLE: When the user asks to create, update, snooze, delete, or complete tasks, call the tools immediately. Do not just talk about it—execute it!
-            2. TEMPORAL ACCURACY: When a user says "tomorrow", use "$tomorrowShort". When they say a weekday (e.g. "Friday"), calculate the exact date for that upcoming weekday based on today ($dayOfWeek).
-            3. MANDATORY FIELDS & CLARIFICATIONS:
-               - When creating a task, if the user does NOT specify a date, default to "$todayShort". If time is mentioned, include it.
-               - If an action could be destructive (like deleting an entire project), ask for confirmation.
+            2. TEMPORAL ACCURACY: When a user says "tomorrow", use "$tomorrowShort". When they say a weekday (e.g. "Friday"), calculate the exact date for that upcoming weekday based on the calendar above.
+            3. COMPULSORY REQUIRED FIELDS FOR TASKS (CRITICAL RULE):
+               - When the user asks to create, add, or schedule a task (e.g., "add buy groceries", "remind me to call John"):
+                 DUE DATE and DUE TIME are STRICTLY MANDATORY COMPULSORY FIELDS!
+               - If the user provides a task title but did NOT specify both the due date and due time:
+                 DO NOT CALL create_task!
+                 You MUST ASK the user for the missing required fields:
+                 * If neither date nor time is given (e.g., "add buy groceries"): Ask: "When would you like to schedule [task]? Please provide the date and time."
+                 * If date is given but time is missing (e.g., "add doctor appointment tomorrow"): Ask: "What time would you like to schedule [task] tomorrow?"
+                 * If time is given but date is missing (e.g., "remind me to call mom at 3 PM"): Ask: "What date would you like to schedule calling mom at 3 PM? (Today, tomorrow, or a specific date?)"
+               - ONLY call create_task when BOTH the dueDate AND dueTime are fully provided (either given upfront in the prompt like 'add gym tomorrow at 6 PM', or after the user answers your clarification question).
+               - NEVER default missing dates to today or missing times to the current time! Always ask the user!
             4. AGENTIC MEMORY: If the user gives a rule or preference (e.g. "Don't schedule tasks before 10 AM", "Groceries are always low priority"), call the 'remember_user_rule' tool to save it permanently.
             5. VOICE-READY RESPONSES: Keep conversational outputs concise, crisp, and direct (1-2 sentences) so they can be spoken aloud seamlessly without delay.
             
@@ -540,20 +569,20 @@ object AiEngine {
             put("type", "function")
             put("function", JSONObject().apply {
                 put("name", "create_task")
-                put("description", "Creates a new task in KAIRO workspace.")
+                put("description", "Creates a new task in KAIRO workspace. Compulsorily requires title, dueDate, and dueTime.")
                 put("parameters", JSONObject().apply {
                     put("type", "object")
                     put("properties", JSONObject().apply {
                         put("title", JSONObject().put("type", "string").put("description", "Task title"))
                         put("notes", JSONObject().put("type", "string").put("description", "Notes or details"))
                         put("priority", JSONObject().put("type", "string").put("enum", JSONArray(listOf("LOW", "MEDIUM", "HIGH", "URGENT"))))
-                        put("dueDate", JSONObject().put("type", "string").put("description", "Due date (e.g. Oct 4)"))
-                        put("dueTime", JSONObject().put("type", "string").put("description", "Due time (e.g. 14:30 or 10:00 AM)"))
+                        put("dueDate", JSONObject().put("type", "string").put("description", "COMPULSORY Due date (e.g. 'Oct 5', 'Tomorrow', '2026-10-05')."))
+                        put("dueTime", JSONObject().put("type", "string").put("description", "COMPULSORY Due time (e.g. '14:30' or '05:00 PM')."))
                         put("location", JSONObject().put("type", "string").put("description", "Location label or address"))
                         put("parentId", JSONObject().put("type", "string").put("description", "Parent task ID or parent task name (e.g. 'gym') if creating a subtask"))
                         put("parentTitle", JSONObject().put("type", "string").put("description", "Parent task title if creating a subtask under an existing task"))
                     })
-                    put("required", JSONArray(listOf("title")))
+                    put("required", JSONArray(listOf("title", "dueDate", "dueTime")))
                 })
             })
         })

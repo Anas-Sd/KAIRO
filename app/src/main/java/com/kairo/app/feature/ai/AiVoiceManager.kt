@@ -236,6 +236,14 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
         } else {
             stopListening()
             stopSpeaking()
+            // When exiting voice mode, immediately ensure wake word resumes listening on main tabs
+            wakeWordContext?.let { ctx ->
+                mainHandler.postDelayed({
+                    if (!isVoiceModeActive) {
+                        startWakeWordDetection(ctx)
+                    }
+                }, 350L)
+            }
         }
     }
 
@@ -246,6 +254,12 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
     private var wakeWordRecognizer: SpeechRecognizer? = null
     private var isWakeWordActive = false
     private var wakeWordContext: Context? = null
+
+    private val rearmWakeWordRunnable = Runnable {
+        if (isWakeWordActive && !isVoiceModeActive && !_isSpeaking.value) {
+            initiateWakeWordRecognizer()
+        }
+    }
 
     fun setWakeWordListener(listener: (() -> Unit)?) {
         this.onWakeWordListener = listener
@@ -260,7 +274,10 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
             mainHandler.post { startWakeWordDetection(context) }
             return
         }
-        if (isVoiceModeActive || _isListening.value || _isSpeaking.value) {
+        wakeWordContext = context.applicationContext
+        isWakeWordActive = true
+
+        if (isVoiceModeActive) {
             return
         }
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
@@ -268,9 +285,9 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
             return
         }
 
-        wakeWordContext = context.applicationContext
-        isWakeWordActive = true
-        initiateWakeWordRecognizer()
+        // Clean schedule: wait 350ms to allow audio hardware HAL to release cleanly
+        mainHandler.removeCallbacks(rearmWakeWordRunnable)
+        mainHandler.postDelayed(rearmWakeWordRunnable, 350L)
     }
 
     private fun initiateWakeWordRecognizer() {
@@ -279,6 +296,7 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
 
         try {
             wakeWordRecognizer?.destroy()
+            wakeWordRecognizer = null
             wakeWordRecognizer = SpeechRecognizer.createSpeechRecognizer(ctx).apply {
                 setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {}
@@ -288,11 +306,11 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
                     override fun onEndOfSpeech() {}
 
                     override fun onError(error: Int) {
-                        Log.d(TAG, "Wake word recognizer error: $error")
+                        Log.d(TAG, "Wake word recognizer error code: $error")
                         if (isWakeWordActive && !isVoiceModeActive && !_isSpeaking.value) {
-                            mainHandler.postDelayed({
-                                initiateWakeWordRecognizer()
-                            }, 500L)
+                            val delayMs = if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 750L else 250L
+                            mainHandler.removeCallbacks(rearmWakeWordRunnable)
+                            mainHandler.postDelayed(rearmWakeWordRunnable, delayMs)
                         }
                     }
 
@@ -303,9 +321,8 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
                             stopWakeWordDetection()
                             mainHandler.post { onWakeWordListener?.invoke() }
                         } else if (isWakeWordActive && !isVoiceModeActive && !_isSpeaking.value) {
-                            mainHandler.postDelayed({
-                                initiateWakeWordRecognizer()
-                            }, 300L)
+                            mainHandler.removeCallbacks(rearmWakeWordRunnable)
+                            mainHandler.postDelayed(rearmWakeWordRunnable, 200L)
                         }
                     }
 
@@ -335,11 +352,16 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
             wakeWordRecognizer?.startListening(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Error initiating wake word recognizer: ${e.message}")
+            if (isWakeWordActive && !isVoiceModeActive) {
+                mainHandler.removeCallbacks(rearmWakeWordRunnable)
+                mainHandler.postDelayed(rearmWakeWordRunnable, 1000L)
+            }
         }
     }
 
     fun stopWakeWordDetection() {
         isWakeWordActive = false
+        mainHandler.removeCallbacks(rearmWakeWordRunnable)
         try {
             wakeWordRecognizer?.stopListening()
             wakeWordRecognizer?.destroy()
@@ -355,9 +377,15 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
         return lower.contains("hey buddy") ||
                 lower.contains("hi buddy") ||
                 lower.contains("ok buddy") ||
+                lower.contains("okay buddy") ||
                 lower.contains("hello buddy") ||
                 lower.contains("hey body") ||
                 lower.contains("hi body") ||
+                lower.contains("hey bud") ||
+                lower.contains("hi bud") ||
+                lower.contains("hey barry") ||
+                lower.contains("hey baddy") ||
+                lower.contains("hi baddy") ||
                 lower.contains("hey kairo") ||
                 lower.contains("hi kairo") ||
                 lower.contains("kairo")

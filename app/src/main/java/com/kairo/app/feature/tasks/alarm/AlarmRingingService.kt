@@ -62,6 +62,23 @@ open class AlarmRingingService : Service() {
                 nm?.cancel(NOTIFICATION_ID)
             } catch (_: Exception) {}
         }
+
+        fun duckVolume(ducked: Boolean) {
+            try {
+                val player = instance?.mediaPlayer
+                if (player != null) {
+                    if (ducked) {
+                        player.setVolume(0.12f, 0.12f)
+                        Log.i(TAG, "Ducked alarm volume to 12% for voice recognition")
+                    } else {
+                        player.setVolume(1.0f, 1.0f)
+                        Log.i(TAG, "Restored alarm volume to 100%")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error adjusting alarm volume: ${e.message}")
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

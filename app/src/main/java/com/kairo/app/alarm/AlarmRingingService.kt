@@ -27,5 +27,9 @@ class AlarmRingingService : com.kairo.app.feature.tasks.alarm.AlarmRingingServic
         fun stop(context: Context) {
             com.kairo.app.feature.tasks.alarm.AlarmRingingService.stop(context)
         }
+
+        fun duckVolume(ducked: Boolean) {
+            com.kairo.app.feature.tasks.alarm.AlarmRingingService.duckVolume(ducked)
+        }
     }
 }

@@ -38,6 +38,12 @@ fun MainScreen() {
         }
     }
 
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            com.kairo.app.feature.ai.AiVoiceManager.stopWakeWordDetection()
+        }
+    }
+
     androidx.compose.runtime.DisposableEffect(currentRoute) {
         if (currentRoute != Screen.AiAssistant.route) {
             val hasAudioPerm = androidx.core.content.ContextCompat.checkSelfPermission(
@@ -53,7 +59,9 @@ fun MainScreen() {
         }
 
         onDispose {
-            com.kairo.app.feature.ai.AiVoiceManager.stopWakeWordDetection()
+            if (currentRoute == Screen.AiAssistant.route) {
+                com.kairo.app.feature.ai.AiVoiceManager.stopWakeWordDetection()
+            }
         }
     }
 

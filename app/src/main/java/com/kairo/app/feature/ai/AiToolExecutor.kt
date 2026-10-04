@@ -142,9 +142,14 @@ object AiToolExecutor {
         val priorityStr = args.optString("priority", "LOW").uppercase()
         val priority = try { Priority.valueOf(priorityStr) } catch (_: Exception) { Priority.LOW }
         val dueDateRaw = args.optNullableString("dueDate")
+        val dueTime = args.optNullableString("dueTime")
+
+        if (dueDateRaw.isNullOrBlank() || dueTime.isNullOrBlank()) {
+            return ToolExecutionResult(false, "Due date and due time are compulsory. Please ask the user what date and time they would like to schedule this task.")
+        }
+
         val dueDate = DateUtils.formatDisplayDate(dueDateRaw)
         val dueDateMillis = DateUtils.parseDueDateMillis(dueDateRaw)
-        val dueTime = args.optNullableString("dueTime")
         val location = args.optNullableString("location")
         val repeatType = args.optNullableString("repeatType")
         var parentId = args.optNullableString("parentId")

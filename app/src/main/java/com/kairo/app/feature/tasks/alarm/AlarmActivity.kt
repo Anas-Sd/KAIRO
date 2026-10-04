@@ -1,16 +1,22 @@
 package com.kairo.app.feature.tasks.alarm
 
+import android.Manifest
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -219,19 +225,19 @@ open class AlarmActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-            )
         }
+        @Suppress("DEPRECATION")
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+            WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
+        )
         val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             keyguardManager?.requestDismissKeyguard(this, null)
         }
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     override fun onDestroy() {
@@ -267,37 +273,156 @@ fun AlarmTriggerScreen(
     var currentAmPm by remember { mutableStateOf(SimpleDateFormat("a", Locale.getDefault()).format(Date())) }
     var currentDateStr by remember { mutableStateOf(SimpleDateFormat("EEEE, MMM d", Locale.getDefault()).format(Date())) }
 
+    var isVoiceActive by remember { mutableStateOf(false) }
+    var heardCommandText by remember { mutableStateOf("") }
+
     val context = androidx.compose.ui.platform.LocalContext.current
-    LaunchedEffect(Unit) {
-        try {
-            com.kairo.app.feature.ai.AiVoiceManager.startListening(context) { heard ->
-                val lower = heard.lowercase().trim()
-                when {
-                    lower.contains("done") || lower.contains("complete") || lower.contains("finish") -> {
-                        com.kairo.app.feature.ai.AiVoiceManager.speak("Marking task as completed") {
-                            onComplete()
+
+    // Dedicated continuous voice recognition loop with automatic audio ducking
+    DisposableEffect(Unit) {
+        val hasAudioPerm = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        var recognizer: SpeechRecognizer? = null
+        var isLoopRunning = true
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
+        fun startListeningLoop() {
+            if (!isLoopRunning) return
+            try {
+                // Duck alarm volume to 12% so the microphone is never overwhelmed by speaker audio
+                AlarmRingingService.duckVolume(true)
+
+                recognizer?.destroy()
+                recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                    setRecognitionListener(object : RecognitionListener {
+                        override fun onReadyForSpeech(params: Bundle?) {
+                            isVoiceActive = true
                         }
-                    }
-                    lower.contains("snooze") -> {
-                        val minutes = Regex("(\\d+)").find(lower)?.value?.toIntOrNull() ?: 2
-                        com.kairo.app.feature.ai.AiVoiceManager.speak("Snoozing for $minutes minutes") {
-                            onSnooze(minutes)
+                        override fun onBeginningOfSpeech() {}
+                        override fun onRmsChanged(rmsdB: Float) {}
+                        override fun onBufferReceived(buffer: ByteArray?) {}
+                        override fun onEndOfSpeech() {
+                            isVoiceActive = false
                         }
-                    }
-                    lower.contains("dismiss") || lower.contains("stop") || lower.contains("cancel") -> {
-                        com.kairo.app.feature.ai.AiVoiceManager.speak("Alarm dismissed") {
-                            onDismiss()
+                        override fun onError(error: Int) {
+                            isVoiceActive = false
+                            if (isLoopRunning) {
+                                val delayMs = if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 600L else 200L
+                                handler.postDelayed({
+                                    if (isLoopRunning) startListeningLoop()
+                                }, delayMs)
+                            }
                         }
-                    }
+                        override fun onResults(results: Bundle?) {
+                            isVoiceActive = false
+                            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
+                            val processed = processAlarmVoiceMatches(matches)
+                            if (!processed && isLoopRunning) {
+                                handler.postDelayed({
+                                    if (isLoopRunning) startListeningLoop()
+                                }, 150L)
+                            }
+                        }
+                        override fun onPartialResults(partialResults: Bundle?) {
+                            val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
+                            val partial = matches.firstOrNull() ?: ""
+                            if (partial.isNotBlank()) {
+                                heardCommandText = partial
+                                processAlarmVoiceMatches(matches)
+                            }
+                        }
+                        override fun onEvent(eventType: Int, params: Bundle?) {}
+
+                        private fun processAlarmVoiceMatches(matches: List<String>): Boolean {
+                            for (heard in matches) {
+                                val lower = heard.lowercase().trim()
+                                when {
+                                    // 1. Done / Complete / Finished
+                                    lower.contains("done") || lower.contains("complete") ||
+                                    lower.contains("finish") || lower.contains("did it") ||
+                                    lower.contains("mark done") || lower.contains("mark as done") ||
+                                    lower.contains("check") -> {
+                                        isLoopRunning = false
+                                        recognizer?.stopListening()
+                                        recognizer?.destroy()
+                                        recognizer = null
+                                        AlarmRingingService.stop(context)
+                                        com.kairo.app.feature.ai.AiVoiceManager.speak("Marking task as completed") {
+                                            onComplete()
+                                        }
+                                        return true
+                                    }
+                                    // 2. Snooze
+                                    lower.contains("snooze") || lower.contains("later") ||
+                                    lower.contains("sleep") || lower.contains("remind me later") -> {
+                                        isLoopRunning = false
+                                        recognizer?.stopListening()
+                                        recognizer?.destroy()
+                                        recognizer = null
+                                        AlarmRingingService.stop(context)
+                                        val minutes = Regex("(\\d+)").find(lower)?.value?.toIntOrNull() ?: 5
+                                        com.kairo.app.feature.ai.AiVoiceManager.speak("Snoozed for $minutes minutes") {
+                                            onSnooze(minutes)
+                                        }
+                                        return true
+                                    }
+                                    // 3. Dismiss / Stop / Cancel / Turn off
+                                    lower.contains("dismiss") || lower.contains("stop") ||
+                                    lower.contains("cancel") || lower.contains("turn off") ||
+                                    lower.contains("shut up") || lower.contains("quiet") ||
+                                    lower.contains("silence") || lower.contains("off") ||
+                                    lower.contains("close") -> {
+                                        isLoopRunning = false
+                                        recognizer?.stopListening()
+                                        recognizer?.destroy()
+                                        recognizer = null
+                                        AlarmRingingService.stop(context)
+                                        com.kairo.app.feature.ai.AiVoiceManager.speak("Alarm dismissed") {
+                                            onDismiss()
+                                        }
+                                        return true
+                                    }
+                                }
+                            }
+                            return false
+                        }
+                    })
+                }
+
+                val deviceLocale = Locale.getDefault().toLanguageTag().ifBlank { "en-US" }
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, deviceLocale)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, deviceLocale)
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                    putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+                }
+                recognizer?.startListening(intent)
+            } catch (e: Exception) {
+                android.util.Log.e("AlarmActivity", "Error starting alarm speech recognizer: ${e.message}")
+                if (isLoopRunning) {
+                    handler.postDelayed({ if (isLoopRunning) startListeningLoop() }, 1000L)
                 }
             }
-        } catch (_: Exception) {}
-    }
+        }
 
-    DisposableEffect(Unit) {
+        if (hasAudioPerm) {
+            handler.postDelayed({ startListeningLoop() }, 300L)
+        }
+
         onDispose {
-            com.kairo.app.feature.ai.AiVoiceManager.stopListening()
-            com.kairo.app.feature.ai.AiVoiceManager.stopSpeaking()
+            isLoopRunning = false
+            handler.removeCallbacksAndMessages(null)
+            try {
+                recognizer?.stopListening()
+                recognizer?.destroy()
+                recognizer = null
+            } catch (_: Exception) {}
+            AlarmRingingService.duckVolume(false)
         }
     }
 
@@ -661,13 +786,15 @@ fun AlarmTriggerScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Hands-Free Voice Commands Banner
+                // Hands-Free Voice Commands Live Indicator
+                val bannerBg = if (isVoiceActive) KairoPrimary.copy(alpha = 0.22f) else KairoPrimary.copy(alpha = 0.12f)
+                val bannerBorder = if (isVoiceActive) KairoPrimary else KairoPrimary.copy(alpha = 0.35f)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 4.dp)
-                        .background(KairoPrimary.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
-                        .border(1.dp, KairoPrimary.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                        .background(bannerBg, RoundedCornerShape(12.dp))
+                        .border(1.dp, bannerBorder, RoundedCornerShape(12.dp))
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
@@ -675,15 +802,22 @@ fun AlarmTriggerScreen(
                     Icon(
                         imageVector = Icons.Default.GraphicEq,
                         contentDescription = "Voice Listening",
-                        tint = KairoPrimary,
+                        tint = if (isVoiceActive) Color.White else KairoPrimary,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
+                    val displayText = if (heardCommandText.isNotBlank()) {
+                        "Heard: \"$heardCommandText\""
+                    } else if (isVoiceActive) {
+                        "Listening: Say 'Done', 'Dismiss', or 'Snooze'"
+                    } else {
+                        "Voice Ready: Say 'Done', 'Dismiss', or 'Snooze'"
+                    }
                     Text(
-                        text = "Voice Ready: Say 'Done', 'Dismiss', or 'Snooze 2 min'",
+                        text = displayText,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
-                        color = KairoPrimary
+                        color = if (isVoiceActive) Color.White else KairoPrimary
                     )
                 }
 

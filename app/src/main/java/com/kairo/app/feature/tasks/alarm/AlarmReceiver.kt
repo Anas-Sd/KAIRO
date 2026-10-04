@@ -81,27 +81,24 @@ open class AlarmReceiver : BroadcastReceiver() {
         }
         ContextCompat.startForegroundService(context, serviceIntent)
 
-        // 2. If phone is locked or screen is off, launch AlarmActivity directly
-        val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-        val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-        val isScreenOn = powerManager?.isInteractive ?: true
-        val isLocked = keyguardManager?.isKeyguardLocked ?: false
-
-        if (!isScreenOn || isLocked) {
-            val activityIntent = Intent(context, AlarmActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra(EXTRA_TASK_ID, taskId)
-                putExtra(EXTRA_TASK_TITLE, title)
-                putExtra(EXTRA_TASK_NOTES, notes)
-                putExtra(EXTRA_TASK_PRIORITY, priority)
-                putExtra(EXTRA_TASK_DUE_DATE, dueDate)
-                putExtra(EXTRA_TASK_DUE_TIME, dueTime)
-                putExtra(EXTRA_TASK_LOCATION, location)
-                putExtra(EXTRA_TASK_ATTACHMENT, attachment)
-            }
+        // 2. Always launch AlarmActivity overlay so the ringing UI and voice listener are active
+        val activityIntent = Intent(context, AlarmActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(EXTRA_TASK_ID, taskId)
+            putExtra(EXTRA_TASK_TITLE, title)
+            putExtra(EXTRA_TASK_NOTES, notes)
+            putExtra(EXTRA_TASK_PRIORITY, priority)
+            putExtra(EXTRA_TASK_DUE_DATE, dueDate)
+            putExtra(EXTRA_TASK_DUE_TIME, dueTime)
+            putExtra(EXTRA_TASK_LOCATION, location)
+            putExtra(EXTRA_TASK_ATTACHMENT, attachment)
+        }
+        try {
             context.startActivity(activityIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to launch AlarmActivity directly from receiver: ${e.message}")
         }
     }
 
