@@ -97,14 +97,15 @@ object AiEngine {
             }
         }
 
-        // 2. Groq Multi-Model Tier (llama-3.3-70b-versatile -> llama-3.1-8b-instant -> mixtral-8x7b-32768)
+        // 2. Groq Multi-Model Tier (openai/gpt-oss-120b -> openai/gpt-oss-20b -> qwen/qwen3.8-27b)
         val groqKey = getGroqApiKey()
         if (groqKey.isNotBlank()) {
             val groqModels = listOf(
+                "openai/gpt-oss-120b" to "Groq 120B",
+                "openai/gpt-oss-20b" to "Groq 20B",
+                "qwen/qwen3.8-27b" to "Groq Qwen 27B",
                 "llama-3.3-70b-versatile" to "Groq Llama 3.3 70B",
-                "llama-3.1-8b-instant" to "Groq Llama 3.1 8B Instant",
-                "mixtral-8x7b-32768" to "Groq Mixtral 8x7B",
-                "gemma2-9b-it" to "Groq Gemma 2 9B"
+                "llama-3.1-8b-instant" to "Groq Llama 8B"
             )
 
             for ((idx, modelPair) in groqModels.withIndex()) {
@@ -202,7 +203,7 @@ object AiEngine {
             .post(requestPayload.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
-        val response = withTimeoutOrNull(7000L) {
+        val response = withTimeoutOrNull(10000L) {
             httpClient.newCall(request).execute()
         } ?: return null
 
