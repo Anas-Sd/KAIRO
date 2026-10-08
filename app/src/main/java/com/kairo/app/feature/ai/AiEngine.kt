@@ -78,7 +78,8 @@ object AiEngine {
     suspend fun chat(
         userMessage: String,
         imageBitmap: Bitmap? = null,
-        history: List<Pair<String, Boolean>> = emptyList() // text to isUser
+        history: List<Pair<String, Boolean>> = emptyList(), // text to isUser
+        isVoiceMode: Boolean = false
     ): AiResponse = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
 
@@ -111,7 +112,7 @@ object AiEngine {
             for ((idx, modelPair) in groqModels.withIndex()) {
                 val (modelName, displayName) = modelPair
                 try {
-                    val groqResp = callGroq(groqKey, modelName, userMessage, history)
+                    val groqResp = callGroq(groqKey, modelName, userMessage, history, isVoiceMode)
                     if (groqResp != null) {
                         val warning = if (idx > 0) "Switched to high-speed failover ($displayName)." else null
                         return@withContext groqResp.copy(
@@ -159,11 +160,15 @@ object AiEngine {
         apiKey: String,
         modelName: String,
         userMessage: String,
-        history: List<Pair<String, Boolean>>
+        history: List<Pair<String, Boolean>>,
+        isVoiceMode: Boolean = false
     ): AiResponse? {
         val endpoint = "https://api.groq.com/openai/v1/chat/completions"
 
-        val systemPrompt = buildSystemPrompt()
+        var systemPrompt = buildSystemPrompt()
+        if (isVoiceMode) {
+            systemPrompt += " Reply concisely in 1-2 sentences, no markdown."
+        }
         val messagesArray = JSONArray()
 
         val sysObj = JSONObject().apply {
@@ -191,7 +196,7 @@ object AiEngine {
             put("model", modelName)
             put("messages", messagesArray)
             put("temperature", 0.4)
-            put("max_tokens", 450)
+            put("max_tokens", if (isVoiceMode) 80 else 450)
             put("tools", getOpenAiToolsSchema())
             put("tool_choice", "auto")
         }
@@ -224,7 +229,96 @@ object AiEngine {
         // Check if model called any tools
         val toolCalls = message.optJSONArray("tool_calls")
         if (toolCalls != null && toolCalls.length() > 0) {
-            return processToolCalls(toolCalls, modelName)
+            val toolResults = mutableListOf<Pair<String, AiToolExecutor.ToolExecutionResult>>()
+            var confirmationRequired = false
+            var confirmationPrompt: String? = null
+            var pendingActionJson: String? = null
+
+            for (i in 0 until toolCalls.length()) {
+                val call = toolCalls.getJSONObject(i)
+                val func = call.getJSONObject("function")
+                val toolName = func.getString("name")
+                val toolCallId = call.optString("id", "call_$i")
+                val argsStr = func.optString("arguments", "{}")
+                val argsObj = try { JSONObject(argsStr) } catch (_: Exception) { JSONObject() }
+                val execResult = AiToolExecutor.execute(toolName, argsObj)
+                toolResults.add(toolCallId to execResult)
+                if (execResult.requiresConfirmation) {
+                    confirmationRequired = true
+                    confirmationPrompt = execResult.confirmationPrompt
+                    pendingActionJson = execResult.pendingActionJson
+                }
+            }
+
+            // If confirmation needed, skip second LLM call
+            if (confirmationRequired) {
+                return AiResponse(
+                    text = confirmationPrompt ?: "Please confirm this action.",
+                    providerUsed = "Groq ($modelName)",
+                    latencyMs = 0L,
+                    requiresConfirmation = true,
+                    confirmationPrompt = confirmationPrompt,
+                    pendingActionJson = pendingActionJson
+                )
+            }
+
+            // Build second API call with tool results fed back to the model
+            val messages2 = JSONArray()
+            messages2.put(JSONObject().apply { put("role", "system"); put("content", systemPrompt) })
+            for (item in history.takeLast(6)) {
+                messages2.put(JSONObject().apply {
+                    put("role", if (item.second) "user" else "assistant")
+                    put("content", item.first)
+                })
+            }
+            messages2.put(JSONObject().apply { put("role", "user"); put("content", userMessage) })
+            // Assistant turn with tool_calls
+            messages2.put(message) // the original assistant message with tool_calls
+            // Tool result turns
+            for ((toolCallId, execResult) in toolResults) {
+                messages2.put(JSONObject().apply {
+                    put("role", "tool")
+                    put("tool_call_id", toolCallId)
+                    put("content", execResult.message)
+                })
+            }
+            // Voice mode: instruct model to reply naturally
+            if (isVoiceMode) {
+                messages2.put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", "Reply in 1-2 short natural spoken sentences. No bullet points, no markdown, no emojis. Confirm what you just did.")
+                })
+            }
+
+            val payload2 = JSONObject().apply {
+                put("model", modelName)
+                put("messages", messages2)
+                put("temperature", 0.5)
+                put("max_tokens", if (isVoiceMode) 80 else 200)
+            }
+            val req2 = Request.Builder()
+                .url(endpoint)
+                .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("Content-Type", "application/json")
+                .post(payload2.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            val resp2 = withTimeoutOrNull(8000L) { httpClient.newCall(req2).execute() }
+            val spokenReply = resp2?.let {
+                if (it.isSuccessful) {
+                    val body = JSONObject(it.body?.string().orEmpty())
+                    body.optJSONArray("choices")
+                        ?.optJSONObject(0)
+                        ?.optJSONObject("message")
+                        ?.optString("content", "")
+                        ?.trim()
+                } else null
+            }.orEmpty()
+
+            return AiResponse(
+                text = spokenReply.ifEmpty { toolResults.joinToString("; ") { it.second.message } },
+                providerUsed = "Groq ($modelName)",
+                latencyMs = 0L
+            )
         }
 
         val replyText = message.optString("content", "").trim()
@@ -235,39 +329,7 @@ object AiEngine {
         )
     }
 
-    private fun processToolCalls(toolCalls: JSONArray, modelName: String): AiResponse {
-        val results = StringBuilder()
-        var confirmationRequired = false
-        var confirmationPrompt: String? = null
-        var pendingActionJson: String? = null
 
-        for (i in 0 until toolCalls.length()) {
-            val call = toolCalls.getJSONObject(i)
-            val func = call.getJSONObject("function")
-            val toolName = func.getString("name")
-            val argsStr = func.optString("arguments", "{}")
-            val argsObj = try { JSONObject(argsStr) } catch (_: Exception) { JSONObject() }
-
-            val execResult = AiToolExecutor.execute(toolName, argsObj)
-            if (execResult.requiresConfirmation) {
-                confirmationRequired = true
-                confirmationPrompt = execResult.confirmationPrompt
-                pendingActionJson = execResult.pendingActionJson
-                results.append("⚠️ ${execResult.message}\n")
-            } else {
-                results.append("✓ ${execResult.message}\n")
-            }
-        }
-
-        return AiResponse(
-            text = results.toString().trim(),
-            providerUsed = "Groq ($modelName)",
-            latencyMs = 0L,
-            requiresConfirmation = confirmationRequired,
-            confirmationPrompt = confirmationPrompt,
-            pendingActionJson = pendingActionJson
-        )
-    }
 
     // ==========================================
     // GEMINI MULTIMODAL VISION CALL

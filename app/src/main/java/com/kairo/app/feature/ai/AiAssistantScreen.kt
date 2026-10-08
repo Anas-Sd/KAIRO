@@ -116,6 +116,8 @@ fun AiAssistantScreen(
     var inputText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var attachedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var isThinking by remember { mutableStateOf(false) }
+    var lastAiText by remember { mutableStateOf("") }
 
     val isListening by AiVoiceManager.isListening.collectAsState()
     val isSpeaking by AiVoiceManager.isSpeaking.collectAsState()
@@ -178,11 +180,14 @@ fun AiAssistantScreen(
             if (clean.isNotBlank()) {
                 AiChatRepository.addMessage(ChatMessage(text = clean, isUser = true))
                 isLoading = true
+                isThinking = true
 
                 scope.launch {
                     val history = AiChatRepository.getConversationHistory()
-                    val response = AiEngine.chat(clean, null, history)
+                    val response = AiEngine.chat(clean, null, history, isVoiceMode = true)
                     isLoading = false
+                    isThinking = false
+                    lastAiText = response.text
 
                     AiChatRepository.addMessage(
                         ChatMessage(
@@ -204,6 +209,8 @@ fun AiAssistantScreen(
                         }
                     }
                 }
+            } else {
+                if (isVoiceModeActive) startListeningLoop()
             }
         }
     }
@@ -272,319 +279,332 @@ fun AiAssistantScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            Surface(
-                color = KairoSurfaceContainer,
-                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.25f))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                Surface(
+                    color = KairoSurfaceContainer,
+                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.25f))
                 ) {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-
-                    Box(
+                    Row(
                         modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(KairoPrimary.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = KairoPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "KAIRO Executive AI",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = if (isVoiceModeActive) {
-                                if (isListening) "🎙️ Listening to you..." else if (isSpeaking) "🔊 Speaking..." else "Voice mode ready"
-                            } else {
-                                "Groq 120B • Gemini Vision • Offline Fallback"
-                            },
-                            fontSize = 11.sp,
-                            color = if (isVoiceModeActive) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    // Clear Chat History Button
-                    IconButton(
-                        onClick = { AiChatRepository.clearAll() }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteSweep,
-                            contentDescription = "Clear Chat",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    // Voice Mode Toggle Button
-                    IconButton(
-                        onClick = { toggleVoiceMode() },
-                        modifier = Modifier
-                            .scale(if (isVoiceModeActive) micPulse.value else 1f)
-                            .background(
-                                if (isVoiceModeActive) KairoPrimary else Color.Transparent,
-                                CircleShape
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
-                    ) {
-                        Icon(
-                            imageVector = if (isVoiceModeActive) Icons.Default.Mic else Icons.Default.MicOff,
-                            contentDescription = "Toggle Voice Mode",
-                            tint = if (isVoiceModeActive) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(KairoPrimary.copy(alpha = 0.18f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = KairoPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "KAIRO Executive AI",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (isVoiceModeActive) {
+                                    if (isListening) "🎙️ Listening to you..." else if (isSpeaking) "🔊 Speaking..." else "Voice mode ready"
+                                } else {
+                                    "Groq 120B • Gemini Vision • Offline Fallback"
+                                },
+                                fontSize = 11.sp,
+                                color = if (isVoiceModeActive) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // Clear Chat History Button
+                        IconButton(
+                            onClick = { AiChatRepository.clearAll() }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteSweep,
+                                contentDescription = "Clear Chat",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // Voice Mode Toggle Button
+                        IconButton(
+                            onClick = { toggleVoiceMode() },
+                            modifier = Modifier
+                                .scale(if (isVoiceModeActive) micPulse.value else 1f)
+                                .background(
+                                    if (isVoiceModeActive) KairoPrimary else Color.Transparent,
+                                    CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = if (isVoiceModeActive) Icons.Default.Mic else Icons.Default.MicOff,
+                                contentDescription = "Toggle Voice Mode",
+                                tint = if (isVoiceModeActive) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
-            }
-        },
-        containerColor = KairoBackground
-    ) { innerPadding ->
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            // Chat Messages List
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+            },
+            containerColor = KairoBackground
+        ) { innerPadding ->
+            Column(
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
             ) {
-                items(messages, key = { it.id }) { message ->
-                    ChatBubble(
-                        message = message,
-                        onConfirmAction = { actionJson ->
-                            try {
-                                val actionObj = JSONObject(actionJson)
-                                val toolName = if (actionObj.has("taskIds")) "batch_delete_tasks" else "delete_task"
-                                val result = AiToolExecutor.execute(toolName, actionObj)
+                // Chat Messages List
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(messages, key = { it.id }) { message ->
+                        ChatBubble(
+                            message = message,
+                            onConfirmAction = { actionJson ->
+                                try {
+                                    val actionObj = JSONObject(actionJson)
+                                    val toolName = if (actionObj.has("taskIds")) "batch_delete_tasks" else "delete_task"
+                                    val result = AiToolExecutor.execute(toolName, actionObj)
+                                    val idx = messages.indexOfFirst { it.id == message.id }
+                                    if (idx >= 0) {
+                                        AiChatRepository.updateMessage(idx, message.copy(isConfirmed = true))
+                                    }
+                                    AiChatRepository.addMessage(
+                                        ChatMessage(
+                                            text = "✓ Action Confirmed: ${result.message}",
+                                            isUser = false,
+                                            providerUsed = "KAIRO Execution Core"
+                                        )
+                                    )
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Failed to execute: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            onCancelAction = {
                                 val idx = messages.indexOfFirst { it.id == message.id }
                                 if (idx >= 0) {
                                     AiChatRepository.updateMessage(idx, message.copy(isConfirmed = true))
                                 }
                                 AiChatRepository.addMessage(
                                     ChatMessage(
-                                        text = "✓ Action Confirmed: ${result.message}",
+                                        text = "Cancelled action.",
                                         isUser = false,
                                         providerUsed = "KAIRO Execution Core"
                                     )
                                 )
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Failed to execute: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
-                        },
-                        onCancelAction = {
-                            val idx = messages.indexOfFirst { it.id == message.id }
-                            if (idx >= 0) {
-                                AiChatRepository.updateMessage(idx, message.copy(isConfirmed = true))
-                            }
-                            AiChatRepository.addMessage(
-                                ChatMessage(
-                                    text = "Cancelled action.",
-                                    isUser = false,
-                                    providerUsed = "KAIRO Execution Core"
+                        )
+                    }
+
+                    if (isLoading) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.Start,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = KairoPrimary,
+                                    strokeWidth = 2.dp
                                 )
-                            )
-                        }
-                    )
-                }
-
-                if (isLoading) {
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.Start,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = KairoPrimary,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "KAIRO is thinking...",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "KAIRO is thinking...",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            // Attached Image Thumbnail Preview (if picked)
-            AnimatedVisibility(visible = attachedBitmap != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
-                        .background(KairoCardSurface, RoundedCornerShape(12.dp))
-                        .border(1.dp, KairoOutlineVariant.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                        .padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    attachedBitmap?.let { bmp ->
-                        Image(
-                            bitmap = bmp.asImageBitmap(),
-                            contentDescription = "Attached Image",
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Image ready for task extraction",
-                        fontSize = 12.sp,
-                        color = Color.White,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = { attachedBitmap = null }) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Remove Image",
-                            tint = Color.Gray,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-
-            // Quick Prompt Chips
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf("Plan my day", "Tasks status", "Clean completed").forEach { chip ->
-                    Surface(
-                        shape = RoundedCornerShape(100.dp),
-                        color = KairoCardSurface,
-                        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f)),
-                        modifier = Modifier.clickable { sendMessage(chip) }
-                    ) {
-                        Text(
-                            text = chip,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
-                    }
-                }
-            }
-
-            // Live Speech Streaming Indicator
-            if (isListening && partialSpeech.isNotBlank()) {
-                Surface(
-                    color = KairoPrimary.copy(alpha = 0.12f),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.35f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 4.dp)
-                ) {
+                // Attached Image Thumbnail Preview (if picked)
+                AnimatedVisibility(visible = attachedBitmap != null) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                            .background(KairoCardSurface, RoundedCornerShape(12.dp))
+                            .border(1.dp, KairoOutlineVariant.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                            .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("🎙️", fontSize = 14.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
+                        attachedBitmap?.let { bmp ->
+                            Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = "Attached Image",
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "\"$partialSpeech\"",
-                            fontSize = 13.sp,
-                            fontStyle = FontStyle.Italic,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            text = "Image ready for task extraction",
+                            fontSize = 12.sp,
+                            color = Color.White,
                             modifier = Modifier.weight(1f)
                         )
+                        IconButton(onClick = { attachedBitmap = null }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Remove Image",
+                                tint = Color.Gray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
-            }
 
-            // Bottom Input Bar
-            Surface(
-                color = KairoSurfaceContainer,
-                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.25f))
-            ) {
+                // Quick Prompt Chips
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Image attachment icon
-                    IconButton(
-                        onClick = { galleryLauncher.launch("image/*") }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AddPhotoAlternate,
-                            contentDescription = "Attach image",
-                            tint = if (attachedBitmap != null) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-
-                    OutlinedTextField(
-                        value = inputText,
-                        onValueChange = { inputText = it },
-                        placeholder = { Text("Ask KAIRO or dictate tasks...") },
-                        maxLines = 3,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = KairoPrimary,
-                            unfocusedBorderColor = KairoOutlineVariant.copy(alpha = 0.3f),
-                            cursorColor = KairoPrimary
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    IconButton(
-                        onClick = { sendMessage(inputText) },
-                        enabled = (inputText.isNotBlank() || attachedBitmap != null) && !isLoading,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .background(
-                                if ((inputText.isNotBlank() || attachedBitmap != null) && !isLoading) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.25f),
-                                CircleShape
+                    listOf("Plan my day", "Tasks status", "Clean completed").forEach { chip ->
+                        Surface(
+                            shape = RoundedCornerShape(100.dp),
+                            color = KairoCardSurface,
+                            border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f)),
+                            modifier = Modifier.clickable { sendMessage(chip) }
+                        ) {
+                            Text(
+                                text = chip,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
+                        }
+                    }
+                }
+
+                // Live Speech Streaming Indicator
+                if (isListening && partialSpeech.isNotBlank()) {
+                    Surface(
+                        color = KairoPrimary.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.35f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 4.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
-                            tint = if ((inputText.isNotBlank() || attachedBitmap != null) && !isLoading) Color.Black else Color.White.copy(alpha = 0.4f),
-                            modifier = Modifier.size(18.dp)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🎙️", fontSize = 14.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "\"$partialSpeech\"",
+                                fontSize = 13.sp,
+                                fontStyle = FontStyle.Italic,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                // Bottom Input Bar
+                Surface(
+                    color = KairoSurfaceContainer,
+                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.25f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Image attachment icon
+                        IconButton(
+                            onClick = { galleryLauncher.launch("image/*") }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AddPhotoAlternate,
+                                contentDescription = "Attach image",
+                                tint = if (attachedBitmap != null) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = inputText,
+                            onValueChange = { inputText = it },
+                            placeholder = { Text("Ask KAIRO or dictate tasks...") },
+                            maxLines = 3,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = KairoPrimary,
+                                unfocusedBorderColor = KairoOutlineVariant.copy(alpha = 0.3f),
+                                cursorColor = KairoPrimary
+                            )
                         )
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        IconButton(
+                            onClick = { sendMessage(inputText) },
+                            enabled = (inputText.isNotBlank() || attachedBitmap != null) && !isLoading,
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(
+                                    if ((inputText.isNotBlank() || attachedBitmap != null) && !isLoading) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.25f),
+                                    CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                tint = if ((inputText.isNotBlank() || attachedBitmap != null) && !isLoading) Color.Black else Color.White.copy(alpha = 0.4f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
+        }
+        
+        if (isVoiceModeActive) {
+            VoiceModeOverlay(
+                isListening = isListening,
+                isSpeaking = isSpeaking,
+                isThinking = isThinking,
+                partialSpeech = partialSpeech,
+                lastAiText = lastAiText,
+                onClose = { toggleVoiceMode() }
+            )
         }
     }
 }
@@ -716,6 +736,138 @@ private fun ChatBubble(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun VoiceModeOverlay(
+    isListening: Boolean,
+    isSpeaking: Boolean,
+    isThinking: Boolean,
+    partialSpeech: String,
+    lastAiText: String,
+    onClose: () -> Unit
+) {
+    val orbColor = when {
+        isListening -> KairoPrimary
+        isSpeaking -> KairoSecondary
+        isThinking -> Color(0xFF7B61FF)
+        else -> KairoOutlineVariant
+    }
+    val orbPulse = remember { Animatable(1f) }
+    LaunchedEffect(isListening, isSpeaking) {
+        if (isListening || isSpeaking) {
+            orbPulse.animateTo(
+                targetValue = 1.18f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(700, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                )
+            )
+        } else {
+            orbPulse.snapTo(1f)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(KairoBackground)
+            .statusBarsPadding(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            Spacer(modifier = Modifier.height(48.dp))
+
+            // Orb
+            Box(
+                modifier = Modifier
+                    .size(140.dp)
+                    .scale(orbPulse.value)
+                    .clip(CircleShape)
+                    .background(orbColor.copy(alpha = 0.15f))
+                    .border(2.dp, orbColor.copy(alpha = 0.6f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(90.dp)
+                        .clip(CircleShape)
+                        .background(orbColor.copy(alpha = 0.25f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isListening) Icons.Default.Mic
+                            else if (isSpeaking) Icons.Default.GraphicEq
+                            else Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = orbColor,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+            }
+
+            // Status
+            Text(
+                text = when {
+                    isListening -> "Listening..."
+                    isSpeaking -> "Speaking..."
+                    isThinking -> "Thinking..."
+                    else -> "Tap mic to speak"
+                },
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                color = orbColor
+            )
+
+            // Partial speech
+            if (partialSpeech.isNotBlank()) {
+                Text(
+                    text = partialSpeech,
+                    fontSize = 14.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(horizontal = 32.dp),
+                    maxLines = 2
+                )
+            }
+
+            // Last AI response
+            if (lastAiText.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = KairoCardSurface,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                ) {
+                    Text(
+                        text = lastAiText,
+                        fontSize = 13.sp,
+                        color = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.padding(16.dp),
+                        maxLines = 3
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            // End voice mode button
+            Button(
+                onClick = onClose,
+                colors = ButtonDefaults.buttonColors(containerColor = KairoError.copy(alpha = 0.8f)),
+                shape = CircleShape,
+                modifier = Modifier.size(64.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "End voice mode",
+                    tint = Color.White
+                )
+            }
+            Spacer(modifier = Modifier.height(48.dp))
         }
     }
 }

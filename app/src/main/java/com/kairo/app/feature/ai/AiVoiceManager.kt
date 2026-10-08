@@ -90,12 +90,12 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
 
             override fun onDone(utteranceId: String?) {
                 _isSpeaking.value = false
-                // Echo protection gap: wait 250ms so speaker audio does not bleed into the mic
+                // Echo protection gap: wait 150ms so speaker audio does not bleed into the mic
                 mainHandler.postDelayed({
                     if (isVoiceModeActive) {
                         onDone?.invoke()
                     }
-                }, 250L)
+                }, 150L)
             }
 
             override fun onError(utteranceId: String?) {
@@ -104,7 +104,7 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
                     if (isVoiceModeActive) {
                         onDone?.invoke()
                     }
-                }, 250L)
+                }, 150L)
             }
         })
 
@@ -141,61 +141,62 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
         }
 
         try {
-            speechRecognizer?.destroy()
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-                setRecognitionListener(object : RecognitionListener {
-                    override fun onReadyForSpeech(params: Bundle?) {
-                        _isListening.value = true
-                    }
-
-                    override fun onBeginningOfSpeech() {}
-                    override fun onRmsChanged(rmsdB: Float) {}
-                    override fun onBufferReceived(buffer: ByteArray?) {}
-                    override fun onEndOfSpeech() {
-                        _isListening.value = false
-                    }
-
-                    override fun onError(error: Int) {
-                        _isListening.value = false
-                        _partialSpeech.value = ""
-                        Log.d(TAG, "SpeechRecognizer error code: $error")
-                        // Automatically re-arm listener so recurring voice mode never dies
-                        if (isVoiceModeActive && !_isSpeaking.value) {
-                            mainHandler.postDelayed({
-                                if (isVoiceModeActive && !_isSpeaking.value) {
-                                    startListening(context, onResult)
-                                }
-                            }, 400L)
+            if (speechRecognizer == null) {
+                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                    setRecognitionListener(object : RecognitionListener {
+                        override fun onReadyForSpeech(params: Bundle?) {
+                            _isListening.value = true
                         }
-                    }
 
-                    override fun onResults(results: Bundle?) {
-                        _isListening.value = false
-                        _partialSpeech.value = ""
-                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        val heard = matches?.firstOrNull()?.trim()
-                        if (!heard.isNullOrBlank()) {
-                            onSpeechResultListener?.invoke(heard)
-                        } else if (isVoiceModeActive && !_isSpeaking.value) {
-                            // If empty, re-listen seamlessly
-                            mainHandler.postDelayed({
-                                if (isVoiceModeActive && !_isSpeaking.value) {
-                                    startListening(context, onResult)
-                                }
-                            }, 300L)
+                        override fun onBeginningOfSpeech() {}
+                        override fun onRmsChanged(rmsdB: Float) {}
+                        override fun onBufferReceived(buffer: ByteArray?) {}
+                        override fun onEndOfSpeech() {
+                            _isListening.value = false
                         }
-                    }
 
-                    override fun onPartialResults(partialResults: Bundle?) {
-                        val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        val partial = matches?.firstOrNull()?.trim()
-                        if (!partial.isNullOrBlank()) {
-                            _partialSpeech.value = partial
+                        override fun onError(error: Int) {
+                            _isListening.value = false
+                            _partialSpeech.value = ""
+                            Log.d(TAG, "SpeechRecognizer error code: $error")
+                            // Automatically re-arm listener so recurring voice mode never dies
+                            if (isVoiceModeActive && !_isSpeaking.value) {
+                                mainHandler.postDelayed({
+                                    if (isVoiceModeActive && !_isSpeaking.value) {
+                                        startListening(context, onResult)
+                                    }
+                                }, 400L)
+                            }
                         }
-                    }
 
-                    override fun onEvent(eventType: Int, params: Bundle?) {}
-                })
+                        override fun onResults(results: Bundle?) {
+                            _isListening.value = false
+                            _partialSpeech.value = ""
+                            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            val heard = matches?.firstOrNull()?.trim()
+                            if (!heard.isNullOrBlank()) {
+                                onSpeechResultListener?.invoke(heard)
+                            } else if (isVoiceModeActive && !_isSpeaking.value) {
+                                // If empty, re-listen seamlessly
+                                mainHandler.postDelayed({
+                                    if (isVoiceModeActive && !_isSpeaking.value) {
+                                        startListening(context, onResult)
+                                    }
+                                }, 300L)
+                            }
+                        }
+
+                        override fun onPartialResults(partialResults: Bundle?) {
+                            val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            val partial = matches?.firstOrNull()?.trim()
+                            if (!partial.isNullOrBlank()) {
+                                _partialSpeech.value = partial
+                            }
+                        }
+
+                        override fun onEvent(eventType: Int, params: Bundle?) {}
+                    })
+                }
             }
 
             val deviceLocaleTag = Locale.getDefault().toLanguageTag().ifBlank { "en-US" }
@@ -205,9 +206,9 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, deviceLocaleTag)
                 putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, false)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1200L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 500L)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
             }
@@ -222,11 +223,16 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
     fun stopListening() {
         try {
             speechRecognizer?.stopListening()
-            speechRecognizer?.destroy()
-            speechRecognizer = null
         } catch (_: Exception) {}
         _isListening.value = false
         _partialSpeech.value = ""
+    }
+
+    fun destroyRecognizer() {
+        try {
+            speechRecognizer?.destroy()
+            speechRecognizer = null
+        } catch (_: Exception) {}
     }
 
     fun setVoiceMode(active: Boolean) {
@@ -236,6 +242,7 @@ object AiVoiceManager : TextToSpeech.OnInitListener {
         } else {
             stopListening()
             stopSpeaking()
+            destroyRecognizer()
             // When exiting voice mode, immediately ensure wake word resumes listening on main tabs
             wakeWordContext?.let { ctx ->
                 mainHandler.postDelayed({
