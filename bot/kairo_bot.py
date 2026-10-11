@@ -25,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
+import requests
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -57,6 +58,7 @@ SERVICE_ACCOUNT_PATH = BASE_DIR / "firebase-service-account.json"
 SESSION_FILE_PATH = BASE_DIR / "kairo_bot_session.json"
 RULES_FILE_PATH = BASE_DIR / "user_rules.json"
 
+load_dotenv(BASE_DIR / ".env")
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
@@ -203,12 +205,57 @@ DEFAULT_USER_CODE = os.getenv("DEFAULT_USER_CODE", "")
 DEFAULT_USER_NAME = os.getenv("DEFAULT_USER_NAME", "")
 DEFAULT_FCM_TOKEN = os.getenv("DEFAULT_FCM_TOKEN", "")
 
+SUPABASE_RULES_CONFIG_ID = "00000000-0000-0000-0000-000000000001"
+SUPABASE_SESSIONS_CONFIG_ID = "00000000-0000-0000-0000-000000000002"
+
+def _load_cloud_json(config_id: str) -> dict:
+    try:
+        url = f"{kairo_tools.SUPABASE_URL}/rest/v1/tasks?id=eq.{config_id}&select=notes"
+        res = requests.get(url, headers=kairo_tools.supabase_headers(), timeout=5)
+        if res.status_code == 200:
+            rows = res.json()
+            if rows and rows[0].get("notes"):
+                return json.loads(rows[0]["notes"])
+    except Exception as e:
+        print(f"Error loading cloud config {config_id}: {e}")
+    return {}
+
+def _save_cloud_json(config_id: str, title: str, data: dict):
+    try:
+        headers = kairo_tools.supabase_headers()
+        headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
+        row = {
+            "id": config_id,
+            "title": title,
+            "notes": json.dumps(data),
+            "due_date": "2099-01-01",
+            "due_time": "12:00 PM",
+            "is_completed": False,
+            "section": "TODAY",
+            "user_code": "__BOT_INTERNAL__"
+        }
+        requests.post(f"{kairo_tools.SUPABASE_URL}/rest/v1/tasks", headers=headers, json=row, timeout=5)
+    except Exception as e:
+        print(f"Error saving cloud config {config_id}: {e}")
+
 def load_sessions() -> dict:
     if SESSION_FILE_PATH.exists():
         try:
-            return json.loads(SESSION_FILE_PATH.read_text(encoding="utf-8"))
+            content = SESSION_FILE_PATH.read_text(encoding="utf-8").strip()
+            if content:
+                data = json.loads(content)
+                if data:
+                    return data
         except Exception as e:
             print(f"Error loading session file: {e}")
+    # Ephemeral container redeploy fallback
+    cloud_data = _load_cloud_json(SUPABASE_SESSIONS_CONFIG_ID)
+    if cloud_data:
+        try:
+            SESSION_FILE_PATH.write_text(json.dumps(cloud_data, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        return cloud_data
     return {}
 
 def save_sessions(data: dict):
@@ -216,6 +263,7 @@ def save_sessions(data: dict):
         SESSION_FILE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except Exception as e:
         print(f"Error saving session file: {e}")
+    _save_cloud_json(SUPABASE_SESSIONS_CONFIG_ID, "__BOT_SESSIONS_DATA__", data)
 
 def get_user_session(chat_id: int) -> dict:
     sessions = load_sessions()
@@ -317,9 +365,21 @@ def save_chat_history(chat_id: int, chat_obj):
 def load_rules() -> dict:
     if RULES_FILE_PATH.exists():
         try:
-            return json.loads(RULES_FILE_PATH.read_text(encoding="utf-8"))
+            content = RULES_FILE_PATH.read_text(encoding="utf-8").strip()
+            if content:
+                data = json.loads(content)
+                if data:
+                    return data
         except Exception as e:
             print(f"Error loading rules file: {e}")
+    # Ephemeral container redeploy fallback
+    cloud_data = _load_cloud_json(SUPABASE_RULES_CONFIG_ID)
+    if cloud_data:
+        try:
+            RULES_FILE_PATH.write_text(json.dumps(cloud_data, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        return cloud_data
     return {}
 
 def save_rules(data: dict):
@@ -327,6 +387,7 @@ def save_rules(data: dict):
         RULES_FILE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except Exception as e:
         print(f"Error saving rules file: {e}")
+    _save_cloud_json(SUPABASE_RULES_CONFIG_ID, "__BOT_RULES_DATA__", data)
 
 def get_user_rules(chat_id: int) -> list:
     all_rules = load_rules()
