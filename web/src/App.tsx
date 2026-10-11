@@ -227,32 +227,79 @@ export const App: React.FC = () => {
   // 5. Save Task (Create or Update)
   const handleSaveTask = async (task: Task) => {
     if (!userCode) return;
+    const now = Date.now();
     const dto = taskToDto(task, userCode);
+
+    // If added/updated under a completed parent while active, reopen parent and ancestors (Android parity)
+    const toReopen = new Set<string>();
+    if (task.parentId && !task.isCompleted) {
+      const parent = tasks.find((t) => t.id === task.parentId);
+      if (parent && parent.isCompleted) {
+        toReopen.add(parent.id);
+        getAncestorIds(parent.id, tasks).forEach((id) => toReopen.add(id));
+      }
+    }
 
     // Optimistic update
     setTasks((prev) => {
       const exists = prev.some((t) => t.id === task.id);
-      if (exists) {
-        return prev.map((t) => (t.id === task.id ? task : t));
-      }
-      return [task, ...prev];
+      const base = exists ? prev.map((t) => (t.id === task.id ? task : t)) : [task, ...prev];
+      if (toReopen.size === 0) return base;
+      return base.map((t) => {
+        if (toReopen.has(t.id)) {
+          return {
+            ...t,
+            isCompleted: false,
+            section: determineSection(t.dueDate, t.dueTime, t.dueDateMillis, false, t.snoozeUntilMillis),
+            completedAt: null,
+            updatedAt: now,
+          };
+        }
+        return t;
+      });
     });
 
     try {
       const { error } = await supabase.from('tasks').upsert(dto);
       if (error) throw error;
+      for (const rid of toReopen) {
+        const item = tasks.find((t) => t.id === rid);
+        if (item) {
+          const sec = determineSection(item.dueDate, item.dueTime, item.dueDateMillis, false, item.snoozeUntilMillis);
+          await supabase.from('tasks').update({
+            is_completed: false,
+            section: sec,
+            completed_at: null,
+            updated_at: now,
+          }).eq('id', rid);
+        }
+      }
     } catch (err) {
       console.error('Error upserting task in Supabase:', err);
       fetchTasks(true);
     }
   };
 
-  // 6. Delete Task
+  // 6. Delete Task (Rechecking parent completion)
   const handleDeleteTask = async (taskId: string) => {
+    const target = tasks.find((t) => t.id === taskId);
+    const parentId = target?.parentId || null;
     const descendantIds = getDescendantIds(taskId, tasks);
     const allToDelete = [taskId, ...descendantIds];
+    const now = Date.now();
 
-    setTasks((prev) => prev.filter((t) => !allToDelete.includes(t.id)));
+    // Recheck parent completion after removing children
+    setTasks((prev) => {
+      let filtered = prev.filter((t) => !allToDelete.includes(t.id));
+      if (parentId) {
+        const siblings = filtered.filter((t) => t.parentId === parentId);
+        if (siblings.length > 0 && siblings.every((s) => s.isCompleted)) {
+          filtered = filtered.map((t) => (t.id === parentId ? { ...t, isCompleted: true, section: 'COMPLETED' as const, completedAt: now, updatedAt: now } : t));
+        }
+      }
+      return filtered;
+    });
+
     if (selectedTaskDetails?.id === taskId) {
       setSelectedTaskDetails(null);
     }
@@ -260,6 +307,12 @@ export const App: React.FC = () => {
     try {
       for (const id of allToDelete) {
         await supabase.from('tasks').delete().eq('id', id);
+      }
+      if (parentId) {
+        const remainingSiblings = tasks.filter((t) => t.parentId === parentId && !allToDelete.includes(t.id));
+        if (remainingSiblings.length > 0 && remainingSiblings.every((s) => s.isCompleted)) {
+          await supabase.from('tasks').update({ is_completed: true, section: 'COMPLETED', completed_at: now, updated_at: now }).eq('id', parentId);
+        }
       }
     } catch (err) {
       console.error('Error deleting task from Supabase:', err);
@@ -290,21 +343,23 @@ export const App: React.FC = () => {
   const handleAddSubtask = async (parentTaskId: string, title: string) => {
     if (!userCode) return;
     const parent = tasks.find((t) => t.id === parentTaskId);
+    const now = Date.now();
+    const siblingCount = tasks.filter((t) => t.parentId === parentTaskId).length;
     const subtask: Task = {
       id: crypto.randomUUID(),
       title,
       notes: null,
       priority: parent?.priority || 'LOW',
       dueDate: parent?.dueDate || 'Today',
-      dueDateMillis: parent?.dueDateMillis || Date.now(),
-      dueTime: parent?.dueTime || '09:00 AM',
+      dueDateMillis: parent?.dueDateMillis || now,
+      dueTime: parent?.dueTime || null,
       location: null,
       attachmentName: null,
       attachmentUri: null,
       isCompleted: false,
       section: determineSection(parent?.dueDate || 'Today', parent?.dueTime, parent?.dueDateMillis, false),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
       completedAt: null,
       alarmToneUri: null,
       alarmToneTitle: 'Default Tone',
@@ -312,7 +367,7 @@ export const App: React.FC = () => {
       repeatDays: null,
       repeatDates: null,
       parentId: parentTaskId,
-      position: 0,
+      position: siblingCount,
       userCode,
     };
 

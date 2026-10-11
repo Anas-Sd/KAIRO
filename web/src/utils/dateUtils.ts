@@ -77,27 +77,31 @@ export function determineSection(
     return 'SNOOZED';
   }
 
-  const trigger = calculateTriggerMillis(dueDate, dueTime, dueDateMillis);
-  if (!trigger) return 'TODAY';
-
-  // 1 minute buffer for overdue
-  if (trigger < now - 60000) {
+  const cleanDate = (dueDate || 'Today').trim().toLowerCase();
+  if (cleanDate.includes('yesterday')) {
     return 'OVERDUE';
   }
-
-  const nowDate = new Date();
-  const triggerDate = new Date(trigger);
-
-  const isToday =
-    nowDate.getFullYear() === triggerDate.getFullYear() &&
-    nowDate.getMonth() === triggerDate.getMonth() &&
-    nowDate.getDate() === triggerDate.getDate();
-
-  if (isToday) {
+  if (cleanDate.includes('today')) {
     return 'TODAY';
   }
 
-  return 'UPCOMING';
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayStartMs = todayStart.getTime();
+  const todayEndMs = todayStartMs + 86400000;
+
+  const trigger = calculateTriggerMillis(dueDate, dueTime, dueDateMillis);
+  if (trigger != null && trigger > 0) {
+    if (trigger < todayStartMs) {
+      return 'OVERDUE';
+    }
+    if (trigger >= todayStartMs && trigger < todayEndMs) {
+      return 'TODAY';
+    }
+    return 'UPCOMING';
+  }
+
+  return 'TODAY';
 }
 
 export function formatTimeDisplay(timeStr?: string | null): string {
