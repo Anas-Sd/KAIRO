@@ -2,14 +2,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from './supabase';
 import { Task, TaskDto, TaskSection, Priority, dtoToTask, taskToDto } from './types';
 import { determineSection, calculateTriggerMillis } from './utils/dateUtils';
-import { alarmAudio } from './utils/audio';
 
 import { LoginModal } from './components/LoginModal';
 import { SectionHeader } from './components/SectionHeader';
 import { TaskCard } from './components/TaskCard';
 import { CreateEditTaskModal } from './components/CreateEditTaskModal';
 import { TaskDetailsModal } from './components/TaskDetailsModal';
-import { AlarmOverlayModal } from './components/AlarmOverlayModal';
 import { FilterSortBar } from './components/FilterSortBar';
 import { BreadcrumbBar } from './components/BreadcrumbBar';
 
@@ -52,8 +50,6 @@ export const App: React.FC = () => {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editTaskTarget, setEditTaskTarget] = useState<Task | null>(null);
   const [selectedTaskDetails, setSelectedTaskDetails] = useState<Task | null>(null);
-  const [activeAlarmTask, setActiveAlarmTask] = useState<Task | null>(null);
-  const [firedAlarmIds, setFiredAlarmIds] = useState<Set<string>>(new Set());
 
   // Snooze tracking in memory
   const [snoozeMap, setSnoozeMap] = useState<Record<string, number>>({});
@@ -125,32 +121,6 @@ export const App: React.FC = () => {
     };
   }, [userCode, fetchTasks]);
 
-  // 3. Web Hardware Alarm Simulator (checks every 5s)
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (activeAlarmTask) return; // already ringing
-      const now = Date.now();
-
-      for (const t of tasks) {
-        if (t.isCompleted) continue;
-        if (firedAlarmIds.has(t.id)) continue;
-
-        // Check if snooze is active
-        if (t.snoozeUntilMillis && t.snoozeUntilMillis > now) continue;
-
-        const trigger = calculateTriggerMillis(t.dueDate, t.dueTime, t.dueDateMillis);
-        if (trigger && now >= trigger && now <= trigger + 60000 * 2) {
-          // Within 2 minutes of due trigger -> Ring Alarm!
-          setActiveAlarmTask(t);
-          setFiredAlarmIds((prev) => new Set(prev).add(t.id));
-          break;
-        }
-      }
-    }, 5000);
-
-    return () => clearInterval(timer);
-  }, [tasks, activeAlarmTask, firedAlarmIds]);
-
   // Hierarchy Helpers
   const getDescendantIds = useCallback((taskId: string, all: Task[]): string[] => {
     const result: string[] = [];
@@ -183,10 +153,6 @@ export const App: React.FC = () => {
   const handleToggleComplete = async (task: Task) => {
     const now = Date.now();
     const toComplete = !task.isCompleted;
-
-    if (toComplete) {
-      alarmAudio.playCompletionChime();
-    }
 
     let affectedIds = new Set<string>([task.id]);
 
@@ -715,18 +681,6 @@ export const App: React.FC = () => {
           onToggleComplete={handleToggleComplete}
           onAddSubtask={handleAddSubtask}
           onSnooze={handleSnoozeTask}
-        />
-      )}
-
-      {/* Fullscreen Alarm Ringing Overlay */}
-      {activeAlarmTask && (
-        <AlarmOverlayModal
-          task={activeAlarmTask}
-          onDismiss={() => setActiveAlarmTask(null)}
-          onSnooze={(mins) => {
-            handleSnoozeTask(activeAlarmTask, mins);
-            setActiveAlarmTask(null);
-          }}
         />
       )}
     </div>
