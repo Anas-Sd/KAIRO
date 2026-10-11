@@ -241,7 +241,7 @@ object TaskRepository {
                 if (toReopen.contains(t.id)) {
                     t.copy(
                         isCompleted = false,
-                        section = determineOpenSection(t.dueDate, t.dueDateMillis),
+                        section = determineOpenSection(t.dueDate, t.dueDateMillis, t.dueTime),
                         completedAt = null,
                         updatedAt = now
                     )
@@ -325,6 +325,7 @@ object TaskRepository {
             currentList.map { task ->
                 if (task.id == taskId) {
                     val modified = task.copy(
+                        dueDate = "SNOOZED",
                         dueDateMillis = snoozeMillis,
                         snoozeUntilMillis = snoozeMillis,
                         updatedAt = now
@@ -340,6 +341,7 @@ object TaskRepository {
             val fromDb = localDb.getTasksForUser(userCode).find { it.id == taskId }
             if (fromDb != null) {
                 val modified = fromDb.copy(
+                    dueDate = "SNOOZED",
                     dueDateMillis = snoozeMillis,
                     snoozeUntilMillis = snoozeMillis,
                     updatedAt = now
@@ -630,7 +632,7 @@ object TaskRepository {
                 if (parent.isCompleted) {
                     tasks[parentIdx] = parent.copy(
                         isCompleted = false,
-                        section = determineOpenSection(parent.dueDate, parent.dueDateMillis),
+                        section = determineOpenSection(parent.dueDate, parent.dueDateMillis, parent.dueTime),
                         completedAt = null,
                         updatedAt = now
                     )
@@ -673,13 +675,27 @@ object TaskRepository {
         return _tasks.value
     }
 
-    private fun determineOpenSection(dueDate: String, dueDateMillis: Long? = null): TaskSection {
+    private fun determineOpenSection(dueDate: String, dueDateMillis: Long? = null, dueTime: String? = null): TaskSection {
+        if (dueDate.equals("SNOOZED", ignoreCase = true)) {
+            return TaskSection.TODAY
+        }
+        val now = System.currentTimeMillis()
         val todayStart = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
+        val todayEnd = todayStart + 86400000L
+
+        // If specific time set for today has passed, consider as overdue only
+        if (!dueTime.isNullOrBlank()) {
+            val trigger = com.kairo.app.alarm.AlarmScheduler.calculateTriggerMillis(dueDate, dueTime, dueDateMillis)
+            if (trigger != null && trigger < now) {
+                return TaskSection.OVERDUE
+            }
+        }
+
         val targetMillis = dueDateMillis ?: try {
             val formats = arrayOf("MMM d", "MMM dd", "dd/MM/yyyy", "yyyy-MM-dd")
             var parsedTime: Long? = null
@@ -701,9 +717,8 @@ object TaskRepository {
 
         return when {
             dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
-            dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
             targetMillis != null && targetMillis < todayStart -> TaskSection.OVERDUE
-            targetMillis != null && targetMillis >= todayStart && targetMillis < (todayStart + 86400000L) -> TaskSection.TODAY
+            targetMillis != null && targetMillis >= todayStart && targetMillis < todayEnd -> TaskSection.TODAY
             else -> TaskSection.UPCOMING
         }
     }

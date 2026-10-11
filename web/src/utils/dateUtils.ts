@@ -63,6 +63,39 @@ export function calculateTriggerMillis(
   return target.getTime();
 }
 
+export function formatDisplayDate(dateInput: Date | number): string {
+  const d = typeof dateInput === 'number' ? new Date(dateInput) : dateInput;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+export function normalizeDateString(dateStr?: string | null): string {
+  if (!dateStr || !dateStr.trim()) {
+    return formatDisplayDate(new Date());
+  }
+  const clean = dateStr.trim();
+  if (clean.toUpperCase() === 'SNOOZED') return 'SNOOZED';
+  const lower = clean.toLowerCase();
+  const now = new Date();
+  if (lower === 'today') {
+    return formatDisplayDate(now);
+  }
+  if (lower === 'tomorrow') {
+    const tmrw = new Date();
+    tmrw.setDate(tmrw.getDate() + 1);
+    return formatDisplayDate(tmrw);
+  }
+  if (lower === 'yesterday') {
+    const yest = new Date();
+    yest.setDate(yest.getDate() - 1);
+    return formatDisplayDate(yest);
+  }
+  const parsed = new Date(clean);
+  if (!isNaN(parsed.getTime())) {
+    return formatDisplayDate(parsed);
+  }
+  return clean;
+}
+
 export function determineSection(
   dueDate: string,
   dueTime?: string | null,
@@ -77,12 +110,12 @@ export function determineSection(
     return 'SNOOZED';
   }
 
-  const cleanDate = (dueDate || 'Today').trim().toLowerCase();
+  const cleanDate = (dueDate || '').trim().toLowerCase();
+  if (cleanDate === 'snoozed') {
+    return 'SNOOZED';
+  }
   if (cleanDate.includes('yesterday')) {
     return 'OVERDUE';
-  }
-  if (cleanDate.includes('today')) {
-    return 'TODAY';
   }
 
   const todayStart = new Date();
@@ -96,6 +129,10 @@ export function determineSection(
       return 'OVERDUE';
     }
     if (trigger >= todayStartMs && trigger < todayEndMs) {
+      // If time set for today has crossed, consider as overdue only
+      if (dueTime && dueTime.trim() && trigger < now) {
+        return 'OVERDUE';
+      }
       return 'TODAY';
     }
     return 'UPCOMING';

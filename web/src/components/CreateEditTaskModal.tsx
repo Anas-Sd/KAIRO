@@ -11,7 +11,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Task, Priority, RepeatType } from '../types';
-import { calculateTriggerMillis, determineSection } from '../utils/dateUtils';
+import { calculateTriggerMillis, determineSection, normalizeDateString } from '../utils/dateUtils';
 
 interface CreateEditTaskModalProps {
   initialTask?: Task | null;
@@ -83,7 +83,11 @@ export const CreateEditTaskModal: React.FC<CreateEditTaskModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
-      setError('Please enter a task title.');
+      setError('Please enter a task title (mandatory).');
+      return;
+    }
+    if (!dueTime || !dueTime.trim()) {
+      setError('Due time is mandatory for alarms. Please specify a time.');
       return;
     }
 
@@ -91,7 +95,8 @@ export const CreateEditTaskModal: React.FC<CreateEditTaskModalProps> = ({
     setError(null);
 
     try {
-      const finalDueDate = isCustomDate ? customDateVal : dueDate;
+      const rawDueDate = isCustomDate ? customDateVal : dueDate;
+      const finalDueDate = normalizeDateString(rawDueDate);
       const dueMillis = calculateTriggerMillis(finalDueDate, dueTime);
       const section = determineSection(finalDueDate, dueTime, dueMillis, false);
 

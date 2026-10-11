@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from './supabase';
 import { Task, TaskDto, TaskSection, Priority, dtoToTask, taskToDto } from './types';
-import { determineSection, calculateTriggerMillis } from './utils/dateUtils';
+import { determineSection, calculateTriggerMillis, normalizeDateString, formatDisplayDate } from './utils/dateUtils';
 
 import { LoginModal } from './components/LoginModal';
 import { SectionHeader } from './components/SectionHeader';
@@ -321,8 +321,9 @@ export const App: React.FC = () => {
   };
 
   // 7. Snooze Task
-  const handleSnoozeTask = (task: Task, minutes: number) => {
-    const snoozeUntil = Date.now() + minutes * 60 * 1000;
+  const handleSnoozeTask = async (task: Task, minutes: number) => {
+    const now = Date.now();
+    const snoozeUntil = now + minutes * 60 * 1000;
     setSnoozeMap((prev) => ({ ...prev, [task.id]: snoozeUntil }));
 
     setTasks((prev) =>
@@ -330,6 +331,8 @@ export const App: React.FC = () => {
         if (t.id === task.id) {
           return {
             ...t,
+            dueDate: 'SNOOZED',
+            dueDateMillis: snoozeUntil,
             snoozeUntilMillis: snoozeUntil,
             section: 'SNOOZED',
           };
@@ -337,6 +340,18 @@ export const App: React.FC = () => {
         return t;
       })
     );
+
+    try {
+      await supabase.from('tasks').update({
+        due_date: 'SNOOZED',
+        due_date_millis: snoozeUntil,
+        snooze_until_millis: snoozeUntil,
+        section: 'SNOOZED',
+        updated_at: now,
+      }).eq('id', task.id);
+    } catch (err) {
+      console.error('Error updating snoozed task in Supabase:', err);
+    }
   };
 
   // 8. Add Subtask
@@ -345,19 +360,20 @@ export const App: React.FC = () => {
     const parent = tasks.find((t) => t.id === parentTaskId);
     const now = Date.now();
     const siblingCount = tasks.filter((t) => t.parentId === parentTaskId).length;
+    const effectiveDueDate = parent?.dueDate ? normalizeDateString(parent.dueDate) : formatDisplayDate(now);
     const subtask: Task = {
       id: crypto.randomUUID(),
       title,
       notes: null,
       priority: parent?.priority || 'LOW',
-      dueDate: parent?.dueDate || 'Today',
+      dueDate: effectiveDueDate,
       dueDateMillis: parent?.dueDateMillis || now,
       dueTime: parent?.dueTime || null,
       location: null,
       attachmentName: null,
       attachmentUri: null,
       isCompleted: false,
-      section: determineSection(parent?.dueDate || 'Today', parent?.dueTime, parent?.dueDateMillis, false),
+      section: determineSection(effectiveDueDate, parent?.dueTime, parent?.dueDateMillis, false),
       createdAt: now,
       updatedAt: now,
       completedAt: null,

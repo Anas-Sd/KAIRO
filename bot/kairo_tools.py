@@ -328,26 +328,63 @@ def compute_due_millis(due_date_str: str, due_time_str: str = None) -> int:
     ))
     return int(target_dt.timestamp() * 1000)
 
-def determine_section(due_millis: int, is_completed: bool, due_date_str: str = "Today") -> str:
+def normalize_date_string(date_str: str) -> str:
     """
-    Determines section matching Android TaskRepository.kt:702-708 exactly:
+    Standardizes any date input to an actual formatted date string (e.g. 'Oct 11').
+    Ensures relative words ('Today', 'Tomorrow', 'Yesterday') are NEVER stored in the database.
+    Preserves 'SNOOZED'.
+    """
+    if not date_str or not date_str.strip():
+        now_dt = datetime.now(DEFAULT_TIMEZONE)
+        return now_dt.strftime("%b %d")
+
+    clean = date_str.strip()
+    if clean.upper() == "SNOOZED":
+        return "SNOOZED"
+
+    now_dt = datetime.now(DEFAULT_TIMEZONE)
+    low = clean.lower()
+    if "today" in low:
+        return now_dt.strftime("%b %d")
+    elif "tomorrow" in low:
+        return (now_dt + timedelta(days=1)).strftime("%b %d")
+    elif "yesterday" in low:
+        return (now_dt - timedelta(days=1)).strftime("%b %d")
+
+    for fmt in ("%Y-%m-%d", "%b %d", "%B %d", "%d/%m/%Y", "%m/%d/%Y", "%b %d, %Y", "%d %b %Y"):
+        try:
+            parsed = datetime.strptime(clean, fmt)
+            if parsed.year <= 1900:
+                parsed = parsed.replace(year=now_dt.year)
+            return parsed.strftime("%b %d")
+        except ValueError:
+            pass
+
+    return clean
+
+def determine_section(due_millis: int, is_completed: bool, due_date_str: str = "", due_time_str: str = None) -> str:
+    """
+    Determines section matching Android TaskRepository.kt and TaskViewModel.kt:
     - If completed: COMPLETED
-    - If dueDate contains 'Yesterday': OVERDUE
-    - If dueDate contains 'Today': TODAY (never overdue during today!)
-    - If due_millis < todayStart: OVERDUE
-    - If todayStart <= due_millis < (todayStart + 86400000): TODAY
+    - If due_date_str == 'SNOOZED': SNOOZED
+    - If due_date_str contains 'Yesterday': OVERDUE
+    - If due_millis < today_start_ms: OVERDUE
+    - If on today (today_start_ms <= due_millis < today_end_ms):
+        - If a specific time was set and that time has passed (due_millis < now_ms): OVERDUE
+        - Otherwise: TODAY
     - Else: UPCOMING
     """
     if is_completed:
         return "COMPLETED"
 
-    clean_date = (due_date_str or "Today").strip().lower()
+    clean_date = (due_date_str or "").strip().lower()
+    if clean_date == "snoozed":
+        return "SNOOZED"
     if "yesterday" in clean_date:
         return "OVERDUE"
-    if "today" in clean_date:
-        return "TODAY"
 
     now_dt = datetime.now(DEFAULT_TIMEZONE)
+    now_ms = int(now_dt.timestamp() * 1000)
     today_start_dt = now_dt.replace(hour=0, minute=0, second=0, microsecond=0)
     today_start_ms = int(today_start_dt.timestamp() * 1000)
     today_end_ms = today_start_ms + 86400 * 1000
@@ -356,6 +393,8 @@ def determine_section(due_millis: int, is_completed: bool, due_date_str: str = "
         if due_millis < today_start_ms:
             return "OVERDUE"
         elif today_start_ms <= due_millis < today_end_ms:
+            if due_time_str and due_time_str.strip() and due_millis < now_ms:
+                return "OVERDUE"
             return "TODAY"
         else:
             return "UPCOMING"
@@ -380,8 +419,8 @@ def get_recent_tones() -> str:
 
 def add_task(
     title: str,
-    due_date: str = "Today",
-    due_time: str = None,
+    due_date: str,
+    due_time: str,
     priority: str = "LOW",
     notes: str = None,
     repeat_type: str = "NONE",
@@ -397,16 +436,21 @@ def add_task(
 ) -> str:
     """
     Creates a new task in Kairo. Matches Android TaskRepository.addTask.
+    Title, due_date, and due_time are STRICTLY MANDATORY fields for alarm scheduling.
     If added under a completed parent, reopens parent and all ancestors.
     Supports geofence location coordinates (latitude, longitude, location_radius).
     """
     if not title or not title.strip():
         return "ERROR: Task name/title is mandatory."
+    if not due_date or not due_date.strip():
+        return "ERROR: Due Date is mandatory. Please ask the user for the date before creating the task."
+    if not due_time or not due_time.strip():
+        return "ERROR: Due Time is mandatory for alarms. Please ask the user for the time before creating the task."
 
     user_code = current_user["user_code"]
     task_id = str(uuid.uuid4())
-    eff_due_date = due_date.strip() if due_date else "Today"
-    eff_due_time = due_time.strip() if due_time else None
+    eff_due_date = normalize_date_string(due_date)
+    eff_due_time = due_time.strip()
     due_millis = compute_due_millis(eff_due_date, eff_due_time)
     now_ms = int(time.time() * 1000)
 
@@ -433,7 +477,7 @@ def add_task(
         clean_priority = "LOW"
 
     clean_repeat = repeat_type.strip().upper() if repeat_type else "NONE"
-    section = determine_section(due_millis, False, eff_due_date)
+    section = determine_section(due_millis, False, eff_due_date, eff_due_time)
 
     new_task = {
         "id": task_id,
@@ -585,7 +629,7 @@ def edit_task(
     if new_title: patch_data["title"] = new_title.strip()
     if notes is not None: patch_data["notes"] = notes.strip() if notes else None
     if new_priority: patch_data["priority"] = new_priority.strip().upper()
-    if new_due_date: patch_data["due_date"] = new_due_date.strip()
+    if new_due_date: patch_data["due_date"] = normalize_date_string(new_due_date)
     if new_due_time: patch_data["due_time"] = new_due_time.strip()
     if new_repeat_type: patch_data["repeat_type"] = new_repeat_type.strip().upper()
     if new_repeat_days is not None: patch_data["repeat_days"] = new_repeat_days.strip() if new_repeat_days else None
@@ -596,7 +640,7 @@ def edit_task(
     if new_longitude is not None: patch_data["longitude"] = new_longitude
     if new_location_radius is not None: patch_data["location_radius"] = new_location_radius
 
-    effective_date = new_due_date or task.get("due_date", "Today")
+    effective_date = normalize_date_string(new_due_date) if new_due_date else normalize_date_string(task.get("due_date", "Today"))
     effective_time = new_due_time or task.get("due_time")
 
     if is_completed is not None:
@@ -605,17 +649,17 @@ def edit_task(
         if new_due_date or new_due_time:
             due_ms = compute_due_millis(effective_date, effective_time)
             patch_data["due_date_millis"] = due_ms
-            patch_data["section"] = "COMPLETED" if is_completed else determine_section(due_ms, False, effective_date)
+            patch_data["section"] = "COMPLETED" if is_completed else determine_section(due_ms, False, effective_date, effective_time)
         else:
             current_ms = task.get("due_date_millis") or int(time.time() * 1000)
-            patch_data["section"] = "COMPLETED" if is_completed else determine_section(current_ms, False, effective_date)
+            patch_data["section"] = "COMPLETED" if is_completed else determine_section(current_ms, False, effective_date, effective_time)
     elif new_due_date or new_due_time:
         # Rescheduling reactivates task if it was completed or overdue
         due_ms = compute_due_millis(effective_date, effective_time)
         patch_data["due_date_millis"] = due_ms
         patch_data["is_completed"] = False
         patch_data["completed_at"] = None
-        patch_data["section"] = determine_section(due_ms, False, effective_date)
+        patch_data["section"] = determine_section(due_ms, False, effective_date, effective_time)
 
     task_id = task["id"]
     try:
@@ -634,6 +678,7 @@ def snooze_task(task_query: str, minutes: int = 15) -> str:
     """
     Snoozes an active task for a specified duration in minutes (default 15 minutes).
     Matches Android TaskRepository.snoozeTask.
+    Sets due_date to 'SNOOZED' and section to 'SNOOZED'.
     """
     all_tasks = fetch_all_tasks_for_user()
     task, candidates = resolve_task_by_query(task_query, all_tasks)
@@ -648,6 +693,7 @@ def snooze_task(task_query: str, minutes: int = 15) -> str:
     snooze_time_str = datetime.fromtimestamp(snooze_until_ms / 1000.0, DEFAULT_TIMEZONE).strftime("%I:%M %p")
 
     patch_data = {
+        "due_date": "SNOOZED",
         "snooze_until_millis": snooze_until_ms,
         "due_date_millis": snooze_until_ms,
         "section": "SNOOZED",
@@ -666,11 +712,15 @@ def snooze_task(task_query: str, minutes: int = 15) -> str:
     except Exception as e:
         return f"Error snoozing task: {e}"
 
-def reschedule_task(task_query: str, new_due_date: str = "Today", new_due_time: str = None) -> str:
+def reschedule_task(task_query: str, new_due_date: str, new_due_time: str) -> str:
     """
     Reschedules a task to a new date and/or time, reactivating it if completed or overdue.
     Matches Android task reschedule behavior.
     """
+    if not new_due_date or not new_due_date.strip():
+        return "ERROR: New due date is mandatory for rescheduling."
+    if not new_due_time or not new_due_time.strip():
+        return "ERROR: New due time is mandatory for rescheduling."
     return edit_task(
         task_query=task_query,
         new_due_date=new_due_date,
@@ -681,16 +731,25 @@ def reschedule_task(task_query: str, new_due_date: str = "Today", new_due_time: 
 def add_subtask(
     parent_task_query: str,
     title: str,
-    due_date: str = None,
-    due_time: str = None,
+    due_date: str,
+    due_time: str,
     priority: str = None,
     notes: str = None
 ) -> str:
     """
     Adds a subtask under an existing parent task (resolved via fuzzy match).
-    Inherits parent's date (or 'Today'). If due_time is not provided, leaves it as None.
+    Title, due_date, and due_time are STRICTLY MANDATORY fields for alarm scheduling.
     If parent is completed, automatically reopens parent and all ancestors.
     """
+    if not parent_task_query or not parent_task_query.strip():
+        return "ERROR: Parent task name/query is mandatory."
+    if not title or not title.strip():
+        return "ERROR: Subtask title is mandatory."
+    if not due_date or not due_date.strip():
+        return "ERROR: Due Date is mandatory. Please ask the user for the date before creating the subtask."
+    if not due_time or not due_time.strip():
+        return "ERROR: Due Time is mandatory for alarms. Please ask the user for the time before creating the subtask."
+
     all_tasks = fetch_all_tasks_for_user()
     parent, candidates = resolve_task_by_query(parent_task_query, all_tasks)
     if not parent:
@@ -698,14 +757,14 @@ def add_subtask(
             return f"Could not find parent task '{parent_task_query}'. Did you mean: {', '.join(c.get('title') for c in candidates[:3])}?"
         return f"Could not find parent task '{parent_task_query}'."
 
-    effective_date = due_date.strip() if due_date else parent.get("due_date", "Today")
-    effective_time = due_time.strip() if due_time else None
+    eff_due_date = normalize_date_string(due_date)
+    eff_due_time = due_time.strip()
     effective_priority = priority.strip().upper() if priority else (parent.get("priority") or "LOW")
 
     return add_task(
         title=title,
-        due_date=effective_date,
-        due_time=effective_time,
+        due_date=eff_due_date,
+        due_time=eff_due_time,
         priority=effective_priority,
         notes=notes,
         parent_task_query=parent["title"]

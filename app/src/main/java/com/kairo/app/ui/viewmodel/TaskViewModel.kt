@@ -579,8 +579,8 @@ class TaskViewModel(
         longitude: Double? = null,
         locationRadius: Int = 500
     ) {
-        if (title.isBlank()) return
         val targetMillis = dueDateMillis ?: computeDueDateMillis(dueDate)
+        val trigger = com.kairo.app.alarm.AlarmScheduler.calculateTriggerMillis(dueDate, dueTime, targetMillis)
         val todayStart = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
@@ -589,9 +589,13 @@ class TaskViewModel(
         }.timeInMillis
         val todayEnd = todayStart + 86400000L
 
+        val normalizedDueDate = if (dueDate.equals("SNOOZED", ignoreCase = true)) "SNOOZED"
+            else com.kairo.app.ui.utils.DateUtils.formatDisplayDate(dueDate, targetMillis)
+
         val assignedSection = when {
+            dueDate.equals("SNOOZED", ignoreCase = true) -> TaskSection.TODAY
             dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
-            dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
+            !dueTime.isNullOrBlank() && trigger != null && trigger < System.currentTimeMillis() -> TaskSection.OVERDUE
             targetMillis < todayStart -> TaskSection.OVERDUE
             targetMillis >= todayStart && targetMillis < todayEnd -> TaskSection.TODAY
             else -> TaskSection.UPCOMING
@@ -600,7 +604,7 @@ class TaskViewModel(
             title = title.trim(),
             notes = notes,
             priority = priority,
-            dueDate = dueDate,
+            dueDate = normalizedDueDate,
             dueDateMillis = targetMillis,
             dueTime = dueTime,
             location = location,
@@ -646,6 +650,7 @@ class TaskViewModel(
     ) {
         if (title.isBlank()) return
         val targetMillis = dueDateMillis ?: computeDueDateMillis(dueDate)
+        val trigger = com.kairo.app.alarm.AlarmScheduler.calculateTriggerMillis(dueDate, dueTime, targetMillis)
         val todayStart = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
@@ -654,9 +659,13 @@ class TaskViewModel(
         }.timeInMillis
         val todayEnd = todayStart + 86400000L
 
+        val normalizedDueDate = if (dueDate.equals("SNOOZED", ignoreCase = true)) "SNOOZED"
+            else com.kairo.app.ui.utils.DateUtils.formatDisplayDate(dueDate, targetMillis)
+
         val assignedSection = when {
+            dueDate.equals("SNOOZED", ignoreCase = true) -> TaskSection.TODAY
             dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
-            dueDate.contains("Today", ignoreCase = true) -> TaskSection.TODAY
+            !dueTime.isNullOrBlank() && trigger != null && trigger < System.currentTimeMillis() -> TaskSection.OVERDUE
             targetMillis < todayStart -> TaskSection.OVERDUE
             targetMillis >= todayStart && targetMillis < todayEnd -> TaskSection.TODAY
             else -> TaskSection.UPCOMING
@@ -666,7 +675,7 @@ class TaskViewModel(
             title = title.trim(),
             notes = notes,
             priority = priority,
-            dueDate = dueDate,
+            dueDate = normalizedDueDate,
             dueDateMillis = targetMillis,
             dueTime = dueTime,
             location = location,
