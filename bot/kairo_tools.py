@@ -93,6 +93,18 @@ def dispatch_alarm_wakeup(task: dict = None) -> bool:
                 data_payload["alarmToneUri"] = str(task["alarm_tone_uri"])
             if task.get("alarm_tone_title"):
                 data_payload["alarmToneTitle"] = str(task["alarm_tone_title"])
+            if task.get("location"):
+                data_payload["location"] = str(task["location"])
+            if task.get("latitude") is not None:
+                data_payload["latitude"] = str(task["latitude"])
+                data_payload["lat"] = str(task["latitude"])
+            if task.get("longitude") is not None:
+                data_payload["longitude"] = str(task["longitude"])
+                data_payload["lng"] = str(task["longitude"])
+            if task.get("location_radius"):
+                data_payload["locationRadius"] = str(task["location_radius"])
+            if task.get("snooze_until_millis"):
+                data_payload["snoozeUntilMillis"] = str(task["snooze_until_millis"])
 
         message = messaging.Message(
             token=token,
@@ -205,9 +217,27 @@ def get_ancestor_ids(task_id: str, all_tasks: list) -> list[str]:
     visited = set()
     while curr and curr not in visited:
         visited.add(curr)
-        ancestors.append(curr)
-        curr = by_id.get(curr, {}).get("parent_id")
     return ancestors
+
+def get_task_path(task_id: str, all_tasks: list) -> str:
+    """Returns breadcrumb path string e.g. 'Project > Subtask' matching Android getTaskPath."""
+    by_id = {t["id"]: t for t in all_tasks}
+    chain = []
+    curr = by_id.get(task_id)
+    visited = set()
+    while curr and curr["id"] not in visited:
+        visited.add(curr["id"])
+        chain.insert(0, curr.get("title", "Untitled"))
+        curr = by_id.get(curr.get("parent_id")) if curr.get("parent_id") else None
+    return " > ".join(chain)
+
+def get_subtask_progress(task_id: str, all_tasks: list) -> str:
+    """Returns 'X/Y completed' progress string matching Android getSubtaskProgress."""
+    direct = [t for t in all_tasks if t.get("parent_id") == task_id]
+    if not direct:
+        return "No subtasks"
+    done_count = sum(1 for t in direct if t.get("is_completed"))
+    return f"{done_count}/{len(direct)} completed"
 
 def recheck_parent_completion(parent_id: str, tasks: list, now_ms: int) -> list[dict]:
     """
@@ -360,11 +390,15 @@ def add_task(
     tone: str = "Default Tone",
     location: str = None,
     photos: str = None,
-    parent_task_query: str = None
+    parent_task_query: str = None,
+    latitude: float = None,
+    longitude: float = None,
+    location_radius: int = 500
 ) -> str:
     """
     Creates a new task in Kairo. Matches Android TaskRepository.addTask.
     If added under a completed parent, reopens parent and all ancestors.
+    Supports geofence location coordinates (latitude, longitude, location_radius).
     """
     if not title or not title.strip():
         return "ERROR: Task name/title is mandatory."
@@ -410,6 +444,9 @@ def add_task(
         "due_date_millis": due_millis,
         "due_time": eff_due_time,
         "location": location.strip() if location else None,
+        "latitude": latitude,
+        "longitude": longitude,
+        "location_radius": location_radius,
         "attachment_name": photos.strip() if photos else None,
         "is_completed": False,
         "section": section,
@@ -470,7 +507,10 @@ def add_task(
     })
 
 def get_task_details(task_query: str) -> str:
-    """Retrieves full details of a specific task using fuzzy matching if title is approximate."""
+    """
+    Retrieves full details of a specific task using fuzzy matching.
+    Includes breadcrumbs path, subtask progress count, location coordinates, and alarm info.
+    """
     all_tasks = fetch_all_tasks_for_user()
     task, candidates = resolve_task_by_query(task_query, all_tasks)
     if not task:
@@ -481,24 +521,37 @@ def get_task_details(task_query: str) -> str:
 
     subtasks = [t for t in all_tasks if t.get("parent_id") == task["id"]]
     subtask_titles = [s.get("title", "Untitled") for s in subtasks]
+    breadcrumb_path = get_task_path(task["id"], all_tasks)
+    progress_str = get_subtask_progress(task["id"], all_tasks)
+
+    snooze_str = "None"
+    if task.get("snooze_until_millis"):
+        snooze_dt = datetime.fromtimestamp(task["snooze_until_millis"] / 1000.0, DEFAULT_TIMEZONE)
+        snooze_str = snooze_dt.strftime("%Y-%m-%d %I:%M %p")
 
     info = {
         "id": task["id"],
         "title": task.get("title"),
+        "path": breadcrumb_path,
         "notes": task.get("notes") or "None",
         "priority": task.get("priority", "LOW"),
         "due_date": task.get("due_date"),
         "due_time": task.get("due_time") or "None",
         "is_completed": task.get("is_completed", False),
         "section": task.get("section", "TODAY"),
+        "snoozed_until": snooze_str,
         "repeat_type": task.get("repeat_type", "NONE"),
         "repeat_days": task.get("repeat_days") or "None",
         "repeat_dates": task.get("repeat_dates") or "None",
         "tone": task.get("alarm_tone_title") or "Default Tone",
         "location": task.get("location") or "None",
+        "latitude": task.get("latitude"),
+        "longitude": task.get("longitude"),
+        "location_radius": task.get("location_radius", 500),
         "photos": task.get("attachment_name") or "None",
         "parent_id": task.get("parent_id") or "None",
         "subtasks_count": len(subtasks),
+        "subtask_progress": progress_str,
         "subtasks": subtask_titles
     }
     return json.dumps(info, indent=2)
@@ -515,6 +568,9 @@ def edit_task(
     new_repeat_dates: str = None,
     new_tone: str = None,
     new_location: str = None,
+    new_latitude: float = None,
+    new_longitude: float = None,
+    new_location_radius: int = None,
     is_completed: bool = None
 ) -> str:
     """Modifies properties of an existing task found via fuzzy matching. Rescheduling automatically reactivates completed tasks."""
@@ -536,6 +592,9 @@ def edit_task(
     if new_repeat_dates is not None: patch_data["repeat_dates"] = new_repeat_dates.strip() if new_repeat_dates else None
     if new_tone: patch_data["alarm_tone_title"] = new_tone.strip()
     if new_location is not None: patch_data["location"] = new_location.strip() if new_location else None
+    if new_latitude is not None: patch_data["latitude"] = new_latitude
+    if new_longitude is not None: patch_data["longitude"] = new_longitude
+    if new_location_radius is not None: patch_data["location_radius"] = new_location_radius
 
     effective_date = new_due_date or task.get("due_date", "Today")
     effective_time = new_due_time or task.get("due_time")
@@ -571,6 +630,54 @@ def edit_task(
     dispatch_alarm_wakeup(updated_task)
     return f"Successfully updated task '{updated_task.get('title')}'. Hardware alarms synced."
 
+def snooze_task(task_query: str, minutes: int = 15) -> str:
+    """
+    Snoozes an active task for a specified duration in minutes (default 15 minutes).
+    Matches Android TaskRepository.snoozeTask.
+    """
+    all_tasks = fetch_all_tasks_for_user()
+    task, candidates = resolve_task_by_query(task_query, all_tasks)
+    if not task:
+        if candidates:
+            return f"Could not find task '{task_query}'. Did you mean: {', '.join(c.get('title') for c in candidates[:3])}?"
+        return f"No task found matching '{task_query}'."
+
+    task_id = task["id"]
+    now_ms = int(time.time() * 1000)
+    snooze_until_ms = now_ms + (minutes * 60 * 1000)
+    snooze_time_str = datetime.fromtimestamp(snooze_until_ms / 1000.0, DEFAULT_TIMEZONE).strftime("%I:%M %p")
+
+    patch_data = {
+        "snooze_until_millis": snooze_until_ms,
+        "due_date_millis": snooze_until_ms,
+        "section": "SNOOZED",
+        "is_completed": False,
+        "updated_at": now_ms
+    }
+
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{task_id}"
+        res = requests.patch(url, headers=supabase_headers(), json=patch_data, timeout=10)
+        if res.status_code in (200, 204):
+            updated_task = {**task, **patch_data}
+            dispatch_alarm_wakeup(updated_task)
+            return f"💤 Task '{task.get('title')}' snoozed for {minutes} minutes (until {snooze_time_str}). Hardware alarm updated on your phone."
+        return f"Database error snoozing task: {res.text}"
+    except Exception as e:
+        return f"Error snoozing task: {e}"
+
+def reschedule_task(task_query: str, new_due_date: str = "Today", new_due_time: str = None) -> str:
+    """
+    Reschedules a task to a new date and/or time, reactivating it if completed or overdue.
+    Matches Android task reschedule behavior.
+    """
+    return edit_task(
+        task_query=task_query,
+        new_due_date=new_due_date,
+        new_due_time=new_due_time,
+        is_completed=False
+    )
+
 def add_subtask(
     parent_task_query: str,
     title: str,
@@ -604,10 +711,11 @@ def add_subtask(
         parent_task_query=parent["title"]
     )
 
-def adjust_parent(task_query: str, new_parent_query: str = None) -> str:
+def adjust_parent(task_query: str, new_parent_query: str = None, move_subtasks: bool = True) -> str:
     """
     Changes or removes the parent for a subtask/task.
     If new_parent_query is None, 'none', or 'root', the task becomes a top-level task.
+    move_subtasks: If False, direct children remain under the old parent (matches Android TaskRepository.moveTask).
     Re-evaluates parent completion states matching TaskRepository.kt:500-502.
     """
     all_tasks = fetch_all_tasks_for_user()
@@ -636,6 +744,17 @@ def adjust_parent(task_query: str, new_parent_query: str = None) -> str:
 
     now_ms = int(time.time() * 1000)
     try:
+        # If move_subtasks is False, direct children are detached to old_parent_id
+        if not move_subtasks:
+            direct_children = [t for t in all_tasks if t.get("parent_id") == task["id"]]
+            for child in direct_children:
+                requests.patch(
+                    f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{child['id']}",
+                    headers=supabase_headers(),
+                    json={"parent_id": old_parent_id, "updated_at": now_ms},
+                    timeout=10
+                )
+
         url = f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{task['id']}"
         res = requests.patch(url, headers=supabase_headers(), json={"parent_id": new_parent_id, "updated_at": now_ms}, timeout=10)
         if res.status_code in (200, 204):
@@ -661,8 +780,12 @@ def adjust_parent(task_query: str, new_parent_query: str = None) -> str:
     except Exception as e:
         return f"Error: {e}"
 
-def delete_task(task_query: str) -> str:
-    """Deletes a task and its descendants, canceling alarms and rechecking parent completion."""
+def delete_task(task_query: str, delete_subtasks: bool = True) -> str:
+    """
+    Deletes a task. Matches Android TaskRepository.deleteTaskWithSubtasks:
+    If delete_subtasks is False, child subtasks are reparented to the deleted task's parent.
+    If delete_subtasks is True, all descendants are also deleted.
+    """
     all_tasks = fetch_all_tasks_for_user()
     task, candidates = resolve_task_by_query(task_query, all_tasks)
     if not task:
@@ -672,16 +795,29 @@ def delete_task(task_query: str) -> str:
 
     task_id = task["id"]
     old_parent_id = task.get("parent_id")
-    descendant_ids = get_descendant_ids(task_id, all_tasks)
-    all_to_delete = {task_id}.union(descendant_ids)
+    now_ms = int(time.time() * 1000)
 
     try:
+        if not delete_subtasks:
+            # Lift direct children to old_parent_id
+            direct_children = [t for t in all_tasks if t.get("parent_id") == task_id]
+            for child in direct_children:
+                requests.patch(
+                    f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{child['id']}",
+                    headers=supabase_headers(),
+                    json={"parent_id": old_parent_id, "updated_at": now_ms},
+                    timeout=10
+                )
+            all_to_delete = {task_id}
+        else:
+            descendant_ids = get_descendant_ids(task_id, all_tasks)
+            all_to_delete = {task_id}.union(descendant_ids)
+
         for tid in all_to_delete:
             requests.delete(f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{tid}", headers=supabase_headers(), timeout=10)
 
         # Recheck parent completion upward if subtask was removed
         if old_parent_id:
-            now_ms = int(time.time() * 1000)
             remaining_tasks = [t for t in all_tasks if t["id"] not in all_to_delete]
             changed_parents = recheck_parent_completion(old_parent_id, remaining_tasks, now_ms)
             for cp in changed_parents:
@@ -698,6 +834,122 @@ def delete_task(task_query: str) -> str:
         return f"🗑️ Deleted task '{task.get('title')}' ({len(all_to_delete)} task(s) removed) and canceled phone alarms."
     except Exception as e:
         return f"Error deleting task: {e}"
+
+def bulk_complete_tasks(category: str = None, task_queries: list = None) -> str:
+    """
+    Marks multiple tasks as completed at once. Matches Android bulk completion.
+    category: 'overdue' | 'today' | 'upcoming' | 'all'
+    task_queries: list of task title queries to complete
+    """
+    all_tasks = fetch_all_tasks_for_user()
+    targets = []
+
+    if category:
+        cat = category.strip().lower()
+        now_dt = datetime.now(DEFAULT_TIMEZONE)
+        today_start_dt = now_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start_ms = int(today_start_dt.timestamp() * 1000)
+        today_end_ms = today_start_ms + 86400 * 1000
+
+        for t in all_tasks:
+            if t.get("is_completed"): continue
+            due_ms = t.get("due_date_millis") or 0
+            due_d = (t.get("due_date") or "").lower()
+
+            if cat == "overdue":
+                if "yesterday" in due_d or (due_ms > 0 and due_ms < today_start_ms and "today" not in due_d):
+                    targets.append(t)
+            elif cat == "today":
+                if "today" in due_d or (today_start_ms <= due_ms < today_end_ms):
+                    targets.append(t)
+            elif cat == "upcoming":
+                if "tomorrow" in due_d or due_ms >= today_end_ms:
+                    targets.append(t)
+            elif cat == "all":
+                targets.append(t)
+    elif task_queries:
+        for q in task_queries:
+            matched, _ = resolve_task_by_query(q, all_tasks)
+            if matched and matched not in targets:
+                targets.append(matched)
+
+    if not targets:
+        return "No active tasks found matching the criteria to complete."
+
+    completed_titles = []
+    for t in targets:
+        set_task_completion(t["title"], is_completed=True)
+        completed_titles.append(t["title"])
+
+    return f"✅ Successfully completed {len(completed_titles)} task(s): {', '.join(completed_titles[:5])}{'...' if len(completed_titles) > 5 else ''}."
+
+def bulk_delete_tasks(category: str = None, task_queries: list = None) -> str:
+    """
+    Deletes multiple tasks at once. Matches Android TaskRepository.deleteTasks.
+    category: 'completed' | 'overdue' | 'all'
+    task_queries: list of task title queries to delete
+    """
+    all_tasks = fetch_all_tasks_for_user()
+    targets = []
+
+    if category:
+        cat = category.strip().lower()
+        for t in all_tasks:
+            if cat == "completed" and t.get("is_completed"):
+                targets.append(t)
+            elif cat == "overdue" and not t.get("is_completed") and t.get("section") == "OVERDUE":
+                targets.append(t)
+            elif cat == "all":
+                targets.append(t)
+    elif task_queries:
+        for q in task_queries:
+            matched, _ = resolve_task_by_query(q, all_tasks)
+            if matched and matched not in targets:
+                targets.append(matched)
+
+    if not targets:
+        return "No tasks found matching the criteria to delete."
+
+    count = len(targets)
+    for t in targets:
+        delete_task(t["title"], delete_subtasks=True)
+
+    return f"🗑️ Successfully deleted {count} task(s) and canceled phone alarms."
+
+def clear_completed_tasks() -> str:
+    """
+    Deletes all completed tasks from the workspace. Matches Android cleanup.
+    """
+    return bulk_delete_tasks(category="completed")
+
+def reorder_subtasks(parent_task_query: str, ordered_subtask_titles: list) -> str:
+    """
+    Reorders direct subtasks under a parent task matching Android TaskRepository.reorderTasks.
+    """
+    all_tasks = fetch_all_tasks_for_user()
+    parent, _ = resolve_task_by_query(parent_task_query, all_tasks)
+    if not parent:
+        return f"Could not find parent task '{parent_task_query}'."
+
+    subtasks = [t for t in all_tasks if t.get("parent_id") == parent["id"]]
+    if not subtasks:
+        return f"No subtasks exist under parent '{parent.get('title')}'."
+
+    now_ms = int(time.time() * 1000)
+    updated_count = 0
+    for idx, title_query in enumerate(ordered_subtask_titles):
+        matched, _ = resolve_task_by_query(title_query, subtasks)
+        if matched:
+            requests.patch(
+                f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{matched['id']}",
+                headers=supabase_headers(),
+                json={"position": idx, "updated_at": now_ms},
+                timeout=10
+            )
+            updated_count += 1
+
+    dispatch_alarm_wakeup(parent)
+    return f"↕️ Successfully reordered {updated_count} subtask(s) under '{parent.get('title')}'."
 
 def set_task_completion(task_query: str, is_completed: bool) -> str:
     """
@@ -970,9 +1222,15 @@ TOOLS = [
     add_task,
     get_task_details,
     edit_task,
+    snooze_task,
+    reschedule_task,
     add_subtask,
     adjust_parent,
     delete_task,
+    bulk_complete_tasks,
+    bulk_delete_tasks,
+    clear_completed_tasks,
+    reorder_subtasks,
     set_task_completion,
     get_category_tasks,
     filter_tasks,
