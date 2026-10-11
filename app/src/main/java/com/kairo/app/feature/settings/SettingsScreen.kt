@@ -127,6 +127,9 @@ fun SettingsDialog(
 
     // Section collapse states (side headings)
     var isSyncExpanded by remember { mutableStateOf(true) }
+    var isPermissionsExpanded by remember {
+        mutableStateOf(!com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.hasOverlayPermission(context))
+    }
     var isAccountExpanded by remember { mutableStateOf(true) }
     var isDataExpanded by remember { mutableStateOf(false) }
     var isSessionExpanded by remember { mutableStateOf(false) }
@@ -387,10 +390,127 @@ fun SettingsDialog(
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // FCM Background Alarm & Device Push Token Card
+                        val fcmToken by com.kairo.app.feature.sync.FcmTokenManager.fcmTokenState.collectAsState()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .border(1.dp, KairoOutlineVariant.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "FIREBASE PUSH & ALARM WAKE",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp,
+                                    color = KairoPrimary
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (!fcmToken.isNullOrBlank()) "Token: ${fcmToken!!.take(14)}...${fcmToken!!.takeLast(6)}" else "Retrieving Push Token...",
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Wakes phone & schedules hardware alarms when tasks added externally",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (!fcmToken.isNullOrBlank()) {
+                                IconButton(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(fcmToken!!))
+                                        Toast.makeText(context, "FCM Device Token copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copy FCM Token",
+                                        tint = KairoPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // ==========================================
-                    // 2. COLLAPSIBLE SECTION: ACCOUNT & ACCESS CODE
+                    // 2. COLLAPSIBLE SECTION: FULL-SCREEN ALARMS & OVERLAYS
+                    // ==========================================
+                    val hasOverlay = com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.hasOverlayPermission(context)
+                    val hasFullScreenIntent = com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.hasFullScreenIntentPermission(context)
+                    val hasExactAlarm = com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.hasExactAlarmPermission(context)
+                    val isBatteryIgnored = com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.isIgnoringBatteryOptimizations(context)
+                    val allPermsGranted = hasOverlay && hasFullScreenIntent && hasExactAlarm
+
+                    CollapsibleSettingsSection(
+                        title = "Full-Screen Alarms & Overlays",
+                        subtitle = if (allPermsGranted) "Direct full-screen takeover active" else "Action required for direct full-screen",
+                        icon = Icons.Default.WarningAmber,
+                        iconTint = if (allPermsGranted) Color(0xFF10B981) else Color(0xFFF59E0B),
+                        badgeText = if (allPermsGranted) "Ready" else "Action Needed",
+                        badgeColor = if (allPermsGranted) Color(0xFF10B981) else Color(0xFFF59E0B),
+                        isExpanded = isPermissionsExpanded,
+                        onToggle = { isPermissionsExpanded = !isPermissionsExpanded }
+                    ) {
+                        Text(
+                            text = "To show alarms directly in full screen (without a notification banner) when using other apps or when locked, allow 'Display over other apps'.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 16.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        SettingsStatusRow(
+                            title = "Display Over Other Apps",
+                            subtitle = "Direct full-screen alarm over active apps & lock screen",
+                            isGranted = hasOverlay,
+                            onClick = { com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.openOverlaySettings(context) }
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        SettingsStatusRow(
+                            title = "Full-Screen Alarm Intent",
+                            subtitle = "Wakes phone & launches full-screen UI on Android 14+",
+                            isGranted = hasFullScreenIntent,
+                            onClick = { com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.openFullScreenIntentSettings(context) }
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        SettingsStatusRow(
+                            title = "Schedule Exact Alarms",
+                            subtitle = "Guarantees alarm rings at the exact specified minute",
+                            isGranted = hasExactAlarm,
+                            onClick = { com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.openExactAlarmSettings(context) }
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        SettingsStatusRow(
+                            title = "Unrestricted Battery",
+                            subtitle = "Prevents OS battery saver from delaying background alarms",
+                            isGranted = isBatteryIgnored,
+                            onClick = { com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.requestIgnoreBatteryOptimizations(context) }
+                        )
+                    }
+
+                    // ==========================================
+                    // 3. COLLAPSIBLE SECTION: ACCOUNT & ACCESS CODE
                     // ==========================================
                     CollapsibleSettingsSection(
                         title = "Account & Workspace",
@@ -1062,6 +1182,63 @@ private fun SettingsActionRow(
                 text = subtitle,
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsStatusRow(
+    title: String,
+    subtitle: String,
+    isGranted: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .background(
+                if (isGranted) Color(0xFF10B981).copy(alpha = 0.08f)
+                else Color(0xFFF59E0B).copy(alpha = 0.12f),
+                RoundedCornerShape(12.dp)
+            )
+            .border(
+                1.dp,
+                if (isGranted) Color(0xFF10B981).copy(alpha = 0.25f)
+                else Color(0xFFF59E0B).copy(alpha = 0.35f),
+                RoundedCornerShape(12.dp)
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Surface(
+            shape = RoundedCornerShape(100.dp),
+            color = if (isGranted) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFF59E0B).copy(alpha = 0.25f)
+        ) {
+            Text(
+                text = if (isGranted) "Granted" else "Enable",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isGranted) Color(0xFF10B981) else Color(0xFFF59E0B),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
             )
         }
     }

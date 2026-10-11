@@ -37,11 +37,15 @@ DEFAULT_TIMEZONE = pytz.timezone("Asia/Kolkata")
 outbox = []
 
 # Context state per turn
-current_user = {"user_code": "SDANAS", "fcm_token": None}
+DEFAULT_FCM_TOKEN = os.getenv("DEFAULT_FCM_TOKEN", "esdIEen7QLewVVeFKGEeP1:APA91bG32ns_3zBxO6xpE0nsGH0DaVHA2qE4MeIQ8Sy9AOjGduhkxLvQNNz8DzWKlRC8Y7wd03PWfqFsZXYLIpChIKUFpSBtvNgap9QFlV4L5a6mtZ7ETVk")
+current_user = {
+    "user_code": os.getenv("DEFAULT_USER_CODE", "SDANAS"),
+    "fcm_token": DEFAULT_FCM_TOKEN
+}
 
 def set_context(user_code: str, fcm_token: str = None):
     current_user["user_code"] = user_code
-    current_user["fcm_token"] = fcm_token
+    current_user["fcm_token"] = fcm_token or DEFAULT_FCM_TOKEN
 
 def supabase_headers() -> dict:
     return {
@@ -65,6 +69,7 @@ def dispatch_alarm_wakeup(task: dict = None) -> bool:
             "action": "SYNC_AND_SCHEDULE",
         }
         if task:
+            is_comp = bool(task.get("is_completed", False))
             data_payload.update({
                 "id": str(task.get("id", "")),
                 "title": str(task.get("title", "")),
@@ -72,7 +77,15 @@ def dispatch_alarm_wakeup(task: dict = None) -> bool:
                 "dueTime": str(task.get("due_time", "") or ""),
                 "priority": str(task.get("priority", "LOW")),
                 "section": str(task.get("section", "TODAY")),
+                "is_completed": "true" if is_comp else "false",
+                "isCompleted": "true" if is_comp else "false",
             })
+            if task.get("completed_at"):
+                data_payload["completedAt"] = str(task["completed_at"])
+                data_payload["completed_at"] = str(task["completed_at"])
+            else:
+                data_payload["completedAt"] = ""
+                data_payload["completed_at"] = ""
             if task.get("due_date_millis"):
                 data_payload["dueDateMillis"] = str(task["due_date_millis"])
             if task.get("notes"):
@@ -385,9 +398,10 @@ def edit_task(
     new_repeat_days: str = None,
     new_repeat_dates: str = None,
     new_tone: str = None,
-    new_location: str = None
+    new_location: str = None,
+    is_completed: bool = None
 ) -> str:
-    """Modifies properties of an existing task found via fuzzy matching."""
+    """Modifies properties of an existing task found via fuzzy matching. Rescheduling automatically reactivates completed tasks."""
     all_tasks = fetch_all_tasks_for_user()
     task, candidates = resolve_task_by_query(task_query, all_tasks)
     if not task:
@@ -407,13 +421,27 @@ def edit_task(
     if new_tone: patch_data["alarm_tone_title"] = new_tone.strip()
     if new_location is not None: patch_data["location"] = new_location.strip() if new_location else None
 
-    # Recompute due millis if date or time changed
+    # Handle completion and due date/time
     effective_date = new_due_date or task.get("due_date", "Today")
     effective_time = new_due_time or task.get("due_time")
-    if new_due_date or new_due_time:
+    
+    if is_completed is not None:
+        patch_data["is_completed"] = is_completed
+        patch_data["completed_at"] = int(time.time() * 1000) if is_completed else None
+        if new_due_date or new_due_time:
+            due_ms = compute_due_millis(effective_date, effective_time)
+            patch_data["due_date_millis"] = due_ms
+            patch_data["section"] = "COMPLETED" if is_completed else determine_section(due_ms, False)
+        else:
+            current_ms = task.get("due_date_millis") or int(time.time() * 1000)
+            patch_data["section"] = "COMPLETED" if is_completed else determine_section(current_ms, False)
+    elif new_due_date or new_due_time:
+        # Rescheduling implies reactivating task if it was completed or overdue
         due_ms = compute_due_millis(effective_date, effective_time)
         patch_data["due_date_millis"] = due_ms
-        patch_data["section"] = determine_section(due_ms, task.get("is_completed", False))
+        patch_data["is_completed"] = False
+        patch_data["completed_at"] = None
+        patch_data["section"] = determine_section(due_ms, False)
 
     task_id = task["id"]
     try:

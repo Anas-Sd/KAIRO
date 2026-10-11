@@ -1,5 +1,6 @@
 package com.kairo.app.feature.tasks.alarm
 
+import android.app.ActivityOptions
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -13,6 +14,7 @@ import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -25,10 +27,11 @@ open class AlarmRingingService : Service() {
 
     private var mediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
+    private var wakeLock: PowerManager.WakeLock? = null
     private var currentTaskId: String? = null
 
     companion object {
-        const val CHANNEL_ID = "kairo_alarm_channel"
+        const val CHANNEL_ID = "kairo_silent_ringing_service_channel_v2"
         const val NOTIFICATION_ID = 20261001
 
         const val ACTION_START_RINGING = "com.kairo.app.ACTION_START_RINGING"
@@ -51,6 +54,9 @@ open class AlarmRingingService : Service() {
 
         fun stop(context: Context) {
             Log.i(TAG, "AlarmRingingService.stop called")
+            try {
+                AlarmOverlayManager.dismiss()
+            } catch (_: Exception) {}
             try {
                 instance?.stopRingingAndSelf()
             } catch (_: Exception) {}
@@ -93,17 +99,15 @@ open class AlarmRingingService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = "KAIRO Task Alarms"
-            val descriptionText = "Critical ringing task reminders and alarms"
-            val importance = NotificationManager.IMPORTANCE_HIGH
+            val descriptionText = "Silent background channel for full-screen alarm overlay"
+            val importance = NotificationManager.IMPORTANCE_LOW
             val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
                 description = descriptionText
-                enableLights(true)
-                lightColor = android.graphics.Color.MAGENTA
-                enableVibration(true)
-                vibrationPattern = longArrayOf(0, 600, 300, 600, 300, 1000)
-                setBypassDnd(true)
-                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                enableLights(false)
+                enableVibration(false)
                 setSound(null, null)
+                setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
             }
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
@@ -137,6 +141,23 @@ open class AlarmRingingService : Service() {
         val attachment = intent.getStringExtra(EXTRA_TASK_ATTACHMENT)
         val toneUriStr = intent.getStringExtra(EXTRA_ALARM_URI)
 
+        // 0. Acquire Service WakeLock to keep screen on & CPU alive while alarm is ringing
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        try {
+            if (wakeLock == null) {
+                @Suppress("DEPRECATION")
+                wakeLock = pm?.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE,
+                    "kairo:AlarmRingingServiceWakeLock"
+                )
+                wakeLock?.acquire(10 * 60 * 1000L) // 10 minutes maximum ringing
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not acquire ringing WakeLock: ${e.message}")
+        }
+
         // 1. Play Alarm Audio via MediaPlayer on USAGE_ALARM
         playAlarmSound(toneUriStr)
 
@@ -156,6 +177,61 @@ open class AlarmRingingService : Service() {
         )
 
         startForeground(NOTIFICATION_ID, notification)
+
+        // 3.5. Direct full-screen WindowManager overlay directly over ANY foreground app (Instagram, YouTube, etc.)
+        try {
+            AlarmOverlayManager.show(
+                context = applicationContext,
+                taskId = taskId,
+                title = title,
+                notes = notes,
+                priority = priority,
+                dueDate = dueDate,
+                dueTime = dueTime,
+                location = location,
+                attachment = attachment
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to display full-screen WindowManager overlay: ${e.message}")
+        }
+
+        // 4. Force AlarmActivity directly to the foreground for full-screen alarm experience
+        try {
+            val fullScreenIntent = Intent(this, AlarmActivity::class.java).apply {
+                setFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                )
+                putExtra(EXTRA_TASK_ID, taskId)
+                putExtra(EXTRA_TASK_TITLE, title)
+                putExtra(EXTRA_TASK_NOTES, notes)
+                putExtra(EXTRA_TASK_PRIORITY, priority)
+                putExtra(EXTRA_TASK_DUE_DATE, dueDate)
+                putExtra(EXTRA_TASK_DUE_TIME, dueTime)
+                putExtra(EXTRA_TASK_LOCATION, location)
+                putExtra(EXTRA_TASK_ATTACHMENT, attachment)
+                putExtra(EXTRA_ALARM_URI, toneUriStr)
+            }
+
+            val options = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                ActivityOptions.makeBasic().apply {
+                    pendingIntentBackgroundActivityStartMode = ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                }.toBundle()
+            } else {
+                null
+            }
+
+            if (options != null) {
+                startActivity(fullScreenIntent, options)
+            } else {
+                startActivity(fullScreenIntent)
+            }
+            Log.i(TAG, "Direct full-screen AlarmActivity launched from service")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start AlarmActivity directly from service: ${e.message}")
+        }
 
         return START_STICKY
     }
@@ -394,20 +470,16 @@ open class AlarmRingingService : Service() {
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(displayText.ifBlank { "Task alarm is ringing" })
-            .setSubText("KAIRO • $priority")
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentTitle("KAIRO Alarm Active")
+            .setContentText(title)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setAutoCancel(false)
             .setOngoing(true)
+            .setSilent(true)
             .setDeleteIntent(deletePendingIntent)
-            .setFullScreenIntent(fullScreenPendingIntent, true)
             .setContentIntent(fullScreenPendingIntent)
-            .addAction(R.mipmap.ic_launcher, "Done", donePendingIntent)
-            .addAction(R.mipmap.ic_launcher, "10m", snoozePendingIntent)
-            .addAction(R.mipmap.ic_launcher, "Dismiss", dismissPendingIntent)
             .build()
 
         notification.flags = notification.flags or
@@ -433,6 +505,17 @@ open class AlarmRingingService : Service() {
     }
 
     private fun stopRingingAndSelf() {
+        try {
+            AlarmOverlayManager.dismiss()
+        } catch (_: Exception) {}
+
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (_: Exception) {}
+        wakeLock = null
+
         try {
             mediaPlayer?.stop()
             mediaPlayer?.release()

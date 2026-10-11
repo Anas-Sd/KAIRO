@@ -48,6 +48,10 @@ import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Snooze
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
@@ -287,6 +291,21 @@ fun TaskCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    // Snooze Capsule (if task is currently snoozed)
+                    val snoozeMillis = task.snoozeUntilMillis
+                    if (snoozeMillis != null && snoozeMillis > System.currentTimeMillis() && !isLocallyCompleted) {
+                        val diffMs = snoozeMillis - System.currentTimeMillis()
+                        val minsLeft = ((diffMs + 59000L) / 60000L).coerceAtLeast(1)
+                        val ringTimeStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(snoozeMillis))
+                        TaskCapsule(
+                            icon = Icons.Default.Snooze,
+                            iconTint = Color(0xFF130067),
+                            text = "Snoozed • $ringTimeStr (in ${minsLeft}m)",
+                            containerColor = Color(0xFFFFB77D),
+                            contentColor = Color(0xFF130067)
+                        )
+                    }
+
                     // Priority Capsule
                     val priorityBg = when (task.priority) {
                         Priority.LOW -> Color(0xFF16A34A) // Green bg

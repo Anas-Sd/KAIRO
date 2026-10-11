@@ -25,10 +25,11 @@ import java.util.Calendar
 import java.util.Locale
 
 data class UiToggles(
-    val overdueExpanded: Boolean = true,
-    val todayExpanded: Boolean = true,
-    val upcomingExpanded: Boolean = false, // Collapsed by default
-    val completedExpanded: Boolean = false, // Collapsed by default
+    val snoozedExpanded: Boolean = true,
+    val overdueExpanded: Boolean = false,
+    val todayExpanded: Boolean = false,
+    val upcomingExpanded: Boolean = false,
+    val completedExpanded: Boolean = false,
     val isSearchActive: Boolean = false,
     val showCreateDialog: Boolean = false,
     val showFilterSheet: Boolean = false,
@@ -42,6 +43,7 @@ data class UiToggles(
 )
 
 data class TasksUiState(
+    val snoozedTasks: List<Task> = emptyList(),
     val overdueTasks: List<Task> = emptyList(),
     val todayTasks: List<Task> = emptyList(),
     val upcomingTasks: List<Task> = emptyList(),
@@ -49,10 +51,11 @@ data class TasksUiState(
     val allTasks: List<Task> = emptyList(),
     val filterCriteria: FilterCriteria = FilterCriteria(),
     val activeSort: TaskSort = TaskSort.DATE_NEAR,
-    val overdueExpanded: Boolean = true,
-    val todayExpanded: Boolean = true,
-    val upcomingExpanded: Boolean = false, // Collapsed by default
-    val completedExpanded: Boolean = false, // Collapsed by default
+    val snoozedExpanded: Boolean = true,
+    val overdueExpanded: Boolean = false,
+    val todayExpanded: Boolean = false,
+    val upcomingExpanded: Boolean = false,
+    val completedExpanded: Boolean = false,
     val searchQuery: String = "",
     val isSearchActive: Boolean = false,
     val showCreateDialog: Boolean = false,
@@ -142,8 +145,15 @@ class TaskViewModel(
         }
     }
 
+    private fun isSnoozed(task: Task): Boolean {
+        if (task.isCompleted) return false
+        val snooze = task.snoozeUntilMillis ?: return false
+        return snooze > System.currentTimeMillis()
+    }
+
     private fun isOverdue(task: Task): Boolean {
         if (task.isCompleted) return false
+        if (isSnoozed(task)) return false
         if (task.dueDate.contains("Yesterday", ignoreCase = true)) return true
 
         val now = System.currentTimeMillis()
@@ -168,6 +178,7 @@ class TaskViewModel(
 
     private fun isToday(task: Task): Boolean {
         if (task.isCompleted) return false
+        if (isSnoozed(task)) return false
         if (isOverdue(task)) return false
         if (task.dueDate.contains("Tomorrow", ignoreCase = true) ||
             task.dueDate.contains("Yesterday", ignoreCase = true)) return false
@@ -192,6 +203,7 @@ class TaskViewModel(
 
     private fun isTomorrow(task: Task): Boolean {
         if (task.isCompleted) return false
+        if (isSnoozed(task)) return false
         if (isOverdue(task)) return false
         if (task.dueDate.contains("Tomorrow", ignoreCase = true)) return true
 
@@ -210,6 +222,7 @@ class TaskViewModel(
 
     private fun isUpcoming(task: Task): Boolean {
         if (task.isCompleted) return false
+        if (isSnoozed(task)) return false
         if (isOverdue(task)) return false
         if (isToday(task)) return false
         return true
@@ -295,13 +308,15 @@ class TaskViewModel(
             }
         }
 
-        // 5. Partition into 4 Categories and apply sorting WITHIN each category
+        // 5. Partition into Snoozed and other Categories
+        val snoozed = list.filter { isSnoozed(it) }.sortedBy { it.snoozeUntilMillis }
         val overdue = sortTasks(list.filter { isOverdue(it) }, sort)
         val today = sortTasks(list.filter { isToday(it) }, sort)
         val upcoming = sortTasks(list.filter { isUpcoming(it) }, sort)
         val completed = list.filter { it.isCompleted }.sortedByDescending { it.completedAt ?: it.updatedAt }
 
         TasksUiState(
+            snoozedTasks = snoozed,
             overdueTasks = overdue,
             todayTasks = today,
             upcomingTasks = upcoming,
@@ -309,6 +324,7 @@ class TaskViewModel(
             allTasks = tasks,
             filterCriteria = criteria,
             activeSort = sort,
+            snoozedExpanded = toggles.snoozedExpanded,
             overdueExpanded = toggles.overdueExpanded,
             todayExpanded = toggles.todayExpanded,
             upcomingExpanded = toggles.upcomingExpanded,
@@ -427,6 +443,16 @@ class TaskViewModel(
         }
     }
 
+    fun deleteTasks(taskIds: Set<String>) {
+        if (taskIds.isEmpty()) return
+        viewModelScope.launch {
+            taskIds.forEach { id ->
+                AlarmScheduler.cancelAlarm(KairoApplication.instance, id)
+            }
+            repository.deleteTasks(taskIds)
+        }
+    }
+
     // Undo / Done Bar
     fun performUndo() {
         viewModelScope.launch {
@@ -469,6 +495,10 @@ class TaskViewModel(
     fun applySort(sort: TaskSort) {
         _activeSort.value = sort
         _uiToggles.update { it.copy(showSortSheet = false) }
+    }
+
+    fun toggleSnoozed() {
+        _uiToggles.update { it.copy(snoozedExpanded = !it.snoozedExpanded) }
     }
 
     fun toggleOverdue() {

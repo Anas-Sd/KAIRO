@@ -41,5 +41,6 @@ data class Task(
     val position: Int = 0,
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val locationRadius: Int = 500
+    val locationRadius: Int = 500,
+    val snoozeUntilMillis: Long? = null
 )

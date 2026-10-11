@@ -61,7 +61,8 @@ data class TaskDto(
             position = position,
             latitude = latitude,
             longitude = longitude,
-            locationRadius = locationRadius ?: 500
+            locationRadius = locationRadius ?: 500,
+            snoozeUntilMillis = null
         )
     }
 

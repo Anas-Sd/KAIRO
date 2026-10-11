@@ -31,3 +31,6 @@ bot/chats/
 bot/attachments/
 bot/exports/
 bot/.env
+web/node_modules/
+web/dist/
+web/.tmp/

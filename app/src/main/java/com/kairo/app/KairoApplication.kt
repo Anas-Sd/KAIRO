@@ -14,8 +14,9 @@ class KairoApplication : Application() {
         instance = this
         try {
             com.kairo.app.data.sync.SyncManager.initialize(this)
+            com.kairo.app.feature.sync.FcmTokenManager.syncTokenIfLoggedIn()
         } catch (e: Throwable) {
-            android.util.Log.e("KairoApplication", "Error initializing SyncManager: ${e.message}", e)
+            android.util.Log.e("KairoApplication", "Error initializing services: ${e.message}", e)
         }
     }
 }

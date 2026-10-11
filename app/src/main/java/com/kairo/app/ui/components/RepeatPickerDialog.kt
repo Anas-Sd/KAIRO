@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -38,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -88,7 +90,11 @@ fun RepeatPickerDialog(
 ) {
     val context = LocalContext.current
     var selectedTab by remember {
-        mutableIntStateOf(if (initialRepeatType == "DATES") 1 else 0)
+        mutableIntStateOf(if (initialRepeatType == "DATES" || initialRepeatType == "MONTHLY_DATES") 1 else 0)
+    }
+
+    var dateRepeatMode by remember {
+        mutableStateOf(if (initialRepeatType == "MONTHLY_DATES" || initialRepeatType == "BOTH_MONTHLY") "EVERY" else "ONLY_NOW")
     }
 
     // Days selection state
@@ -131,16 +137,18 @@ fun RepeatPickerDialog(
     }
 
     // Live combined schedule summary
-    val currentSummary = remember(selectedDays.toList(), selectedDates.toList()) {
+    val currentSummary = remember(selectedDays.toList(), selectedDates.toList(), dateRepeatMode) {
         val daysSummary = if (selectedDays.size == 7) "Everyday"
         else if (selectedDays.size == 5 && !selectedDays.contains("SAT") && !selectedDays.contains("SUN")) "Weekdays"
         else if (selectedDays.size == 2 && selectedDays.contains("SAT") && selectedDays.contains("SUN")) "Weekends"
         else if (selectedDays.isNotEmpty()) "Every " + selectedDays.joinToString(", ") { it.take(3) }
         else null
 
-        val datesSummary = if (selectedDates.size == 1) selectedDates.first()
-        else if (selectedDates.isNotEmpty()) "${selectedDates.size} specific dates"
-        else null
+        val datesSummary = if (selectedDates.isEmpty()) null
+        else {
+            val base = if (selectedDates.size == 1) selectedDates.first() else "${selectedDates.size} specific dates"
+            if (dateRepeatMode == "EVERY") "Every month on $base" else "$base (only for now)"
+        }
 
         when {
             daysSummary != null && datesSummary != null -> "$daysSummary + $datesSummary"
@@ -337,7 +345,77 @@ fun RepeatPickerDialog(
                 } else {
                     // TAB 2: SPECIFIC DATES
                     Text(
-                        text = "Pick specific dates to repeat:",
+                        text = "Recurrence mode on specified dates:",
+                        fontSize = 13.sp,
+                        color = Color(0xFFC8C4D9),
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // 2 selectable options on top: Every specified date vs Only for now
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(KairoSurfaceContainerHighest.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Option 1: Every specified date
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(if (dateRepeatMode == "EVERY") KairoPrimary else Color.Transparent)
+                                .clickable { dateRepeatMode = "EVERY" }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "Every specified date",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (dateRepeatMode == "EVERY") FontWeight.Bold else FontWeight.Medium,
+                                    color = if (dateRepeatMode == "EVERY") Color(0xFF130067) else Color.White
+                                )
+                                Text(
+                                    text = "Repeats every month",
+                                    fontSize = 10.sp,
+                                    color = if (dateRepeatMode == "EVERY") Color(0xFF130067).copy(alpha = 0.85f) else Color(0xFF918EA2)
+                                )
+                            }
+                        }
+
+                        // Option 2: Only for now
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(if (dateRepeatMode == "ONLY_NOW") KairoPrimary else Color.Transparent)
+                                .clickable { dateRepeatMode = "ONLY_NOW" }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "Only for now",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (dateRepeatMode == "ONLY_NOW") FontWeight.Bold else FontWeight.Medium,
+                                    color = if (dateRepeatMode == "ONLY_NOW") Color(0xFF130067) else Color.White
+                                )
+                                Text(
+                                    text = "One-time execution",
+                                    fontSize = 10.sp,
+                                    color = if (dateRepeatMode == "ONLY_NOW") Color(0xFF130067).copy(alpha = 0.85f) else Color(0xFF918EA2)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = if (dateRepeatMode == "EVERY") "Select date(s) of month:" else "Pick specific dates to alert:",
                         fontSize = 13.sp,
                         color = Color(0xFFC8C4D9),
                         fontWeight = FontWeight.Medium
@@ -485,19 +563,23 @@ fun RepeatPickerDialog(
                             else if (selectedDays.isNotEmpty()) "Every " + selectedDays.joinToString(", ") { it.take(3) }
                             else null
 
-                            val datesSummary = if (selectedDates.size == 1) selectedDates.first()
-                            else if (selectedDates.isNotEmpty()) "${selectedDates.size} specific dates"
-                            else null
+                            val datesSummary = if (selectedDates.isEmpty()) null
+                            else {
+                                val base = if (selectedDates.size == 1) selectedDates.first() else "${selectedDates.size} specific dates"
+                                if (dateRepeatMode == "EVERY") "Every month on $base" else "$base (only for now)"
+                            }
 
                             val result = when {
                                 hasDays && hasDates -> {
-                                    RepeatResult("BOTH", selectedDays.joinToString(","), selectedDates.joinToString(","), "$daysSummary + $datesSummary")
+                                    val type = if (dateRepeatMode == "EVERY") "BOTH_MONTHLY" else "BOTH"
+                                    RepeatResult(type, selectedDays.joinToString(","), selectedDates.joinToString(","), "$daysSummary + $datesSummary")
                                 }
                                 hasDays -> {
                                     RepeatResult("DAYS", selectedDays.joinToString(","), null, daysSummary!!)
                                 }
                                 hasDates -> {
-                                    RepeatResult("DATES", null, selectedDates.joinToString(","), datesSummary!!)
+                                    val type = if (dateRepeatMode == "EVERY") "MONTHLY_DATES" else "DATES"
+                                    RepeatResult(type, null, selectedDates.joinToString(","), datesSummary!!)
                                 }
                                 else -> {
                                     RepeatResult(null, null, null, "Does not repeat")

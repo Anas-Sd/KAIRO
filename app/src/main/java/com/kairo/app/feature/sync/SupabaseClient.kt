@@ -314,4 +314,45 @@ object SupabaseClient {
             }
         }
     }
+
+    suspend fun updateFcmToken(userCode: String, token: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanCode = userCode.trim()
+            val encodedCode = java.net.URLEncoder.encode(cleanCode, "UTF-8")
+            val now = System.currentTimeMillis()
+
+            // 1. Attempt patch on access_codes if column exists
+            val patchBody = """{"fcm_token":"$token"}""".toRequestBody(JSON_MEDIA_TYPE)
+            val patchReq = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/access_codes?code=eq.$encodedCode")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Prefer", "return=minimal")
+                .patch(patchBody)
+                .build()
+
+            val patchResp = client.newCall(patchReq).execute()
+            if (patchResp.isSuccessful) {
+                android.util.Log.d("SupabaseClient", "FCM token saved to access_codes for $cleanCode")
+                return@runCatching
+            }
+
+            // 2. Attempt upsert into user_devices table
+            val deviceBody = """{"user_code":"$cleanCode","fcm_token":"$token","updated_at":$now}""".toRequestBody(JSON_MEDIA_TYPE)
+            val upsertReq = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/user_devices")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Prefer", "resolution=merge-duplicates,return=minimal")
+                .post(deviceBody)
+                .build()
+
+            val upsertResp = client.newCall(upsertReq).execute()
+            if (upsertResp.isSuccessful) {
+                android.util.Log.d("SupabaseClient", "FCM token saved to user_devices for $cleanCode")
+            } else {
+                android.util.Log.w("SupabaseClient", "Could not persist FCM token in Supabase (HTTP ${upsertResp.code}). Run DDL if remote token sync is desired.")
+            }
+        }
+    }
 }

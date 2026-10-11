@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-primary: #12131a;
+    --card-surface: #1e1f26;
+    --card-border: #474556;
+    --text-primary: #e3e1ec;
+    --text-muted: #c8c4d9;
+    --primary: #c5c0ff;
+    --primary-container: #5a45ff;
+    --secondary: #68dba9;
+    --tertiary: #ffb77d;
+    --error: #ffb4ab;
+  }
+
+  html, body {
+    width: 100%;
+    min-height: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: #12131a;
+    color: #e3e1ec;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  #root {
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 8px 24px -4px rgba(90, 69, 255, 0.45), 0 0 0 0 rgba(90, 69, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 14px 32px -2px rgba(90, 69, 255, 0.65), 0 0 0 6px rgba(90, 69, 255, 0);
+  }
+}
+
+@keyframes checkPop {
+  0% { transform: scale(0.8); }
+  50% { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+
+.animate-fade-in {
+  animation: fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.fab-pulse {
+  animation: pulseGlow 3s infinite ease-in-out;
+}
+
+.pop-bounce {
+  animation: checkPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #12131a;
+}
+::-webkit-scrollbar-thumb {
+  background: #33343c;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #474556;
+}

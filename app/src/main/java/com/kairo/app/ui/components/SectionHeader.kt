@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,7 +38,10 @@ import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoSecondary
 import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 
+import androidx.compose.material.icons.filled.Snooze
+
 enum class SectionType {
+    SNOOZED,
     OVERDUE,
     TODAY,
     UPCOMING,
@@ -50,7 +55,10 @@ fun SectionHeader(
     sectionType: SectionType,
     isExpanded: Boolean,
     onToggle: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showCheckbox: Boolean = false,
+    isChecked: Boolean = false,
+    onCheckedChange: ((Boolean) -> Unit)? = null
 ) {
     val rotation by animateFloatAsState(
         targetValue = if (isExpanded) 0f else -90f,
@@ -69,7 +77,26 @@ fun SectionHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (showCheckbox) {
+                Checkbox(
+                    checked = isChecked,
+                    onCheckedChange = onCheckedChange,
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = KairoPrimary,
+                        uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
             when (sectionType) {
+                SectionType.SNOOZED -> {
+                    Icon(
+                        imageVector = Icons.Default.Snooze,
+                        contentDescription = "Snoozed",
+                        tint = Color(0xFFFFB77D),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
                 SectionType.OVERDUE -> {
                     Icon(
                         imageVector = Icons.Default.Warning,
@@ -108,12 +135,24 @@ fun SectionHeader(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = if (sectionType == SectionType.OVERDUE) KairoError else MaterialTheme.colorScheme.onSurface
+                color = when (sectionType) {
+                    SectionType.SNOOZED -> Color(0xFFFFB77D)
+                    SectionType.OVERDUE -> KairoError
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
             )
 
             // Count badge
-            val badgeBg = if (sectionType == SectionType.OVERDUE) KairoErrorContainer else KairoSurfaceContainerHigh
-            val badgeColor = if (sectionType == SectionType.OVERDUE) KairoOnErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+            val badgeBg = when (sectionType) {
+                SectionType.SNOOZED -> Color(0xFFFFB77D).copy(alpha = 0.2f)
+                SectionType.OVERDUE -> KairoErrorContainer
+                else -> KairoSurfaceContainerHigh
+            }
+            val badgeColor = when (sectionType) {
+                SectionType.SNOOZED -> Color(0xFFFFB77D)
+                SectionType.OVERDUE -> KairoOnErrorContainer
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
 
             Box(
                 modifier = Modifier
@@ -132,7 +171,11 @@ fun SectionHeader(
         Icon(
             imageVector = Icons.Default.ExpandMore,
             contentDescription = if (isExpanded) "Collapse" else "Expand",
-            tint = if (sectionType == SectionType.OVERDUE) KairoError.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = when (sectionType) {
+                SectionType.SNOOZED -> Color(0xFFFFB77D).copy(alpha = 0.8f)
+                SectionType.OVERDUE -> KairoError.copy(alpha = 0.8f)
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
             modifier = Modifier
                 .size(22.dp)
                 .rotate(rotation)

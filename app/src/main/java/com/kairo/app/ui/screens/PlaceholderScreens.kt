@@ -55,17 +55,6 @@ fun AnalyticsScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun AiAssistantScreen(
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    com.kairo.app.feature.ai.AiFeatureFacade.AiAssistantView(
-        onBack = onBack,
-        modifier = modifier
-    )
-}
-
-@Composable
 private fun PlaceholderScreen(
     title: String,
     subtitle: String,

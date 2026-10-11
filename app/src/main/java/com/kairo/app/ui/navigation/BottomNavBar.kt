@@ -41,7 +41,6 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object Habits : Screen("habits", "Habits", Icons.Default.LocalFireDepartment)
     object Calendar : Screen("calendar", "Calendar", Icons.Default.CalendarToday)
     object Analytics : Screen("analytics", "Analytics", Icons.Default.TrendingUp)
-    object AiAssistant : Screen("ai_assistant", "AI", Icons.Default.CheckCircle)
 }
 
 val bottomNavItems = listOf(

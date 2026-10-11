@@ -9,9 +9,6 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -117,6 +114,7 @@ open class AlarmActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        wakeAndShowOnLock()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -240,7 +238,20 @@ open class AlarmActivity : ComponentActivity() {
         }
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        wakeAndShowOnLock()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        wakeAndShowOnLock()
+    }
+
     override fun onDestroy() {
+        try {
+            AlarmOverlayManager.dismiss()
+        } catch (_: Exception) {}
         AlarmRingingService.stop(this)
         super.onDestroy()
         try {
@@ -273,158 +284,7 @@ fun AlarmTriggerScreen(
     var currentAmPm by remember { mutableStateOf(SimpleDateFormat("a", Locale.getDefault()).format(Date())) }
     var currentDateStr by remember { mutableStateOf(SimpleDateFormat("EEEE, MMM d", Locale.getDefault()).format(Date())) }
 
-    var isVoiceActive by remember { mutableStateOf(false) }
-    var heardCommandText by remember { mutableStateOf("") }
-
     val context = androidx.compose.ui.platform.LocalContext.current
-
-    // Dedicated continuous voice recognition loop with automatic audio ducking
-    DisposableEffect(Unit) {
-        val hasAudioPerm = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
-
-        var recognizer: SpeechRecognizer? = null
-        var isLoopRunning = true
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
-
-        fun startListeningLoop() {
-            if (!isLoopRunning) return
-            try {
-                // Duck alarm volume to 12% so the microphone is never overwhelmed by speaker audio
-                AlarmRingingService.duckVolume(true)
-
-                recognizer?.destroy()
-                recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-                    setRecognitionListener(object : RecognitionListener {
-                        override fun onReadyForSpeech(params: Bundle?) {
-                            isVoiceActive = true
-                        }
-                        override fun onBeginningOfSpeech() {}
-                        override fun onRmsChanged(rmsdB: Float) {}
-                        override fun onBufferReceived(buffer: ByteArray?) {}
-                        override fun onEndOfSpeech() {
-                            isVoiceActive = false
-                        }
-                        override fun onError(error: Int) {
-                            isVoiceActive = false
-                            if (isLoopRunning) {
-                                val delayMs = if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 600L else 200L
-                                handler.postDelayed({
-                                    if (isLoopRunning) startListeningLoop()
-                                }, delayMs)
-                            }
-                        }
-                        override fun onResults(results: Bundle?) {
-                            isVoiceActive = false
-                            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
-                            val processed = processAlarmVoiceMatches(matches)
-                            if (!processed && isLoopRunning) {
-                                handler.postDelayed({
-                                    if (isLoopRunning) startListeningLoop()
-                                }, 150L)
-                            }
-                        }
-                        override fun onPartialResults(partialResults: Bundle?) {
-                            val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
-                            val partial = matches.firstOrNull() ?: ""
-                            if (partial.isNotBlank()) {
-                                heardCommandText = partial
-                                processAlarmVoiceMatches(matches)
-                            }
-                        }
-                        override fun onEvent(eventType: Int, params: Bundle?) {}
-
-                        private fun processAlarmVoiceMatches(matches: List<String>): Boolean {
-                            for (heard in matches) {
-                                val lower = heard.lowercase().trim()
-                                when {
-                                    // 1. Done / Complete / Finished
-                                    lower.contains("done") || lower.contains("complete") ||
-                                    lower.contains("finish") || lower.contains("did it") ||
-                                    lower.contains("mark done") || lower.contains("mark as done") ||
-                                    lower.contains("check") -> {
-                                        isLoopRunning = false
-                                        recognizer?.stopListening()
-                                        recognizer?.destroy()
-                                        recognizer = null
-                                        AlarmRingingService.stop(context)
-                                        com.kairo.app.feature.ai.AiVoiceManager.speak("Marking task as completed") {
-                                            onComplete()
-                                        }
-                                        return true
-                                    }
-                                    // 2. Snooze
-                                    lower.contains("snooze") || lower.contains("later") ||
-                                    lower.contains("sleep") || lower.contains("remind me later") -> {
-                                        isLoopRunning = false
-                                        recognizer?.stopListening()
-                                        recognizer?.destroy()
-                                        recognizer = null
-                                        AlarmRingingService.stop(context)
-                                        val minutes = Regex("(\\d+)").find(lower)?.value?.toIntOrNull() ?: 5
-                                        com.kairo.app.feature.ai.AiVoiceManager.speak("Snoozed for $minutes minutes") {
-                                            onSnooze(minutes)
-                                        }
-                                        return true
-                                    }
-                                    // 3. Dismiss / Stop / Cancel / Turn off
-                                    lower.contains("dismiss") || lower.contains("stop") ||
-                                    lower.contains("cancel") || lower.contains("turn off") ||
-                                    lower.contains("shut up") || lower.contains("quiet") ||
-                                    lower.contains("silence") || lower.contains("off") ||
-                                    lower.contains("close") -> {
-                                        isLoopRunning = false
-                                        recognizer?.stopListening()
-                                        recognizer?.destroy()
-                                        recognizer = null
-                                        AlarmRingingService.stop(context)
-                                        com.kairo.app.feature.ai.AiVoiceManager.speak("Alarm dismissed") {
-                                            onDismiss()
-                                        }
-                                        return true
-                                    }
-                                }
-                            }
-                            return false
-                        }
-                    })
-                }
-
-                val deviceLocale = Locale.getDefault().toLanguageTag().ifBlank { "en-US" }
-                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, deviceLocale)
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, deviceLocale)
-                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-                    putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-                }
-                recognizer?.startListening(intent)
-            } catch (e: Exception) {
-                android.util.Log.e("AlarmActivity", "Error starting alarm speech recognizer: ${e.message}")
-                if (isLoopRunning) {
-                    handler.postDelayed({ if (isLoopRunning) startListeningLoop() }, 1000L)
-                }
-            }
-        }
-
-        if (hasAudioPerm) {
-            handler.postDelayed({ startListeningLoop() }, 300L)
-        }
-
-        onDispose {
-            isLoopRunning = false
-            handler.removeCallbacksAndMessages(null)
-            try {
-                recognizer?.stopListening()
-                recognizer?.destroy()
-                recognizer = null
-            } catch (_: Exception) {}
-            AlarmRingingService.duckVolume(false)
-        }
-    }
 
     // Live Clock Ticker
     LaunchedEffect(Unit) {
@@ -437,572 +297,151 @@ fun AlarmTriggerScreen(
         }
     }
 
-    // Ping dot animation
-    val pingScale = remember { Animatable(1f) }
-    val pingAlpha = remember { Animatable(0.8f) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            pingScale.animateTo(1.7f, animationSpec = tween(900, easing = FastOutSlowInEasing))
-            pingScale.snapTo(1f)
-        }
-    }
-    LaunchedEffect(Unit) {
-        while (true) {
-            pingAlpha.animateTo(0f, animationSpec = tween(900, easing = FastOutSlowInEasing))
-            pingAlpha.snapTo(0.8f)
-        }
-    }
 
-    // Bell bounce animation
-    val bellScale = remember { Animatable(1f) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            bellScale.animateTo(1.2f, animationSpec = tween(350, easing = FastOutSlowInEasing))
-            bellScale.animateTo(1f, animationSpec = tween(350, easing = FastOutSlowInEasing))
-            delay(400)
-        }
-    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(KairoBackground)
+            .background(Color.Black)
     ) {
-        // 1. Ambient Glow Effects
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 40.dp)
-                .size(240.dp)
-                .background(KairoPrimaryContainer.copy(alpha = 0.22f), CircleShape)
-                .blur(80.dp)
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 180.dp)
-                .size(160.dp)
-                .background(KairoSecondaryContainer.copy(alpha = 0.16f), CircleShape)
-                .blur(60.dp)
-        )
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = 24.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Top Bar: Close (X) & Header
-            Row(
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 1. Digital Clock & Date
+            Text(
+                text = "$currentTimeStr $currentAmPm",
+                fontSize = 48.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                letterSpacing = (-1).sp
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = currentDateStr,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color(0xFF9CA3AF)
+            )
+
+            Spacer(modifier = Modifier.height(48.dp))
+
+            // 2. Center Content - Task Title & Details (Scrollable if very long)
+            Column(
                 modifier = Modifier
+                    .weight(1f)
                     .fillMaxWidth()
-                    .height(48.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                IconButton(onClick = onCloseHeader) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Dismiss",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-
-                Text(
-                    text = "Alarm Trigger Overlay",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White
-                )
-
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .background(KairoPrimary, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "K",
-                        fontWeight = FontWeight.Bold,
-                        color = KairoPrimaryContainer,
-                        fontSize = 15.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Smart Alarm Badge with Pulsing Indicator
-            Surface(
-                shape = RoundedCornerShape(100.dp),
-                color = KairoSurfaceContainerHigh.copy(alpha = 0.85f),
-                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .background(KairoPrimaryContainer, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AlarmOn,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(13.dp)
-                        )
-                    }
-
-                    Text(
-                        text = "KAIRO • SMART ALARM",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp,
-                        color = Color.White
-                    )
-
-                    // Ping dot
-                    Box(modifier = Modifier.size(10.dp), contentAlignment = Alignment.Center) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .scale(pingScale.value)
-                                .background(KairoSecondary.copy(alpha = pingAlpha.value), CircleShape)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .background(KairoSecondary, CircleShape)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Hero Digital Clock Display
-            Row(
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = currentTimeStr,
-                    fontSize = 58.sp,
+                    text = title,
+                    fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
-                    letterSpacing = (-1).sp
+                    lineHeight = 36.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
-                Text(
-                    text = currentAmPm,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = KairoPrimary,
-                    modifier = Modifier.padding(bottom = 10.dp)
-                )
-            }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(top = 4.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Schedule,
-                    contentDescription = null,
-                    tint = Color(0xFFFFB77D),
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = "Scheduled Task Alert • $currentDateStr",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFFC8C4D9)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(28.dp))
-
-            // Central Task Details Card
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                color = KairoSurfaceContainerLow,
-                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    // Top gradient highlight
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.dp)
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(Color.Transparent, KairoPrimary.copy(alpha = 0.6f), Color.Transparent)
-                                )
-                            )
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Priority Tag & Bouncing Ringing Bell
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(100.dp),
-                            color = KairoErrorContainer.copy(alpha = 0.45f),
-                            border = BorderStroke(1.dp, KairoError.copy(alpha = 0.3f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .background(KairoError, CircleShape)
-                                )
-                                Text(
-                                    text = "${priority.uppercase()} PRIORITY DEADLINE",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = KairoError,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .scale(bellScale.value)
-                                .background(KairoSurfaceContainerHigh, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.NotificationsActive,
-                                contentDescription = "Active Alarm",
-                                tint = KairoPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Project Context Badge / Due time
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FolderOpen,
-                            contentDescription = null,
-                            tint = KairoPrimary,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        val contextSubtitle = if (dueTime.isNotBlank()) "Task Due at $dueTime" else "Priority Focus Task"
-                        Text(
-                            text = contextSubtitle,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFFC8C4D9)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Task Headline
+                if (!notes.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = title,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        lineHeight = 26.sp
-                    )
-
-                    // Task Description / Notes
-                    val noteText = notes ?: "Alarm notification triggered for your scheduled task. Take action or snooze."
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = noteText,
-                        fontSize = 13.sp,
+                        text = notes,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Normal,
-                        color = Color(0xFF918EA2),
-                        lineHeight = 19.sp
+                        color = Color(0xFF9CA3AF),
+                        lineHeight = 22.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
+                }
 
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // Soundwave Equalizer Footer
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.GraphicEq,
-                                contentDescription = null,
-                                tint = KairoPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "Ringtone: KAIRO Alarm (Loud)",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFFC8C4D9)
-                            )
-                        }
-
-                        // Animated Jumping Audio Wave Bars
-                        SoundwaveEqualizer()
-                    }
+                if (dueTime.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Due at $dueTime",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF6B7280),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
-            // Action Thumb-Zone Floating Controls
+            // 3. Action Buttons: Completed, Snooze in 5min, Dismiss
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Hands-Free Voice Commands Live Indicator
-                val bannerBg = if (isVoiceActive) KairoPrimary.copy(alpha = 0.22f) else KairoPrimary.copy(alpha = 0.12f)
-                val bannerBorder = if (isVoiceActive) KairoPrimary else KairoPrimary.copy(alpha = 0.35f)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 4.dp)
-                        .background(bannerBg, RoundedCornerShape(12.dp))
-                        .border(1.dp, bannerBorder, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.GraphicEq,
-                        contentDescription = "Voice Listening",
-                        tint = if (isVoiceActive) Color.White else KairoPrimary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    val displayText = if (heardCommandText.isNotBlank()) {
-                        "Heard: \"$heardCommandText\""
-                    } else if (isVoiceActive) {
-                        "Listening: Say 'Done', 'Dismiss', or 'Snooze'"
-                    } else {
-                        "Voice Ready: Say 'Done', 'Dismiss', or 'Snooze'"
-                    }
-                    Text(
-                        text = displayText,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = if (isVoiceActive) Color.White else KairoPrimary
-                    )
-                }
-
-                // 1. Primary CTA: Mark as Completed
+                // 1. Completed
                 Button(
                     onClick = onComplete,
                     shape = RoundedCornerShape(100.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = KairoSecondary,
-                        contentColor = Color(0xFF003825)
+                        containerColor = Color.White,
+                        contentColor = Color.Black
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.TaskAlt,
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Text(
-                            text = "Mark as Completed",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    Text(
+                        text = "Completed",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
-                // 2. Secondary Row: Snooze (Interactive popup) & Dismiss
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Snooze Button
-                    Button(
-                        onClick = { showSnoozeDialog = true },
-                        shape = RoundedCornerShape(100.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = KairoSurfaceContainerHigh,
-                            contentColor = Color(0xFFFFB77D)
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Snooze,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "Snooze...",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-
-                    // Dismiss Button (directly marks task as Overdue)
-                    Button(
-                        onClick = onDismiss,
-                        shape = RoundedCornerShape(100.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = KairoSurfaceContainer,
-                            contentColor = Color(0xFFC8C4D9)
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "Dismiss",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-
-                // Tactile feedback hint
-                Text(
-                    text = "Tap Mark as Completed, Snooze, or Dismiss to silence",
-                    fontSize = 11.sp,
-                    color = Color(0xFF6B687C),
+                // 2. Snooze in 5min
+                Button(
+                    onClick = { onSnooze(5) },
+                    shape = RoundedCornerShape(100.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1C1917),
+                        contentColor = Color(0xFFF59E0B)
+                    ),
+                    border = BorderStroke(1.5.dp, Color(0xFF78350F)),
                     modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(top = 4.dp)
-                )
-            }
-        }
-
-        // Interactive Snooze Duration Selector Modal
-        if (showSnoozeDialog) {
-            AlertDialog(
-                onDismissRequest = { showSnoozeDialog = false },
-                containerColor = KairoSurfaceContainerHigh,
-                shape = RoundedCornerShape(22.dp),
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Snooze,
-                            contentDescription = null,
-                            tint = Color(0xFFFFB77D),
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Text(
-                            text = "Snooze Alarm",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                },
-                text = {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Choose how long to snooze before ringing again:",
-                            fontSize = 13.sp,
-                            color = Color(0xFFC8C4D9),
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        val snoozeOptions = listOf(2, 5, 10, 15, 30)
-                        snoozeOptions.forEach { minutes ->
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        showSnoozeDialog = false
-                                        onSnooze(minutes)
-                                    },
-                                shape = RoundedCornerShape(12.dp),
-                                color = KairoSurfaceContainerHighest.copy(alpha = 0.5f)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "$minutes minutes",
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color.White
-                                    )
-                                    Icon(
-                                        imageVector = Icons.Default.Schedule,
-                                        contentDescription = null,
-                                        tint = Color(0xFFFFB77D),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                },
-                confirmButton = {},
-                dismissButton = {
-                    TextButton(onClick = { showSnoozeDialog = false }) {
-                        Text("Cancel", color = Color(0xFFC8C4D9))
-                    }
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Text(
+                        text = "Snooze in 5min",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-            )
+
+                // 3. Dismiss
+                Button(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(100.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF171717),
+                        contentColor = Color(0xFF9CA3AF)
+                    ),
+                    border = BorderStroke(1.dp, Color(0xFF262626)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Text(
+                        text = "Dismiss",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

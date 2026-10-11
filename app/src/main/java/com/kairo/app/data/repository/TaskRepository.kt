@@ -162,7 +162,7 @@ object TaskRepository {
         val byId = allTasks.associateBy { it.id }.toMutableMap()
         for (id in toComplete) {
             byId[id]?.let {
-                byId[id] = it.copy(isCompleted = true, section = TaskSection.COMPLETED, completedAt = now, updatedAt = now)
+                byId[id] = it.copy(isCompleted = true, section = TaskSection.COMPLETED, snoozeUntilMillis = null, completedAt = now, updatedAt = now)
             }
         }
 
@@ -177,6 +177,7 @@ object TaskRepository {
                 byId[currentParentId] = parentTask.copy(
                     isCompleted = true,
                     section = TaskSection.COMPLETED,
+                    snoozeUntilMillis = null,
                     completedAt = now,
                     updatedAt = now
                 )
@@ -192,6 +193,7 @@ object TaskRepository {
                 task.copy(
                     isCompleted = true,
                     section = TaskSection.COMPLETED,
+                    snoozeUntilMillis = null,
                     completedAt = now,
                     updatedAt = now
                 )
@@ -253,6 +255,10 @@ object TaskRepository {
             localDb.saveTasksBatch(affected, userCode, syncStatus = "PENDING")
             for (item in affected) {
                 localDb.enqueueSyncAction(item.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(item, userCode)), userCode)
+                val trigger = AlarmScheduler.calculateTriggerMillis(item.dueDate, item.dueTime, item.dueDateMillis)
+                if (trigger != null && trigger > System.currentTimeMillis()) {
+                    AlarmScheduler.scheduleAlarm(KairoApplication.instance, item, trigger)
+                }
             }
             SyncManager.triggerSync()
             TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
@@ -272,6 +278,7 @@ object TaskRepository {
                     val modified = task.copy(
                         isCompleted = false,
                         section = TaskSection.OVERDUE,
+                        snoozeUntilMillis = null,
                         completedAt = null,
                         updatedAt = now
                     )
@@ -288,6 +295,7 @@ object TaskRepository {
                 val modified = fromDb.copy(
                     isCompleted = false,
                     section = TaskSection.OVERDUE,
+                    snoozeUntilMillis = null,
                     completedAt = null,
                     updatedAt = now
                 )
@@ -318,6 +326,7 @@ object TaskRepository {
                 if (task.id == taskId) {
                     val modified = task.copy(
                         dueDateMillis = snoozeMillis,
+                        snoozeUntilMillis = snoozeMillis,
                         updatedAt = now
                     )
                     updatedTask = modified
@@ -332,6 +341,7 @@ object TaskRepository {
             if (fromDb != null) {
                 val modified = fromDb.copy(
                     dueDateMillis = snoozeMillis,
+                    snoozeUntilMillis = snoozeMillis,
                     updatedAt = now
                 )
                 updatedTask = modified
@@ -514,6 +524,32 @@ object TaskRepository {
 
     fun deleteTask(taskId: String) {
         deleteTaskWithSubtasks(taskId, deleteSubtasks = false)
+    }
+
+    fun deleteTasks(taskIds: Set<String>) {
+        if (taskIds.isEmpty()) return
+        val current = _tasks.value
+        commitUndo()
+        val snapshot = current.toList()
+
+        val toDeleteIds = mutableSetOf<String>()
+        toDeleteIds.addAll(taskIds)
+        for (id in taskIds) {
+            toDeleteIds.addAll(getDescendantIds(id, current))
+        }
+
+        val modifiedList = current.filterNot { toDeleteIds.contains(it.id) }.toMutableList()
+        _tasks.value = modifiedList
+        _undoAction.value = UndoAction(snapshot, "Deleted ${taskIds.size} task(s)")
+
+        val userCode = AuthManager.getUserCode() ?: ""
+        localDb.deleteTasksBatch(toDeleteIds.toList())
+        for (id in toDeleteIds) {
+            val taskTitle = current.find { it.id == id }?.title ?: "Task"
+            localDb.enqueueSyncAction(id, "DELETE", taskTitle, userCode)
+        }
+        SyncManager.triggerSync()
+        TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
     }
 
     fun deleteTaskWithSubtasks(taskId: String, deleteSubtasks: Boolean) {

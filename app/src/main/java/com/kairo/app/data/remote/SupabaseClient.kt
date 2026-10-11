@@ -29,4 +29,7 @@ object SupabaseClient {
 
     suspend fun deleteTask(taskId: String): Result<Unit> =
         com.kairo.app.feature.sync.SupabaseClient.deleteTask(taskId)
+
+    suspend fun updateFcmToken(userCode: String, token: String): Result<Unit> =
+        com.kairo.app.feature.sync.SupabaseClient.updateFcmToken(userCode, token)
 }

@@ -32,7 +32,7 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
     companion object {
         private const val TAG = "LocalTaskDatabase"
         private const val DATABASE_NAME = "kairo_local_tasks.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 3
 
         // Table local_tasks
         const val TABLE_TASKS = "local_tasks"
@@ -63,6 +63,7 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         const val COL_LATITUDE = "latitude"
         const val COL_LONGITUDE = "longitude"
         const val COL_LOCATION_RADIUS = "location_radius"
+        const val COL_SNOOZE_UNTIL_MILLIS = "snooze_until_millis"
 
         // Table sync_queue
         const val TABLE_SYNC_QUEUE = "sync_queue"
@@ -112,7 +113,8 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
                 $COL_SYNC_STATUS TEXT NOT NULL DEFAULT 'SYNCED',
                 $COL_LATITUDE REAL,
                 $COL_LONGITUDE REAL,
-                $COL_LOCATION_RADIUS INTEGER DEFAULT 500
+                $COL_LOCATION_RADIUS INTEGER DEFAULT 500,
+                $COL_SNOOZE_UNTIL_MILLIS INTEGER
             );
         """.trimIndent()
 
@@ -141,6 +143,9 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
             try { db.execSQL("ALTER TABLE $TABLE_TASKS ADD COLUMN $COL_LATITUDE REAL;") } catch (_: Throwable) {}
             try { db.execSQL("ALTER TABLE $TABLE_TASKS ADD COLUMN $COL_LONGITUDE REAL;") } catch (_: Throwable) {}
             try { db.execSQL("ALTER TABLE $TABLE_TASKS ADD COLUMN $COL_LOCATION_RADIUS INTEGER DEFAULT 500;") } catch (_: Throwable) {}
+        }
+        if (oldVersion < 3) {
+            try { db.execSQL("ALTER TABLE $TABLE_TASKS ADD COLUMN $COL_SNOOZE_UNTIL_MILLIS INTEGER;") } catch (_: Throwable) {}
         }
     }
 
@@ -185,6 +190,7 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
             val colLat = cursor.getColumnIndex(COL_LATITUDE)
             val colLng = cursor.getColumnIndex(COL_LONGITUDE)
             val colRadius = cursor.getColumnIndex(COL_LOCATION_RADIUS)
+            val colSnooze = cursor.getColumnIndex(COL_SNOOZE_UNTIL_MILLIS)
 
             while (cursor.moveToNext()) {
                 val task = Task(
@@ -216,7 +222,8 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
                     position = if (colPos >= 0) cursor.getInt(colPos) else 0,
                     latitude = if (colLat >= 0 && !cursor.isNull(colLat)) cursor.getDouble(colLat) else null,
                     longitude = if (colLng >= 0 && !cursor.isNull(colLng)) cursor.getDouble(colLng) else null,
-                    locationRadius = if (colRadius >= 0 && !cursor.isNull(colRadius)) cursor.getInt(colRadius) else 500
+                    locationRadius = if (colRadius >= 0 && !cursor.isNull(colRadius)) cursor.getInt(colRadius) else 500,
+                    snoozeUntilMillis = if (colSnooze >= 0 && !cursor.isNull(colSnooze)) cursor.getLong(colSnooze) else null
                 )
                 tasks.add(task)
             }
@@ -246,6 +253,22 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
     @Synchronized
     fun saveTask(task: Task, userCode: String?, syncStatus: String = "SYNCED") {
         val db = writableDatabase
+        val finalSnooze = if (task.isCompleted) {
+            null
+        } else if (task.snoozeUntilMillis != null) {
+            task.snoozeUntilMillis
+        } else {
+            var s: Long? = null
+            try {
+                db.rawQuery("SELECT $COL_SNOOZE_UNTIL_MILLIS FROM $TABLE_TASKS WHERE $COL_ID = ?", arrayOf(task.id)).use { cur ->
+                    if (cur.moveToFirst() && !cur.isNull(0)) {
+                        s = cur.getLong(0)
+                    }
+                }
+            } catch (_: Throwable) {}
+            s
+        }
+
         val values = ContentValues().apply {
             put(COL_ID, task.id)
             put(COL_TITLE, task.title)
@@ -274,6 +297,7 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
             put(COL_LATITUDE, task.latitude)
             put(COL_LONGITUDE, task.longitude)
             put(COL_LOCATION_RADIUS, task.locationRadius)
+            put(COL_SNOOZE_UNTIL_MILLIS, finalSnooze)
         }
         db.insertWithOnConflict(TABLE_TASKS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }

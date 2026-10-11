@@ -20,6 +20,23 @@ import com.kairo.app.feature.auth.AuthFeatureFacade
 import com.kairo.app.ui.MainScreen
 import com.kairo.app.ui.theme.KAIROTheme
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager
+import com.kairo.app.ui.theme.KairoPrimary
+
 class MainActivity : ComponentActivity() {
 
     private val requestPermissionsLauncher = registerForActivityResult(
@@ -53,10 +70,60 @@ class MainActivity : ComponentActivity() {
         setContent {
             KAIROTheme {
                 val session by AuthFeatureFacade.sessionState.collectAsState()
+                var showOverlayPrompt by remember {
+                    mutableStateOf(!FullScreenAlarmPermissionManager.hasOverlayPermission(this@MainActivity))
+                }
+
                 if (session == null) {
                     AuthFeatureFacade.LoginView()
                 } else {
                     MainScreen()
+                }
+
+                if (showOverlayPrompt) {
+                    AlertDialog(
+                        onDismissRequest = { showOverlayPrompt = false },
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.NotificationsActive,
+                                contentDescription = null,
+                                tint = KairoPrimary
+                            )
+                        },
+                        title = {
+                            Text(
+                                text = "Direct Full-Screen Alarms",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        },
+                        text = {
+                            Text(
+                                text = "To show alarms directly in full-screen over other apps and when your phone is asleep (without a notification banner), please allow 'Display over other apps'.",
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    showOverlayPrompt = false
+                                    FullScreenAlarmPermissionManager.openOverlaySettings(this@MainActivity)
+                                    if (FullScreenAlarmPermissionManager.isXiaomiDevice()) {
+                                        FullScreenAlarmPermissionManager.openXiaomiPermissions(this@MainActivity)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary)
+                            ) {
+                                Text("Allow Now")
+                            }
+                        },
+                        dismissButton = {
+                            OutlinedButton(onClick = { showOverlayPrompt = false }) {
+                                Text("Later")
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -77,17 +144,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Location Permissions for Hardware Geofences & AI Reminders
+        // Location Permissions for Hardware Geofences
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
-        }
-
-        // Microphone Permission for AI Voice-to-Voice & Wake Word
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.RECORD_AUDIO)
         }
 
         if (permissions.isNotEmpty()) {

@@ -1,10 +1,13 @@
 package com.kairo.app.feature.tasks.alarm
 
+import android.app.ActivityOptions
 import android.app.KeyguardManager
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.PowerManager
 import android.util.Log
 import android.widget.Toast
@@ -62,6 +65,21 @@ open class AlarmReceiver : BroadcastReceiver() {
         val attachment = intent.getStringExtra(EXTRA_TASK_ATTACHMENT)
         val alarmToneUri = intent.getStringExtra(EXTRA_ALARM_URI)
 
+        // 0. Acquire reliable WakeLock to turn on the screen immediately even if device is sleeping or locked
+        val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        @Suppress("DEPRECATION")
+        val wakeLock = pm?.newWakeLock(
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+            PowerManager.ACQUIRE_CAUSES_WAKEUP or
+            PowerManager.ON_AFTER_RELEASE,
+            "kairo:AlarmWakeLock"
+        )
+        try {
+            wakeLock?.acquire(30000L) // 30 seconds screen wake lock
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire wake lock: ${e.message}")
+        }
+
         // 1. Start foreground ringing audio service
         val serviceIntent = Intent(context, AlarmRingingService::class.java).apply {
             action = AlarmRingingService.ACTION_START_RINGING
@@ -81,11 +99,12 @@ open class AlarmReceiver : BroadcastReceiver() {
         }
         ContextCompat.startForegroundService(context, serviceIntent)
 
-        // 2. Always launch AlarmActivity overlay so the ringing UI and voice listener are active
+        // 2. Always launch full-screen AlarmActivity directly over any screen/lockscreen
         val activityIntent = Intent(context, AlarmActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             putExtra(EXTRA_TASK_ID, taskId)
             putExtra(EXTRA_TASK_TITLE, title)
             putExtra(EXTRA_TASK_NOTES, notes)
@@ -94,11 +113,43 @@ open class AlarmReceiver : BroadcastReceiver() {
             putExtra(EXTRA_TASK_DUE_TIME, dueTime)
             putExtra(EXTRA_TASK_LOCATION, location)
             putExtra(EXTRA_TASK_ATTACHMENT, attachment)
+            putExtra(EXTRA_ALARM_URI, alarmToneUri)
         }
+
+        val options = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ActivityOptions.makeBasic().apply {
+                pendingIntentBackgroundActivityStartMode = ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+            }.toBundle()
+        } else {
+            null
+        }
+
         try {
-            context.startActivity(activityIntent)
+            if (options != null) {
+                context.startActivity(activityIntent, options)
+            } else {
+                context.startActivity(activityIntent)
+            }
+            Log.i(TAG, "Direct full-screen AlarmActivity started from receiver successfully")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch AlarmActivity directly from receiver: ${e.message}")
+            Log.e(TAG, "Failed direct startActivity from receiver: ${e.message}")
+        }
+
+        // Secondary dispatch via PendingIntent for Android 14+ background launch guarantees
+        try {
+            val pending = PendingIntent.getActivity(
+                context,
+                taskId.hashCode(),
+                activityIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (options != null) {
+                pending.send(context, 0, null, null, null, null, options)
+            } else {
+                pending.send()
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "PendingIntent send fallback attempted: ${e.message}")
         }
     }
 
@@ -197,6 +248,9 @@ open class AlarmReceiver : BroadcastReceiver() {
     }
 
     private fun notifyAlarmOverlayFinish(context: Context) {
+        try {
+            AlarmOverlayManager.dismiss()
+        } catch (_: Exception) {}
         val finishBroadcast = Intent(AlarmActivity.ACTION_FINISH_ALARM_OVERLAY).apply {
             setPackage(context.packageName)
         }

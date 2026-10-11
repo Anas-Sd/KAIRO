@@ -12,7 +12,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.kairo.app.ui.navigation.BottomNavBar
 import com.kairo.app.ui.navigation.Screen
-import com.kairo.app.ui.screens.AiAssistantScreen
 import com.kairo.app.ui.screens.AnalyticsScreen
 import com.kairo.app.ui.screens.CalendarScreen
 import com.kairo.app.ui.screens.HabitsScreen
@@ -26,60 +25,19 @@ fun MainScreen() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Tasks.route
 
-    val context = androidx.compose.ui.platform.LocalContext.current
-
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        com.kairo.app.feature.ai.AiVoiceManager.setWakeWordListener {
-            navController.navigate(Screen.AiAssistant.route) {
-                launchSingleTop = true
-            }
-            com.kairo.app.feature.ai.AiVoiceManager.setVoiceMode(true)
-            com.kairo.app.feature.ai.AiVoiceManager.speak("Hey Buddy! What can I do for you?")
-        }
-    }
-
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose {
-            com.kairo.app.feature.ai.AiVoiceManager.stopWakeWordDetection()
-        }
-    }
-
-    androidx.compose.runtime.DisposableEffect(currentRoute) {
-        if (currentRoute != Screen.AiAssistant.route) {
-            val hasAudioPerm = androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.RECORD_AUDIO
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-            if (hasAudioPerm) {
-                com.kairo.app.feature.ai.AiVoiceManager.startWakeWordDetection(context)
-            }
-        } else {
-            com.kairo.app.feature.ai.AiVoiceManager.stopWakeWordDetection()
-        }
-
-        onDispose {
-            if (currentRoute == Screen.AiAssistant.route) {
-                com.kairo.app.feature.ai.AiVoiceManager.stopWakeWordDetection()
-            }
-        }
-    }
-
     Scaffold(
         containerColor = KairoBackground,
         bottomBar = {
-            if (currentRoute != Screen.AiAssistant.route) {
-                BottomNavBar(
-                    currentRoute = currentRoute,
-                    onNavigateToRoute = { route ->
-                        navController.navigate(route) {
-                            popUpTo(Screen.Tasks.route) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+            BottomNavBar(
+                currentRoute = currentRoute,
+                onNavigateToRoute = { route ->
+                    navController.navigate(route) {
+                        popUpTo(Screen.Tasks.route) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
                     }
-                )
-            }
+                }
+            )
         }
     ) { innerPadding ->
         NavHost(
@@ -90,11 +48,7 @@ fun MainScreen() {
                 .padding(innerPadding)
         ) {
             composable(Screen.Tasks.route) {
-                TasksScreen(
-                    onNavigateToAi = {
-                        navController.navigate(Screen.AiAssistant.route)
-                    }
-                )
+                TasksScreen()
             }
             composable(Screen.Lists.route) {
                 ListsScreen()
@@ -107,11 +61,6 @@ fun MainScreen() {
             }
             composable(Screen.Analytics.route) {
                 AnalyticsScreen()
-            }
-            composable(Screen.AiAssistant.route) {
-                AiAssistantScreen(
-                    onBack = { navController.popBackStack() }
-                )
             }
         }
     }

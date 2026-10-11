@@ -280,7 +280,7 @@ fun TaskDetailsBottomSheet(
 
                     // Repeat rule
                     val repeatSummary = when (task.repeatType) {
-                        "BOTH" -> {
+                        "BOTH", "BOTH_MONTHLY" -> {
                             val days = task.repeatDays?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
                             val daysStr = if (days.size == 7) "Everyday"
                             else if (days.size == 5 && !days.contains("SAT") && !days.contains("SUN")) "Weekdays"
@@ -288,7 +288,11 @@ fun TaskDetailsBottomSheet(
                             else "Every " + days.joinToString(", ") { it.take(3) }
 
                             val dates = task.repeatDates?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-                            val datesStr = if (dates.size == 1) dates.first() else "${dates.size} specific dates"
+                            val datesStr = if (dates.size == 1) {
+                                if (task.repeatType == "BOTH_MONTHLY") "Every month on ${dates.first()}" else "${dates.first()} (only for now)"
+                            } else {
+                                if (task.repeatType == "BOTH_MONTHLY") "Every month on ${dates.size} dates" else "${dates.size} specific dates"
+                            }
                             "$daysStr + $datesStr"
                         }
                         "DAYS" -> {
@@ -300,7 +304,11 @@ fun TaskDetailsBottomSheet(
                         }
                         "DATES" -> {
                             val dates = task.repeatDates?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-                            if (dates.size == 1) dates.first() else "${dates.size} specific dates"
+                            if (dates.size == 1) "${dates.first()} (only for now)" else "${dates.size} specific dates (only for now)"
+                        }
+                        "MONTHLY_DATES" -> {
+                            val dates = task.repeatDates?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                            if (dates.size == 1) "Every month on ${dates.first()}" else "Every month on ${dates.joinToString(", ")}"
                         }
                         else -> null
                     }

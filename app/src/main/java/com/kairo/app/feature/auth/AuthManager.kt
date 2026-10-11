@@ -50,6 +50,7 @@ internal object AuthManager {
             .putString(KEY_NAME, name.trim())
             .apply()
         _sessionState.value = UserSession(code = code.trim(), name = name.trim())
+        runCatching { com.kairo.app.feature.sync.FcmTokenManager.syncTokenIfLoggedIn() }
     }
 
     fun clearSession() {
