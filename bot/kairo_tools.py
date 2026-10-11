@@ -36,16 +36,15 @@ DEFAULT_TIMEZONE = pytz.timezone("Asia/Kolkata")
 # Outbox for sending documents/files back to Telegram
 outbox = []
 
-# Context state per turn
-DEFAULT_FCM_TOKEN = os.getenv("DEFAULT_FCM_TOKEN", "esdIEen7QLewVVeFKGEeP1:APA91bG32ns_3zBxO6xpE0nsGH0DaVHA2qE4MeIQ8Sy9AOjGduhkxLvQNNz8DzWKlRC8Y7wd03PWfqFsZXYLIpChIKUFpSBtvNgap9QFlV4L5a6mtZ7ETVk")
+DEFAULT_FCM_TOKEN = os.getenv("DEFAULT_FCM_TOKEN", "")
 current_user = {
-    "user_code": os.getenv("DEFAULT_USER_CODE", "SDANAS"),
-    "fcm_token": DEFAULT_FCM_TOKEN
+    "user_code": os.getenv("DEFAULT_USER_CODE", ""),
+    "fcm_token": DEFAULT_FCM_TOKEN or None
 }
 
 def set_context(user_code: str, fcm_token: str = None):
     current_user["user_code"] = user_code
-    current_user["fcm_token"] = fcm_token or DEFAULT_FCM_TOKEN
+    current_user["fcm_token"] = fcm_token or DEFAULT_FCM_TOKEN or None
 
 def supabase_headers() -> dict:
     return {

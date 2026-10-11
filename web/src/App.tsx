@@ -24,7 +24,7 @@ import {
 export const App: React.FC = () => {
   // Auth state
   const [userCode, setUserCode] = useState<string | null>(() => localStorage.getItem('kairo_user_code'));
-  const [userName, setUserName] = useState<string | null>(() => localStorage.getItem('kairo_user_name') || 'Anas');
+  const [userName, setUserName] = useState<string | null>(() => localStorage.getItem('kairo_user_name') || '');
 
   // Tasks state
   const [tasks, setTasks] = useState<Task[]>([]);

@@ -184,9 +184,9 @@ ask_lock = asyncio.Lock()
 groups = {}
 background_tasks = set()
 
-DEFAULT_USER_CODE = os.getenv("DEFAULT_USER_CODE", "SDANAS")
-DEFAULT_USER_NAME = os.getenv("DEFAULT_USER_NAME", "Anas")
-DEFAULT_FCM_TOKEN = os.getenv("DEFAULT_FCM_TOKEN", "esdIEen7QLewVVeFKGEeP1:APA91bG32ns_3zBxO6xpE0nsGH0DaVHA2qE4MeIQ8Sy9AOjGduhkxLvQNNz8DzWKlRC8Y7wd03PWfqFsZXYLIpChIKUFpSBtvNgap9QFlV4L5a6mtZ7ETVk")
+DEFAULT_USER_CODE = os.getenv("DEFAULT_USER_CODE", "")
+DEFAULT_USER_NAME = os.getenv("DEFAULT_USER_NAME", "")
+DEFAULT_FCM_TOKEN = os.getenv("DEFAULT_FCM_TOKEN", "")
 
 def load_sessions() -> dict:
     if SESSION_FILE_PATH.exists():
@@ -208,16 +208,16 @@ def get_user_session(chat_id: int) -> dict:
     session = sessions.get(key)
     if not session:
         session = {
-            "logged_in": True,
-            "user_code": DEFAULT_USER_CODE,
-            "user_name": DEFAULT_USER_NAME,
-            "fcm_token": DEFAULT_FCM_TOKEN
+            "logged_in": bool(DEFAULT_USER_CODE),
+            "user_code": DEFAULT_USER_CODE or None,
+            "user_name": DEFAULT_USER_NAME or None,
+            "fcm_token": DEFAULT_FCM_TOKEN or None
         }
         sessions[key] = session
         save_sessions(sessions)
         return session
 
-    if not session.get("fcm_token") and session.get("user_code") == DEFAULT_USER_CODE:
+    if DEFAULT_FCM_TOKEN and not session.get("fcm_token") and session.get("user_code") == DEFAULT_USER_CODE:
         session["fcm_token"] = DEFAULT_FCM_TOKEN
         save_sessions(sessions)
 

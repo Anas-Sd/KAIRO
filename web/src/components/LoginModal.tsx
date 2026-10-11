@@ -7,7 +7,7 @@ interface LoginModalProps {
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
-  const [code, setCode] = useState('SDANAS');
+  const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,7 +75,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
               maxLength={12}
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="e.g. SDANAS"
+              placeholder="ENTER 6-DIGIT CODE"
               className="w-full text-center text-2xl font-mono uppercase tracking-widest rounded-2xl bg-[#12131a] border border-[#474556] py-3.5 px-4 text-[#e3e1ec] focus:outline-none focus:border-[#c5c0ff] focus:ring-2 focus:ring-[#5a45ff]/40 transition-all placeholder:text-[#474556]"
               autoFocus
             />
