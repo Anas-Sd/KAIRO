@@ -23,3 +23,11 @@ task_screen.json
 task_screen.html
 stitch_screens.json
 seed_supabase.js
+bot/firebase-service-account.json
+bot/kairo_bot_session.json
+bot/user_rules.json
+bot/__pycache__/
+bot/chats/
+bot/attachments/
+bot/exports/
+bot/.env
