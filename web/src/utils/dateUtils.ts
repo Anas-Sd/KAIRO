@@ -118,27 +118,22 @@ export function determineSection(
     return 'OVERDUE';
   }
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayStartMs = todayStart.getTime();
-  const todayEndMs = todayStartMs + 86400000;
+  const todayEnd = new Date();
+  todayEnd.setHours(0, 0, 0, 0);
+  const todayEndMs = todayEnd.getTime() + 86400000;
 
   const trigger = calculateTriggerMillis(dueDate, dueTime, dueDateMillis);
   if (trigger != null && trigger > 0) {
-    if (trigger < todayStartMs) {
+    if (trigger < now) {
       return 'OVERDUE';
     }
-    if (trigger >= todayStartMs && trigger < todayEndMs) {
-      // If time set for today has crossed, consider as overdue only
-      if (dueTime && dueTime.trim() && trigger < now) {
-        return 'OVERDUE';
-      }
+    if (trigger < todayEndMs) {
       return 'TODAY';
     }
     return 'UPCOMING';
   }
 
-  return 'TODAY';
+  return 'OVERDUE';
 }
 
 export function formatTimeDisplay(timeStr?: string | null): string {

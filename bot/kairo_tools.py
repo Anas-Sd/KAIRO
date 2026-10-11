@@ -390,16 +390,14 @@ def determine_section(due_millis: int, is_completed: bool, due_date_str: str = "
     today_end_ms = today_start_ms + 86400 * 1000
 
     if due_millis is not None and due_millis > 0:
-        if due_millis < today_start_ms:
+        if due_millis < now_ms:
             return "OVERDUE"
-        elif today_start_ms <= due_millis < today_end_ms:
-            if due_time_str and due_time_str.strip() and due_millis < now_ms:
-                return "OVERDUE"
+        elif due_millis < today_end_ms:
             return "TODAY"
         else:
             return "UPCOMING"
 
-    return "TODAY"
+    return "OVERDUE"
 
 # ==========================================
 # NATIVE GEMINI TOOL FUNCTIONS

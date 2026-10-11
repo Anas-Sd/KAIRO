@@ -361,19 +361,27 @@ export const App: React.FC = () => {
     const now = Date.now();
     const siblingCount = tasks.filter((t) => t.parentId === parentTaskId).length;
     const effectiveDueDate = parent?.dueDate ? normalizeDateString(parent.dueDate) : formatDisplayDate(now);
+    const defaultTime = () => {
+      const d = new Date();
+      const h = d.getHours().toString().padStart(2, '0');
+      const m = d.getMinutes().toString().padStart(2, '0');
+      return `${h}:${m}`;
+    };
+    const effectiveDueTime = parent?.dueTime || defaultTime();
+    const effectiveDueMillis = calculateTriggerMillis(effectiveDueDate, effectiveDueTime);
     const subtask: Task = {
       id: crypto.randomUUID(),
       title,
       notes: null,
       priority: parent?.priority || 'LOW',
       dueDate: effectiveDueDate,
-      dueDateMillis: parent?.dueDateMillis || now,
-      dueTime: parent?.dueTime || null,
+      dueDateMillis: effectiveDueMillis,
+      dueTime: effectiveDueTime,
       location: null,
       attachmentName: null,
       attachmentUri: null,
       isCompleted: false,
-      section: determineSection(effectiveDueDate, parent?.dueTime, parent?.dueDateMillis, false),
+      section: determineSection(effectiveDueDate, effectiveDueTime, effectiveDueMillis, false),
       createdAt: now,
       updatedAt: now,
       completedAt: null,

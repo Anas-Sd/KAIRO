@@ -140,7 +140,7 @@ CRITICAL RULES & PROTOCOLS:
    - Completing ALL subtasks of a parent automatically completes the parent.
    - Reopening (unticking) a subtask automatically reopens the parent and all its ancestors.
    - Reopening (unticking) a parent automatically reopens all its subtasks recursively.
-   - CROSSED TIME FOR TODAY: If a task's scheduled time for today has crossed/passed the current time, it is considered OVERDUE only! If the time has not yet passed, it is in TODAY.
+   - TIME IS MANDATORY & NO ALL-DAY TASKS: Every single task and subtask in KAIRO requires an exact alarm time without exception. If the scheduled time has passed/crossed the current time, the task is strictly OVERDUE! If the time is upcoming today, it is in TODAY.
    - Use `adjust_parent` to change a task's parent, detach children, or move a subtask back to root (`new_parent_query="none"`).
    - Use `reorder_subtasks` to rearrange the display order of subtasks under a parent.
    - Use `get_task_details` to inspect a task, its breadcrumb hierarchy path, and child subtask progress (e.g. 2/3 completed).

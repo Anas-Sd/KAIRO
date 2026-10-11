@@ -680,46 +680,23 @@ object TaskRepository {
             return TaskSection.TODAY
         }
         val now = System.currentTimeMillis()
-        val todayStart = Calendar.getInstance().apply {
+        val todayEnd = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
+            add(Calendar.DAY_OF_YEAR, 1)
         }.timeInMillis
-        val todayEnd = todayStart + 86400000L
 
-        // If specific time set for today has passed, consider as overdue only
-        if (!dueTime.isNullOrBlank()) {
-            val trigger = com.kairo.app.alarm.AlarmScheduler.calculateTriggerMillis(dueDate, dueTime, dueDateMillis)
-            if (trigger != null && trigger < now) {
-                return TaskSection.OVERDUE
+        val trigger = com.kairo.app.alarm.AlarmScheduler.calculateTriggerMillis(dueDate, dueTime, dueDateMillis)
+        if (trigger != null && trigger > 0) {
+            return when {
+                trigger < now -> TaskSection.OVERDUE
+                trigger < todayEnd -> TaskSection.TODAY
+                else -> TaskSection.UPCOMING
             }
         }
 
-        val targetMillis = dueDateMillis ?: try {
-            val formats = arrayOf("MMM d", "MMM dd", "dd/MM/yyyy", "yyyy-MM-dd")
-            var parsedTime: Long? = null
-            for (fmt in formats) {
-                try {
-                    val parsedDate = java.text.SimpleDateFormat(fmt, java.util.Locale.getDefault()).parse(dueDate)
-                    if (parsedDate != null) {
-                        val pCal = java.util.Calendar.getInstance().apply { time = parsedDate }
-                        if (pCal.get(java.util.Calendar.YEAR) <= 1970) {
-                            pCal.set(java.util.Calendar.YEAR, java.util.Calendar.getInstance().get(java.util.Calendar.YEAR))
-                        }
-                        parsedTime = pCal.timeInMillis
-                        break
-                    }
-                } catch (_: Exception) {}
-            }
-            parsedTime
-        } catch (_: Exception) { null }
-
-        return when {
-            dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
-            targetMillis != null && targetMillis < todayStart -> TaskSection.OVERDUE
-            targetMillis != null && targetMillis >= todayStart && targetMillis < todayEnd -> TaskSection.TODAY
-            else -> TaskSection.UPCOMING
-        }
+        return TaskSection.OVERDUE
     }
 }
