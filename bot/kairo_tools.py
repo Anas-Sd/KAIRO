@@ -101,8 +101,9 @@ def dispatch_alarm_wakeup(task: dict = None) -> bool:
             if task.get("longitude") is not None:
                 data_payload["longitude"] = str(task["longitude"])
                 data_payload["lng"] = str(task["longitude"])
-            if task.get("location_radius"):
-                data_payload["locationRadius"] = str(task["location_radius"])
+            radius = task.get("radius_meters") or task.get("location_radius")
+            if radius:
+                data_payload["locationRadius"] = str(radius)
             if task.get("snooze_until_millis"):
                 data_payload["snoozeUntilMillis"] = str(task["snooze_until_millis"])
 
@@ -488,7 +489,7 @@ def add_task(
         "location": location.strip() if location else None,
         "latitude": latitude,
         "longitude": longitude,
-        "location_radius": location_radius,
+        "radius_meters": location_radius,
         "attachment_name": photos.strip() if photos else None,
         "is_completed": False,
         "section": section,
@@ -589,7 +590,7 @@ def get_task_details(task_query: str) -> str:
         "location": task.get("location") or "None",
         "latitude": task.get("latitude"),
         "longitude": task.get("longitude"),
-        "location_radius": task.get("location_radius", 500),
+        "location_radius": task.get("radius_meters") or task.get("location_radius", 500),
         "photos": task.get("attachment_name") or "None",
         "parent_id": task.get("parent_id") or "None",
         "subtasks_count": len(subtasks),
@@ -636,7 +637,7 @@ def edit_task(
     if new_location is not None: patch_data["location"] = new_location.strip() if new_location else None
     if new_latitude is not None: patch_data["latitude"] = new_latitude
     if new_longitude is not None: patch_data["longitude"] = new_longitude
-    if new_location_radius is not None: patch_data["location_radius"] = new_location_radius
+    if new_location_radius is not None: patch_data["radius_meters"] = new_location_radius
 
     effective_date = normalize_date_string(new_due_date) if new_due_date else normalize_date_string(task.get("due_date", "Today"))
     effective_time = new_due_time or task.get("due_time")
