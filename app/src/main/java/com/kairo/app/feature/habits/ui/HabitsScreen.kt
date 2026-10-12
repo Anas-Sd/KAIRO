@@ -403,29 +403,56 @@ fun HabitsScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(16.dp),
-                shape = RoundedCornerShape(16.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                shape = RoundedCornerShape(20.dp),
                 color = KairoSurfaceContainerHigh,
                 tonalElevation = 8.dp,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                shadowElevation = 8.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "${selectedHabitIds.size} selected",
-                        color = Color.White,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp
-                    )
+                    // Left: Selected count badge
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (selectedHabitIds.isNotEmpty()) KairoPrimary.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.08f),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = 1.dp,
+                                color = if (selectedHabitIds.isNotEmpty()) KairoPrimary.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.1f)
+                            )
+                        ) {
+                            Text(
+                                text = "${selectedHabitIds.size}",
+                                color = if (selectedHabitIds.isNotEmpty()) KairoPrimary else Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                        Text(
+                            text = if (selectedHabitIds.size == 1) "habit selected" else "habits selected",
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 13.sp
+                        )
+                    }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Right: Actions
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         // Complete Button
-                        Button(
+                        Surface(
                             onClick = {
                                 if (selectedHabitIds.isEmpty()) {
                                     Toast.makeText(context, "No habits selected", Toast.LENGTH_SHORT).show()
@@ -433,17 +460,34 @@ fun HabitsScreen(
                                     showCompleteConfirmDialog = true
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = KairoSecondary.copy(alpha = 0.2f)),
                             shape = RoundedCornerShape(10.dp),
+                            color = KairoSecondary.copy(alpha = 0.18f),
                             border = androidx.compose.foundation.BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.5f))
                         ) {
-                            Icon(Icons.Default.Check, contentDescription = null, tint = KairoSecondary, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Complete", color = KairoSecondary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = KairoSecondary,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "Complete",
+                                    color = KairoSecondary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
                         }
 
                         // Delete Button
-                        Button(
+                        Surface(
                             onClick = {
                                 if (selectedHabitIds.isEmpty()) {
                                     Toast.makeText(context, "No habits selected", Toast.LENGTH_SHORT).show()
@@ -451,13 +495,30 @@ fun HabitsScreen(
                                     showDeleteConfirmDialog = true
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = KairoError.copy(alpha = 0.2f)),
                             shape = RoundedCornerShape(10.dp),
+                            color = KairoError.copy(alpha = 0.18f),
                             border = androidx.compose.foundation.BorderStroke(1.dp, KairoError.copy(alpha = 0.5f))
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = null, tint = KairoError, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Delete", color = KairoError, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = KairoError,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "Delete",
+                                    color = KairoError,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
                         }
                     }
                 }
