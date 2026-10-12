@@ -19,6 +19,11 @@ enum class HabitDayState {
     MISSED
 }
 
+data class HabitDayRecord(
+    val state: HabitDayState = HabitDayState.UNMARKED,
+    val value: Int = 0
+)
+
 data class Habit(
     val id: String,
     val userCode: String,
@@ -43,7 +48,9 @@ data class HabitDayInfo(
     val dayNumber: Int,
     val dayLabel: String,
     val isToday: Boolean,
-    val state: HabitDayState
+    val state: HabitDayState,
+    val value: Int = 0,
+    val isRestDay: Boolean = false
 )
 
 data class HabitWithStats(
@@ -53,7 +60,11 @@ data class HabitWithStats(
     val doneCount: Int,
     val missedCount: Int,
     val adherenceRate: Float,
-    val days: List<HabitDayInfo>
+    val days: List<HabitDayInfo>,
+    val todayValue: Int = 0,
+    val todayProgressFraction: Float = 0f,
+    val isTodayScheduled: Boolean = true,
+    val weeklyDoneThisWeek: Int = 0
 )
 
 data class DisciplineOverviewStats(

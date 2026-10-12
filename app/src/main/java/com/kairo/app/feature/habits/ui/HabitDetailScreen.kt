@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
@@ -34,6 +36,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
@@ -48,6 +51,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -69,9 +73,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kairo.app.feature.habits.data.HabitRepository
 import com.kairo.app.feature.habits.model.Habit
+import com.kairo.app.feature.habits.model.HabitDayRecord
 import com.kairo.app.feature.habits.model.HabitDayState
+import com.kairo.app.feature.habits.model.HabitRepeatType
+import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.feature.habits.model.HabitWithStats
 import com.kairo.app.ui.theme.KairoBackground
+import com.kairo.app.ui.theme.KairoError
 import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoPrimaryContainer
 import com.kairo.app.ui.theme.KairoSecondary
@@ -100,6 +108,13 @@ fun HabitDetailScreen(
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val today = remember { LocalDate.now() }
+
+    val streakUnit = when (currentHabit.repeatType) {
+        HabitRepeatType.WEEKLY_X -> "Weeks"
+        HabitRepeatType.SPECIFIC_DAYS -> "Sessions"
+        HabitRepeatType.EVERYDAY -> "Days"
+    }
 
     Column(
         modifier = modifier
@@ -154,7 +169,7 @@ fun HabitDetailScreen(
                             showOverflowMenu = false
                             val sendIntent = Intent().apply {
                                 action = Intent.ACTION_SEND
-                                putExtra(Intent.EXTRA_TEXT, "I'm tracking \"${currentHabit.title}\" with Kairo! Current streak: ${habitWithStats.streak} days.")
+                                putExtra(Intent.EXTRA_TEXT, "I'm tracking \"${currentHabit.title}\" with Kairo! Current streak: ${habitWithStats.streak} $streakUnit.")
                                 type = "text/plain"
                             }
                             val shareIntent = Intent.createChooser(sendIntent, "Share Habit")
@@ -209,48 +224,61 @@ fun HabitDetailScreen(
                             modifier = Modifier.size(64.dp),
                             contentAlignment = Alignment.Center
                         ) {
+                            val sweep = (habitWithStats.todayProgressFraction * 360f).coerceIn(0f, 360f)
                             Canvas(modifier = Modifier.size(60.dp)) {
                                 drawCircle(
                                     color = Color(0xFF33343C),
                                     style = Stroke(width = 3.dp.toPx())
                                 )
-                                drawArc(
-                                    color = KairoSecondary,
-                                    startAngle = -90f,
-                                    sweepAngle = 310f,
-                                    useCenter = false,
-                                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
-                                )
+                                if (sweep > 0f) {
+                                    drawArc(
+                                        color = KairoSecondary,
+                                        startAngle = -90f,
+                                        sweepAngle = sweep,
+                                        useCenter = false,
+                                        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                                    )
+                                }
                             }
                             Icon(
-                                imageVector = Icons.Default.WaterDrop,
+                                imageVector = if (currentHabit.type == HabitType.TARGET) Icons.Default.Speed else Icons.Default.WaterDrop,
                                 contentDescription = null,
-                                tint = KairoSecondary,
-                                modifier = Modifier.size(30.dp)
+                                tint = if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else KairoPrimary,
+                                modifier = Modifier.size(28.dp)
                             )
-                            // Small check pill
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .size(20.dp)
-                                    .clip(CircleShape)
-                                    .background(KairoSecondary),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    tint = Color.Black,
-                                    modifier = Modifier.size(13.dp)
-                                )
+                            if (habitWithStats.todayProgressFraction >= 1f) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .size(20.dp)
+                                        .clip(CircleShape)
+                                        .background(KairoSecondary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
                             }
                         }
 
                         Spacer(modifier = Modifier.width(14.dp))
 
-                        // Title & Tags
+                        // Title & Dynamic Schedule Tags
                         Column(modifier = Modifier.weight(1f)) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Dynamic Schedule Badge
+                                val scheduleText = when (currentHabit.repeatType) {
+                                    HabitRepeatType.EVERYDAY -> "Everyday"
+                                    HabitRepeatType.SPECIFIC_DAYS -> formatRepeatDaysShort(currentHabit.repeatDays)
+                                    HabitRepeatType.WEEKLY_X -> "${currentHabit.weeklyTargetCount}x / wk"
+                                }
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(100.dp))
@@ -258,13 +286,15 @@ fun HabitDetailScreen(
                                         .padding(horizontal = 8.dp, vertical = 2.dp)
                                 ) {
                                     Text(
-                                        text = "Discipline",
+                                        text = scheduleText,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = KairoPrimary
                                     )
                                 }
 
+                                // Type Badge
+                                val typeText = if (currentHabit.type == HabitType.TARGET) "Target" else "Check-in"
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(100.dp))
@@ -272,11 +302,27 @@ fun HabitDetailScreen(
                                         .padding(horizontal = 8.dp, vertical = 2.dp)
                                 ) {
                                     Text(
-                                        text = "Daily",
+                                        text = typeText,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color(0xFFC8C4D9)
                                     )
+                                }
+
+                                if (currentHabit.repeatType == HabitRepeatType.WEEKLY_X) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(100.dp))
+                                            .background(KairoSecondary.copy(alpha = 0.15f))
+                                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "${habitWithStats.weeklyDoneThisWeek}/${currentHabit.weeklyTargetCount} this wk",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = KairoSecondary
+                                        )
+                                    }
                                 }
                             }
 
@@ -288,7 +334,7 @@ fun HabitDetailScreen(
                                 color = Color.White
                             )
 
-                            if (currentHabit.targetValue > 1) {
+                            if (currentHabit.type == HabitType.TARGET) {
                                 Text(
                                     text = "Target: ${currentHabit.targetValue} ${currentHabit.targetUnit} daily",
                                     fontSize = 13.sp,
@@ -316,7 +362,12 @@ fun HabitDetailScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
                                     Text(text = "Current Streak", fontSize = 11.sp, color = Color(0xFF94A3B8))
-                                    Text(text = "${habitWithStats.streak} Days", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text(
+                                        text = "${habitWithStats.streak} $streakUnit",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
                                 }
                             }
                         }
@@ -334,7 +385,12 @@ fun HabitDetailScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
                                     Text(text = "Best Streak", fontSize = 11.sp, color = Color(0xFF94A3B8))
-                                    Text(text = "${habitWithStats.bestStreak} Days", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text(
+                                        text = "${habitWithStats.bestStreak} $streakUnit",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
                                 }
                             }
                         }
@@ -342,7 +398,220 @@ fun HabitDetailScreen(
                 }
             }
 
-            // 2. 4-Stat Metric Grid
+            // 2. Today's Interactive Check-in & Stepper Card
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(KairoSurfaceContainer)
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                    .padding(16.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Today's Action",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            if (!habitWithStats.isTodayScheduled) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(100.dp))
+                                        .background(Color.White.copy(alpha = 0.08f))
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "Rest Day",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF94A3B8)
+                                    )
+                                }
+                            }
+                        }
+
+                        if (habitWithStats.todayProgressFraction >= 1f) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(100.dp))
+                                    .background(KairoSecondary.copy(alpha = 0.2f))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = "Completed",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = KairoSecondary
+                                )
+                            }
+                        }
+                    }
+
+                    if (currentHabit.type == HabitType.TARGET) {
+                        // Interactive Target Stepper
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${habitWithStats.todayValue} / ${currentHabit.targetValue} ${currentHabit.targetUnit}",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else Color.White
+                                )
+                                Text(
+                                    text = "${(habitWithStats.todayProgressFraction * 100).toInt()}%",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else Color(0xFF94A3B8)
+                                )
+                            }
+
+                            // Linear Progress Fill Bar
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(Color.White.copy(alpha = 0.08f))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(fraction = habitWithStats.todayProgressFraction)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else KairoPrimary)
+                                )
+                            }
+
+                            // Stepper Controls
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Decrement -1
+                                Surface(
+                                    onClick = {
+                                        HabitRepository.incrementHabitDay(currentHabit.id, today, -1)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = KairoSurfaceContainerHigh,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Remove, contentDescription = "Decrement", tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("-1", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                // Increment +1
+                                Surface(
+                                    onClick = {
+                                        HabitRepository.incrementHabitDay(currentHabit.id, today, 1)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = KairoPrimary.copy(alpha = 0.2f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.5f)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = "Increment", tint = KairoPrimary, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("+1", color = KairoPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                // Complete Goal Button
+                                Surface(
+                                    onClick = {
+                                        HabitRepository.setHabitDayValue(currentHabit.id, today, currentHabit.targetValue)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else KairoSecondary.copy(alpha = 0.15f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.5f)),
+                                    modifier = Modifier.weight(1.3f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = if (habitWithStats.todayProgressFraction >= 1f) Color(0xFF003822) else KairoSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (habitWithStats.todayProgressFraction >= 1f) "Completed" else "Done (${currentHabit.targetValue})",
+                                            color = if (habitWithStats.todayProgressFraction >= 1f) Color(0xFF003822) else KairoSecondary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Yes/No Quick Check-in
+                        val isDone = habitWithStats.todayProgressFraction >= 1f
+                        Surface(
+                            onClick = onCheckInToday,
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isDone) KairoSecondary else KairoPrimary.copy(alpha = 0.15f),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (isDone) KairoSecondary else KairoPrimary.copy(alpha = 0.4f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = if (isDone) Icons.Default.Check else Icons.Default.TaskAlt,
+                                    contentDescription = null,
+                                    tint = if (isDone) Color(0xFF003822) else KairoPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (isDone) "Completed Today (Tap to unmark)" else "Mark Complete for Today",
+                                    color = if (isDone) Color(0xFF003822) else Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. 4-Stat Metric Grid
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -350,7 +619,7 @@ fun HabitDetailScreen(
                 MetricCard(
                     label = "Completions",
                     value = "${habitWithStats.doneCount} times",
-                    subtext = "+12% vs last mo",
+                    subtext = "Total logged",
                     icon = Icons.Default.TaskAlt,
                     accentColor = KairoSecondary,
                     modifier = Modifier.weight(1f)
@@ -359,7 +628,11 @@ fun HabitDetailScreen(
                 MetricCard(
                     label = "Adherence",
                     value = "${String.format(Locale.US, "%.1f", habitWithStats.adherenceRate)}%",
-                    subtext = "Top consistency",
+                    subtext = when (currentHabit.repeatType) {
+                        HabitRepeatType.SPECIFIC_DAYS -> "Scheduled days"
+                        HabitRepeatType.WEEKLY_X -> "Weekly quota"
+                        HabitRepeatType.EVERYDAY -> "Consistency"
+                    },
                     icon = Icons.Default.Verified,
                     accentColor = KairoPrimary,
                     modifier = Modifier.weight(1f)
@@ -373,25 +646,29 @@ fun HabitDetailScreen(
                 MetricCard(
                     label = "Missed Days",
                     value = "${habitWithStats.missedCount} days",
-                    subtext = "In 2026 total",
+                    subtext = "Past scheduled",
                     icon = Icons.Default.EventBusy,
                     accentColor = Color(0xFFFFB77D),
                     modifier = Modifier.weight(1f)
                 )
 
                 MetricCard(
-                    label = "Velocity",
-                    value = if (currentHabit.targetValue > 1) "${currentHabit.targetValue} ${currentHabit.targetUnit}/d" else "1.0 /d",
-                    subtext = "Steady pace",
+                    label = "Cadence",
+                    value = when (currentHabit.repeatType) {
+                        HabitRepeatType.WEEKLY_X -> "${currentHabit.weeklyTargetCount}x / wk"
+                        HabitRepeatType.SPECIFIC_DAYS -> "${currentHabit.repeatDays.size}d / wk"
+                        HabitRepeatType.EVERYDAY -> if (currentHabit.type == HabitType.TARGET) "${currentHabit.targetValue} ${currentHabit.targetUnit}/d" else "Daily"
+                    },
+                    subtext = "Scheduled rate",
                     icon = Icons.Default.Speed,
                     accentColor = KairoSecondary,
                     modifier = Modifier.weight(1f)
                 )
             }
 
-            // 3. Monthly Heatmap Card
+            // 4. Monthly Heatmap Card
             MonthlyHeatmapSection(
-                habitId = currentHabit.id
+                habit = currentHabit
             )
 
             Spacer(modifier = Modifier.height(30.dp))
@@ -468,11 +745,11 @@ fun HabitDetailScreen(
 
 @Composable
 fun MonthlyHeatmapSection(
-    habitId: String,
+    habit: Habit,
     modifier: Modifier = Modifier
 ) {
-    val allLogsMap by HabitRepository.logsMap.collectAsState()
-    val habitLogs = allLogsMap[habitId] ?: emptyMap()
+    val allLogsMap: Map<String, Map<String, HabitDayRecord>> by HabitRepository.logsMap.collectAsState()
+    val habitLogs: Map<String, HabitDayRecord> = allLogsMap[habit.id] ?: emptyMap()
     val today = remember { LocalDate.now() }
 
     var selectedYear by remember { mutableIntStateOf(today.year) }
@@ -495,10 +772,13 @@ fun MonthlyHeatmapSection(
         var missed = 0
         for (day in 1..daysInMonth) {
             val dStr = LocalDate.of(selectedYear, selectedMonth, day).format(DateTimeFormatter.ISO_LOCAL_DATE)
-            when (habitLogs[dStr]) {
-                HabitDayState.DONE -> done++
-                HabitDayState.MISSED -> missed++
-                else -> {}
+            val rec = habitLogs[dStr]
+            if (rec != null) {
+                if (rec.state == HabitDayState.DONE || (habit.type == HabitType.TARGET && rec.value >= habit.targetValue && habit.targetValue > 0)) {
+                    done++
+                } else if (rec.state == HabitDayState.MISSED) {
+                    missed++
+                }
             }
         }
         done to missed
@@ -719,25 +999,38 @@ fun MonthlyHeatmapSection(
                                 val dayNum = cellIndex - startOffset + 1
                                 val cellDate = LocalDate.of(selectedYear, selectedMonth, dayNum)
                                 val cellDateStr = cellDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                                val state = habitLogs[cellDateStr] ?: HabitDayState.UNMARKED
+                                val record = habitLogs[cellDateStr]
+                                val state = record?.state ?: HabitDayState.UNMARKED
+                                val recordVal = record?.value ?: 0
+                                val target = habit.targetValue.coerceAtLeast(1)
+
+                                val isDone = state == HabitDayState.DONE || (habit.type == HabitType.TARGET && recordVal >= target)
+                                val isPartial = habit.type == HabitType.TARGET && recordVal in 1 until target
+                                val isRestDay = (habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(cellDate.dayOfWeek.value) && !isDone && !isPartial)
                                 val isSelected = selectedDayDate == cellDate
                                 val isToday = cellDate == today
 
-                                val bgColor = when (state) {
-                                    HabitDayState.DONE -> KairoSecondary
-                                    HabitDayState.MISSED -> Color(0xFFFFB77D)
-                                    HabitDayState.UNMARKED -> KairoSurfaceContainerHighest
+                                val bgColor = when {
+                                    isDone -> KairoSecondary
+                                    isPartial -> KairoSecondary.copy(alpha = 0.35f)
+                                    state == HabitDayState.MISSED -> Color(0xFFFFB77D)
+                                    isRestDay -> Color.White.copy(alpha = 0.03f)
+                                    else -> KairoSurfaceContainerHighest
                                 }
-                                val textColor = when (state) {
-                                    HabitDayState.DONE -> Color(0xFF003822)
-                                    HabitDayState.MISSED -> Color(0xFF4E2600)
-                                    HabitDayState.UNMARKED -> Color(0xFFCBD5E1)
+                                val textColor = when {
+                                    isDone -> Color(0xFF003822)
+                                    isPartial -> Color.White
+                                    state == HabitDayState.MISSED -> Color(0xFF4E2600)
+                                    isRestDay -> Color(0xFF64748B)
+                                    else -> Color(0xFFCBD5E1)
                                 }
 
                                 val borderModifier = if (isSelected) {
                                     Modifier.border(2.dp, KairoPrimary, RoundedCornerShape(8.dp))
                                 } else if (isToday) {
                                     Modifier.border(1.5.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                                } else if (isPartial) {
+                                    Modifier.border(1.dp, KairoSecondary.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
                                 } else {
                                     Modifier.border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
                                 }
@@ -764,6 +1057,23 @@ fun MonthlyHeatmapSection(
                                             fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Medium,
                                             color = textColor
                                         )
+                                        if (isRestDay) {
+                                            Text(
+                                                text = "—",
+                                                fontSize = 9.sp,
+                                                color = Color(0xFF64748B),
+                                                fontWeight = FontWeight.Bold,
+                                                lineHeight = 9.sp
+                                            )
+                                        } else if (isPartial) {
+                                            Text(
+                                                text = "$recordVal",
+                                                fontSize = 9.sp,
+                                                color = KairoSecondary,
+                                                fontWeight = FontWeight.Bold,
+                                                lineHeight = 9.sp
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -776,7 +1086,14 @@ fun MonthlyHeatmapSection(
             if (selectedDayDate != null) {
                 val sDate = selectedDayDate!!
                 val sDateStr = sDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                val dayState = habitLogs[sDateStr] ?: HabitDayState.UNMARKED
+                val dayRecord = habitLogs[sDateStr] ?: HabitDayRecord()
+                val dayState = dayRecord.state
+                val dayValue = dayRecord.value
+                val target = habit.targetValue.coerceAtLeast(1)
+
+                val isDateDone = dayState == HabitDayState.DONE || (habit.type == HabitType.TARGET && dayValue >= target)
+                val isDatePartial = habit.type == HabitType.TARGET && dayValue in 1 until target
+                val isDateRest = (habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(sDate.dayOfWeek.value))
                 val formattedSelectedDate = sDate.format(DateTimeFormatter.ofPattern("EEEE, MMM d, yyyy"))
 
                 Box(
@@ -808,155 +1125,272 @@ fun MonthlyHeatmapSection(
                             }
 
                             // Current state badge
+                            val badgeBg = when {
+                                isDateDone -> KairoSecondary.copy(alpha = 0.20f)
+                                isDatePartial -> KairoSecondary.copy(alpha = 0.15f)
+                                dayState == HabitDayState.MISSED -> Color(0xFFFFB77D).copy(alpha = 0.20f)
+                                isDateRest -> Color.White.copy(alpha = 0.08f)
+                                else -> KairoSurfaceContainerHighest
+                            }
+                            val badgeText = when {
+                                isDateDone -> "Completed"
+                                isDatePartial -> "$dayValue / $target ${habit.targetUnit}"
+                                dayState == HabitDayState.MISSED -> "Missed"
+                                isDateRest -> "Rest Day"
+                                else -> "Unmarked"
+                            }
+                            val badgeTextColor = when {
+                                isDateDone || isDatePartial -> KairoSecondary
+                                dayState == HabitDayState.MISSED -> Color(0xFFFFB77D)
+                                isDateRest -> Color(0xFF94A3B8)
+                                else -> Color(0xFFC8C4D9)
+                            }
+
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(100.dp))
-                                    .background(
-                                        when (dayState) {
-                                            HabitDayState.DONE -> KairoSecondary.copy(alpha = 0.20f)
-                                            HabitDayState.MISSED -> Color(0xFFFFB77D).copy(alpha = 0.20f)
-                                            HabitDayState.UNMARKED -> KairoSurfaceContainerHighest
-                                        }
-                                    )
+                                    .background(badgeBg)
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    text = when (dayState) {
-                                        HabitDayState.DONE -> "Completed"
-                                        HabitDayState.MISSED -> "Missed"
-                                        HabitDayState.UNMARKED -> "Unmarked"
-                                    },
+                                    text = badgeText,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = when (dayState) {
-                                        HabitDayState.DONE -> KairoSecondary
-                                        HabitDayState.MISSED -> Color(0xFFFFB77D)
-                                        HabitDayState.UNMARKED -> Color(0xFFC8C4D9)
-                                    }
+                                    color = badgeTextColor
                                 )
                             }
                         }
 
-                        // Status toggle action chips
-                        Text(
-                            text = "Set Status (syncs to Supabase):",
-                            fontSize = 11.sp,
-                            color = Color(0xFF94A3B8),
-                            fontWeight = FontWeight.Medium
-                        )
+                        // Target stepper vs Yes/No buttons
+                        if (habit.type == HabitType.TARGET) {
+                            Text(
+                                text = "Adjust count for $formattedSelectedDate (syncs to Supabase):",
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8),
+                                fontWeight = FontWeight.Medium
+                            )
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // Completed Button
-                            val isDone = dayState == HabitDayState.DONE
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(if (isDone) KairoSecondary else KairoSurfaceContainerHighest)
-                                    .border(
-                                        1.dp,
-                                        if (isDone) KairoSecondary else Color.White.copy(alpha = 0.08f),
-                                        RoundedCornerShape(10.dp)
-                                    )
-                                    .clickable {
-                                        HabitRepository.setHabitDayState(habitId, sDate, HabitDayState.DONE)
-                                    }
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                // -1
+                                Surface(
+                                    onClick = {
+                                        HabitRepository.incrementHabitDay(habit.id, sDate, -1)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = KairoSurfaceContainerHighest,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = if (isDone) Color(0xFF003822) else Color(0xFFCBD5E1),
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        text = "Done",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isDone) Color(0xFF003822) else Color(0xFFCBD5E1)
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Remove, contentDescription = "-1", tint = Color.White, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("-1", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                // +1
+                                Surface(
+                                    onClick = {
+                                        HabitRepository.incrementHabitDay(habit.id, sDate, 1)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = KairoPrimary.copy(alpha = 0.2f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.4f)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = "+1", tint = KairoPrimary, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("+1", color = KairoPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                // Target Full Value
+                                Surface(
+                                    onClick = {
+                                        HabitRepository.setHabitDayValue(habit.id, sDate, target)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isDateDone) KairoSecondary else KairoSecondary.copy(alpha = 0.15f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.4f)),
+                                    modifier = Modifier.weight(1.3f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = if (isDateDone) Color(0xFF003822) else KairoSecondary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "Done ($target)",
+                                            color = if (isDateDone) Color(0xFF003822) else KairoSecondary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
+                                // Clear
+                                Surface(
+                                    onClick = {
+                                        HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.UNMARKED)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = KairoSurfaceContainerHighest,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.RestartAlt, contentDescription = null, tint = Color(0xFFCBD5E1), modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("Clear", color = Color(0xFFCBD5E1), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                    }
                                 }
                             }
+                        } else {
+                            // Yes/No Status action chips
+                            Text(
+                                text = "Set Status (syncs to Supabase):",
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8),
+                                fontWeight = FontWeight.Medium
+                            )
 
-                            // Missed Button
-                            val isMissed = dayState == HabitDayState.MISSED
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(if (isMissed) Color(0xFFFFB77D) else KairoSurfaceContainerHighest)
-                                    .border(
-                                        1.dp,
-                                        if (isMissed) Color(0xFFFFB77D) else Color.White.copy(alpha = 0.08f),
-                                        RoundedCornerShape(10.dp)
-                                    )
-                                    .clickable {
-                                        HabitRepository.setHabitDayState(habitId, sDate, HabitDayState.MISSED)
-                                    }
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                // Completed Button
+                                val isDone = dayState == HabitDayState.DONE
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (isDone) KairoSecondary else KairoSurfaceContainerHighest)
+                                        .border(
+                                            1.dp,
+                                            if (isDone) KairoSecondary else Color.White.copy(alpha = 0.08f),
+                                            RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable {
+                                            HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.DONE)
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = null,
-                                        tint = if (isMissed) Color(0xFF4E2600) else Color(0xFFCBD5E1),
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        text = "Missed",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isMissed) Color(0xFF4E2600) else Color(0xFFCBD5E1)
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = if (isDone) Color(0xFF003822) else Color(0xFFCBD5E1),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = "Done",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDone) Color(0xFF003822) else Color(0xFFCBD5E1)
+                                        )
+                                    }
                                 }
-                            }
 
-                            // Clear / Reset Button
-                            val isUnmarked = dayState == HabitDayState.UNMARKED
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(if (isUnmarked) Color.White.copy(alpha = 0.12f) else KairoSurfaceContainerHighest)
-                                    .border(
-                                        1.dp,
-                                        if (isUnmarked) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f),
-                                        RoundedCornerShape(10.dp)
-                                    )
-                                    .clickable {
-                                        HabitRepository.setHabitDayState(habitId, sDate, HabitDayState.UNMARKED)
-                                    }
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                // Missed Button
+                                val isMissed = dayState == HabitDayState.MISSED
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (isMissed) Color(0xFFFFB77D) else KairoSurfaceContainerHighest)
+                                        .border(
+                                            1.dp,
+                                            if (isMissed) Color(0xFFFFB77D) else Color.White.copy(alpha = 0.08f),
+                                            RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable {
+                                            HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.MISSED)
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.RestartAlt,
-                                        contentDescription = null,
-                                        tint = Color(0xFFCBD5E1),
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        text = "Clear",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color(0xFFCBD5E1)
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = null,
+                                            tint = if (isMissed) Color(0xFF4E2600) else Color(0xFFCBD5E1),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = "Missed",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isMissed) Color(0xFF4E2600) else Color(0xFFCBD5E1)
+                                        )
+                                    }
+                                }
+
+                                // Clear / Reset Button
+                                val isUnmarked = dayState == HabitDayState.UNMARKED
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (isUnmarked) Color.White.copy(alpha = 0.12f) else KairoSurfaceContainerHighest)
+                                        .border(
+                                            1.dp,
+                                            if (isUnmarked) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f),
+                                            RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable {
+                                            HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.UNMARKED)
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.RestartAlt,
+                                            contentDescription = null,
+                                            tint = Color(0xFFCBD5E1),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = "Clear",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFFCBD5E1)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -977,15 +1411,23 @@ fun MonthlyHeatmapSection(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(KairoSecondary))
-                        Text("Completed", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                        Text("Done", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                    }
+                    if (habit.type == HabitType.TARGET) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(KairoSecondary.copy(alpha = 0.35f)))
+                            Text("Partial", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                        }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFFFFB77D)))
                         Text("Missed", fontSize = 10.sp, color = Color(0xFF94A3B8))
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(KairoSurfaceContainerHighest))
-                        Text("Unmarked", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                    if (habit.repeatType == HabitRepeatType.SPECIFIC_DAYS) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.08f)))
+                            Text("Rest", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                        }
                     }
                 }
             }
@@ -1028,4 +1470,9 @@ private fun MetricCard(
             }
         }
     }
+}
+
+private fun formatRepeatDaysShort(days: List<Int>): String {
+    val dayMap = mapOf(1 to "Mon", 2 to "Tue", 3 to "Wed", 4 to "Thu", 5 to "Fri", 6 to "Sat", 7 to "Sun")
+    return days.sorted().mapNotNull { dayMap[it] }.joinToString(", ")
 }

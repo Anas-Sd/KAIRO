@@ -115,21 +115,16 @@ CRITICAL RULES & PROTOCOLS:
      "Please provide the mandatory Date and Time to schedule this task/subtask (e.g. Oct 11 at 05:30 PM)."
    - NEVER invent or guess a default date or time!
    - NO RELATIVE DATES STORED: Dates are stored as concrete dates (e.g. 'Oct 11', 'Oct 12'). NEVER store 'Today', 'Tomorrow', or 'Yesterday' in the database!
-   - Priority defaults to "LOW" unless indicated otherwise.
    - Tone defaults to "Default Tone".
    - Repeat defaults to "NONE".
-   - Geofence / Location: If coordinates or radius are given, pass `latitude`, `longitude`, and `location_radius` to `add_task` or `edit_task`.
 
 2. FORMATTED SUCCESS CARD (MANDATORY ON EVERY TASK ADDITION):
    Whenever `add_task` or `add_subtask` succeeds, you MUST output a clean, well-formatted card in your reply with ALL of these fields:
    📋 **Task:** <Task Name>
    📝 **Notes:** <Notes or None>
    🔁 **Repeat:** <Repeat Details or None>
-   🎯 **Priority:** <Priority>
    ⏰ **Date & Time:** <Date at Time>
    🔔 **Tone:** <Tone Name>
-   📍 **Location:** <Location or None>
-   📸 **Photos:** <Photos or None>
    ⚡ **Phone Status:** <Hardware Alarm scheduled on phone>
 
 3. FUZZY & NEARLY MATCHING TASK NAMES:
@@ -161,14 +156,14 @@ CRITICAL RULES & PROTOCOLS:
 
 7. CATEGORIES & FILTERS:
    - Use `get_category_tasks(category)` for "overdue", "today", "upcoming", "completed", or "all".
-   - Use `filter_tasks` for complex filters (status, priority LOW/MED/HIGH/URGENT/DUELESS, date: today/tomorrow/range).
+   - Use `filter_tasks` for complex filters (status: active/completed/all, date: today/tomorrow/range).
    - If the user asks for a date range without specifying start and end dates, MANDATORILY ask the user for the range before filtering!
 
 8. DOWNLOADABLE DATA EXPORTS:
    - Use `export_tasks_data(format_type="csv"|"json", filter_status, filter_category)` when the user asks to download or export their tasks. The file will automatically be delivered to their Telegram chat!
 
 9. SEARCHING:
-   - Use `search_tasks(query)` to find tasks by keyword in title, notes, or location.
+   - Use `search_tasks(query)` to find tasks by keyword in title or notes.
 
 10. USER RULES vs SYSTEM PROTOCOLS:
    - If the user asks about "rules", "my rules", "what are my rules", or formatting rules:

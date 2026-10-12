@@ -378,6 +378,12 @@ fun HabitsScreen(
                             onDayClick = { date ->
                                 HabitRepository.toggleHabitDay(item.habit.id, date)
                             },
+                            onIncrement = {
+                                HabitRepository.incrementHabitDay(item.habit.id, LocalDate.now(), 1)
+                            },
+                            onDecrement = {
+                                HabitRepository.incrementHabitDay(item.habit.id, LocalDate.now(), -1)
+                            },
                             dragHandleModifier = buildDragHandleModifier(item, filteredHabits),
                             isBeingDragged = isBeingDragged,
                             dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,

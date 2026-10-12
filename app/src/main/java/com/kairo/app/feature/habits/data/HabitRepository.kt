@@ -8,6 +8,7 @@ import com.kairo.app.data.auth.AuthManager
 import com.kairo.app.feature.habits.model.DisciplineOverviewStats
 import com.kairo.app.feature.habits.model.Habit
 import com.kairo.app.feature.habits.model.HabitDayInfo
+import com.kairo.app.feature.habits.model.HabitDayRecord
 import com.kairo.app.feature.habits.model.HabitDayState
 import com.kairo.app.feature.habits.model.HabitRepeatType
 import com.kairo.app.feature.habits.model.HabitType
@@ -41,9 +42,9 @@ object HabitRepository {
     }
 
     private val _habitsList = MutableStateFlow<List<Habit>>(emptyList())
-    // Map of habitId -> Map of "YYYY-MM-DD" -> HabitDayState
-    private val _logsMap = MutableStateFlow<Map<String, Map<String, HabitDayState>>>(emptyMap())
-    val logsMap: StateFlow<Map<String, Map<String, HabitDayState>>> = _logsMap.asStateFlow()
+    // Map of habitId -> Map of "YYYY-MM-DD" -> HabitDayRecord
+    private val _logsMap = MutableStateFlow<Map<String, Map<String, HabitDayRecord>>>(emptyMap())
+    val logsMap: StateFlow<Map<String, Map<String, HabitDayRecord>>> = _logsMap.asStateFlow()
 
     private val _habitsWithStats = MutableStateFlow<List<HabitWithStats>>(emptyList())
     val habitsWithStats: StateFlow<List<HabitWithStats>> = _habitsWithStats.asStateFlow()
@@ -101,7 +102,7 @@ object HabitRepository {
             }
         }
 
-        val loadedLogs = mutableMapOf<String, MutableMap<String, HabitDayState>>()
+        val loadedLogs = mutableMapOf<String, MutableMap<String, HabitDayRecord>>()
         if (!logsJson.isNullOrBlank()) {
             try {
                 val obj = JSONObject(logsJson)
@@ -109,11 +110,19 @@ object HabitRepository {
                 while (keys.hasNext()) {
                     val hId = keys.next()
                     val datesObj = obj.getJSONObject(hId)
-                    val dateMap = mutableMapOf<String, HabitDayState>()
+                    val dateMap = mutableMapOf<String, HabitDayRecord>()
                     val dateKeys = datesObj.keys()
                     while (dateKeys.hasNext()) {
                         val d = dateKeys.next()
-                        dateMap[d] = HabitDayState.valueOf(datesObj.getString(d))
+                        val raw = datesObj.get(d)
+                        if (raw is JSONObject) {
+                            val state = HabitDayState.valueOf(raw.optString("state", HabitDayState.DONE.name))
+                            val value = raw.optInt("value", if (state == HabitDayState.DONE) 1 else 0)
+                            dateMap[d] = HabitDayRecord(state = state, value = value)
+                        } else {
+                            val state = HabitDayState.valueOf(raw.toString())
+                            dateMap[d] = HabitDayRecord(state = state, value = if (state == HabitDayState.DONE) 1 else 0)
+                        }
                     }
                     loadedLogs[hId] = dateMap
                 }
@@ -155,8 +164,12 @@ object HabitRepository {
             val logsObj = JSONObject()
             _logsMap.value.forEach { (hId, dateMap) ->
                 val dObj = JSONObject()
-                dateMap.forEach { (dateStr, state) ->
-                    dObj.put(dateStr, state.name)
+                dateMap.forEach { (dateStr, record) ->
+                    val recObj = JSONObject().apply {
+                        put("state", record.state.name)
+                        put("value", record.value)
+                    }
+                    dObj.put(dateStr, recObj)
                 }
                 logsObj.put(hId, dObj)
             }
@@ -206,11 +219,12 @@ object HabitRepository {
 
             if (logsResult.isSuccess) {
                 val dtoList = logsResult.getOrNull().orEmpty()
-                val logs = mutableMapOf<String, MutableMap<String, HabitDayState>>()
+                val logs = mutableMapOf<String, MutableMap<String, HabitDayRecord>>()
                 dtoList.forEach { dto ->
                     val habitMap = logs.getOrPut(dto.habitId) { mutableMapOf() }
                     val state = runCatching { HabitDayState.valueOf(dto.state) }.getOrDefault(HabitDayState.DONE)
-                    habitMap[dto.date] = state
+                    val value = dto.value ?: if (state == HabitDayState.DONE) 1 else 0
+                    habitMap[dto.date] = HabitDayRecord(state = state, value = value)
                 }
                 _logsMap.value = logs
             } else {
@@ -406,8 +420,10 @@ object HabitRepository {
         val userCode = AuthManager.getUserCode() ?: "DEFAULT"
 
         habitIds.forEach { hId ->
+            val habit = _habitsList.value.find { it.id == hId }
+            val target = habit?.targetValue ?: 1
             val habitDates = currentLogs[hId]?.toMutableMap() ?: mutableMapOf()
-            habitDates[dateStr] = HabitDayState.DONE
+            habitDates[dateStr] = HabitDayRecord(HabitDayState.DONE, target)
             currentLogs[hId] = habitDates
 
             scope.launch {
@@ -417,7 +433,7 @@ object HabitRepository {
                     userCode = userCode,
                     date = dateStr,
                     state = HabitDayState.DONE.name,
-                    value = null,
+                    value = target,
                     createdAt = System.currentTimeMillis()
                 )
                 SupabaseClient.upsertHabitLog(logDto)
@@ -448,19 +464,33 @@ object HabitRepository {
         }
     }
 
-    fun getHabitLogs(habitId: String): Map<String, HabitDayState> {
+    fun getHabitLogs(habitId: String): Map<String, HabitDayRecord> {
         return _logsMap.value[habitId] ?: emptyMap()
     }
 
-    fun setHabitDayState(habitId: String, date: LocalDate, state: HabitDayState) {
+    /**
+     * Increments or decrements today's (or given date's) progress value for a Target habit.
+     */
+    fun incrementHabitDay(habitId: String, date: LocalDate, delta: Int = 1) {
+        val habit = _habitsList.value.find { it.id == habitId } ?: return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
         val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
 
-        if (state == HabitDayState.UNMARKED) {
+        val currentRecord = habitDates[dateStr] ?: HabitDayRecord()
+        val target = habit.targetValue.coerceAtLeast(1)
+        val newValue = (currentRecord.value + delta).coerceAtLeast(0)
+
+        val newState = when {
+            newValue == 0 -> HabitDayState.UNMARKED
+            newValue >= target -> HabitDayState.DONE
+            else -> HabitDayState.UNMARKED
+        }
+
+        if (newValue == 0 && newState == HabitDayState.UNMARKED) {
             habitDates.remove(dateStr)
         } else {
-            habitDates[dateStr] = state
+            habitDates[dateStr] = HabitDayRecord(state = newState, value = newValue)
         }
         currentLogs[habitId] = habitDates
         _logsMap.value = currentLogs
@@ -468,7 +498,96 @@ object HabitRepository {
         persistData()
         recomputeAllStats()
 
-        // Sync to Supabase
+        val userCode = AuthManager.getUserCode() ?: "DEFAULT"
+        scope.launch {
+            if (newValue == 0 && newState == HabitDayState.UNMARKED) {
+                SupabaseClient.deleteHabitLog(habitId, dateStr)
+            } else {
+                val logDto = HabitLogDto(
+                    id = "${habitId}_${dateStr}",
+                    habitId = habitId,
+                    userCode = userCode,
+                    date = dateStr,
+                    state = newState.name,
+                    value = newValue,
+                    createdAt = System.currentTimeMillis()
+                )
+                SupabaseClient.upsertHabitLog(logDto)
+            }
+        }
+    }
+
+    /**
+     * Sets specific value for a target habit on a given date.
+     */
+    fun setHabitDayValue(habitId: String, date: LocalDate, value: Int) {
+        val habit = _habitsList.value.find { it.id == habitId } ?: return
+        val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val currentLogs = _logsMap.value.toMutableMap()
+        val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
+
+        val target = habit.targetValue.coerceAtLeast(1)
+        val cleanVal = value.coerceAtLeast(0)
+        val newState = when {
+            cleanVal == 0 -> HabitDayState.UNMARKED
+            cleanVal >= target -> HabitDayState.DONE
+            else -> HabitDayState.UNMARKED
+        }
+
+        if (cleanVal == 0 && newState == HabitDayState.UNMARKED) {
+            habitDates.remove(dateStr)
+        } else {
+            habitDates[dateStr] = HabitDayRecord(state = newState, value = cleanVal)
+        }
+        currentLogs[habitId] = habitDates
+        _logsMap.value = currentLogs
+
+        persistData()
+        recomputeAllStats()
+
+        val userCode = AuthManager.getUserCode() ?: "DEFAULT"
+        scope.launch {
+            if (cleanVal == 0 && newState == HabitDayState.UNMARKED) {
+                SupabaseClient.deleteHabitLog(habitId, dateStr)
+            } else {
+                val logDto = HabitLogDto(
+                    id = "${habitId}_${dateStr}",
+                    habitId = habitId,
+                    userCode = userCode,
+                    date = dateStr,
+                    state = newState.name,
+                    value = cleanVal,
+                    createdAt = System.currentTimeMillis()
+                )
+                SupabaseClient.upsertHabitLog(logDto)
+            }
+        }
+    }
+
+    fun setHabitDayState(habitId: String, date: LocalDate, state: HabitDayState) {
+        val habit = _habitsList.value.find { it.id == habitId }
+        val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val currentLogs = _logsMap.value.toMutableMap()
+        val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
+
+        val targetVal = habit?.targetValue ?: 1
+        val assignedValue = when (state) {
+            HabitDayState.DONE -> targetVal
+            HabitDayState.MISSED -> 0
+            HabitDayState.UNMARKED -> 0
+        }
+
+        if (state == HabitDayState.UNMARKED) {
+            habitDates.remove(dateStr)
+        } else {
+            habitDates[dateStr] = HabitDayRecord(state = state, value = assignedValue)
+        }
+        currentLogs[habitId] = habitDates
+        _logsMap.value = currentLogs
+
+        persistData()
+        recomputeAllStats()
+
         val userCode = AuthManager.getUserCode() ?: "DEFAULT"
         scope.launch {
             if (state == HabitDayState.UNMARKED) {
@@ -480,7 +599,7 @@ object HabitRepository {
                     userCode = userCode,
                     date = dateStr,
                     state = state.name,
-                    value = null,
+                    value = assignedValue,
                     createdAt = System.currentTimeMillis()
                 )
                 SupabaseClient.upsertHabitLog(logDto)
@@ -492,21 +611,29 @@ object HabitRepository {
      * Cycles day state: UNMARKED -> DONE -> MISSED -> UNMARKED
      */
     fun toggleHabitDay(habitId: String, date: LocalDate) {
+        val habit = _habitsList.value.find { it.id == habitId }
+        val target = habit?.targetValue ?: 1
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
         val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
 
-        val currentState = habitDates[dateStr] ?: HabitDayState.UNMARKED
-        val nextState = when (currentState) {
-            HabitDayState.UNMARKED -> HabitDayState.DONE
-            HabitDayState.DONE -> HabitDayState.MISSED
-            HabitDayState.MISSED -> HabitDayState.UNMARKED
+        val currentRecord = habitDates[dateStr] ?: HabitDayRecord(HabitDayState.UNMARKED, 0)
+        val (nextState, nextValue) = when (currentRecord.state) {
+            HabitDayState.UNMARKED -> {
+                if (currentRecord.value in 1 until target) {
+                    HabitDayState.DONE to target
+                } else {
+                    HabitDayState.DONE to target
+                }
+            }
+            HabitDayState.DONE -> HabitDayState.MISSED to 0
+            HabitDayState.MISSED -> HabitDayState.UNMARKED to 0
         }
 
-        if (nextState == HabitDayState.UNMARKED) {
+        if (nextState == HabitDayState.UNMARKED && nextValue == 0) {
             habitDates.remove(dateStr)
         } else {
-            habitDates[dateStr] = nextState
+            habitDates[dateStr] = HabitDayRecord(state = nextState, value = nextValue)
         }
         currentLogs[habitId] = habitDates
         _logsMap.value = currentLogs
@@ -514,10 +641,9 @@ object HabitRepository {
         persistData()
         recomputeAllStats()
 
-        // Sync to Supabase
         val userCode = AuthManager.getUserCode() ?: "DEFAULT"
         scope.launch {
-            if (nextState == HabitDayState.UNMARKED) {
+            if (nextState == HabitDayState.UNMARKED && nextValue == 0) {
                 SupabaseClient.deleteHabitLog(habitId, dateStr)
             } else {
                 val logDto = HabitLogDto(
@@ -526,12 +652,157 @@ object HabitRepository {
                     userCode = userCode,
                     date = dateStr,
                     state = nextState.name,
-                    value = null,
+                    value = nextValue,
                     createdAt = System.currentTimeMillis()
                 )
                 SupabaseClient.upsertHabitLog(logDto)
             }
         }
+    }
+
+    private fun isDayComplete(habit: Habit, record: HabitDayRecord?): Boolean {
+        if (record == null) return false
+        if (record.state == HabitDayState.DONE) return true
+        if (habit.type == HabitType.TARGET && record.value >= habit.targetValue && habit.targetValue > 0) return true
+        return false
+    }
+
+    private fun calculateStreak(habit: Habit, logs: Map<String, HabitDayRecord>, today: LocalDate): Int {
+        val dateFormatter = DateTimeFormatter.ISO_LOCAL_DATE
+        when (habit.repeatType) {
+            HabitRepeatType.EVERYDAY -> {
+                val todayDone = isDayComplete(habit, logs[today.format(dateFormatter)])
+                var streak = 0
+                var checkDate = if (todayDone) today else today.minusDays(1)
+                while (true) {
+                    val done = isDayComplete(habit, logs[checkDate.format(dateFormatter)])
+                    if (done) {
+                        streak++
+                        checkDate = checkDate.minusDays(1)
+                    } else {
+                        break
+                    }
+                }
+                return streak
+            }
+
+            HabitRepeatType.SPECIFIC_DAYS -> {
+                val isTodayScheduled = habit.repeatDays.contains(today.dayOfWeek.value)
+                val todayDone = isDayComplete(habit, logs[today.format(dateFormatter)])
+
+                var streak = 0
+                var checkDate = if (isTodayScheduled && todayDone) {
+                    today
+                } else {
+                    var prev = today.minusDays(1)
+                    var safety = 0
+                    while (!habit.repeatDays.contains(prev.dayOfWeek.value) && safety < 14) {
+                        prev = prev.minusDays(1)
+                        safety++
+                    }
+                    prev
+                }
+
+                var safety = 0
+                while (safety < 365) {
+                    safety++
+                    if (habit.repeatDays.contains(checkDate.dayOfWeek.value)) {
+                        val done = isDayComplete(habit, logs[checkDate.format(dateFormatter)])
+                        if (done) {
+                            streak++
+                            checkDate = checkDate.minusDays(1)
+                        } else {
+                            break
+                        }
+                    } else {
+                        // Rest day -> skip without breaking streak!
+                        checkDate = checkDate.minusDays(1)
+                    }
+                }
+                return streak
+            }
+
+            HabitRepeatType.WEEKLY_X -> {
+                val weeklyTarget = habit.weeklyTargetCount.coerceIn(1, 7)
+                val startOfCurrentWeek = today.with(DayOfWeek.MONDAY)
+                var currentWeekDone = 0
+                var d = startOfCurrentWeek
+                while (!d.isAfter(today)) {
+                    if (isDayComplete(habit, logs[d.format(dateFormatter)])) {
+                        currentWeekDone++
+                    }
+                    d = d.plusDays(1)
+                }
+
+                val currentWeekTargetReached = currentWeekDone >= weeklyTarget
+                val daysRemainingInWeek = 7 - today.dayOfWeek.value
+                val currentWeekPossible = (currentWeekDone + daysRemainingInWeek) >= weeklyTarget
+
+                if (!currentWeekTargetReached && !currentWeekPossible) {
+                    return 0
+                }
+
+                var streak = if (currentWeekTargetReached) 1 else 0
+                var checkWeekStart = startOfCurrentWeek.minusWeeks(1)
+                var weekSafety = 0
+
+                while (weekSafety < 52) {
+                    weekSafety++
+                    var weekDoneCount = 0
+                    for (offset in 0 until 7) {
+                        val dayInWeek = checkWeekStart.plusDays(offset.toLong())
+                        if (isDayComplete(habit, logs[dayInWeek.format(dateFormatter)])) {
+                            weekDoneCount++
+                        }
+                    }
+                    if (weekDoneCount >= weeklyTarget) {
+                        streak++
+                        checkWeekStart = checkWeekStart.minusWeeks(1)
+                    } else {
+                        break
+                    }
+                }
+                return streak
+            }
+        }
+    }
+
+    private fun calculateAdherence(habit: Habit, logs: Map<String, HabitDayRecord>, today: LocalDate): Float {
+        if (logs.isEmpty()) return 100f
+        val dateFormatter = DateTimeFormatter.ISO_LOCAL_DATE
+
+        when (habit.repeatType) {
+            HabitRepeatType.EVERYDAY -> {
+                val totalDone = logs.values.count { isDayComplete(habit, it) }
+                val totalMissed = logs.values.count { it.state == HabitDayState.MISSED }
+                val totalLogged = totalDone + totalMissed
+                return if (totalLogged > 0) (totalDone.toFloat() / totalLogged * 100f) else 100f
+            }
+            HabitRepeatType.SPECIFIC_DAYS -> {
+                var totalScheduledDone = 0
+                var totalScheduledMissed = 0
+                logs.forEach { (dateStr, record) ->
+                    val d = runCatching { LocalDate.parse(dateStr, dateFormatter) }.getOrNull()
+                    if (d != null && habit.repeatDays.contains(d.dayOfWeek.value)) {
+                        if (isDayComplete(habit, record)) totalScheduledDone++
+                        else if (record.state == HabitDayState.MISSED) totalScheduledMissed++
+                    }
+                }
+                val total = totalScheduledDone + totalScheduledMissed
+                return if (total > 0) (totalScheduledDone.toFloat() / total * 100f) else 100f
+            }
+            HabitRepeatType.WEEKLY_X -> {
+                val totalDone = logs.values.count { isDayComplete(habit, it) }
+                val totalMissed = logs.values.count { it.state == HabitDayState.MISSED }
+                val totalLogged = totalDone + totalMissed
+                return if (totalLogged > 0) (totalDone.toFloat() / totalLogged * 100f) else 100f
+            }
+        }
+    }
+
+    private fun calculateBestStreak(habit: Habit, logs: Map<String, HabitDayRecord>, currentStreak: Int): Int {
+        val totalDone = logs.values.count { isDayComplete(habit, it) }
+        return maxOf(currentStreak, (totalDone / 2).coerceAtLeast(currentStreak))
     }
 
     private fun recomputeAllStats() {
@@ -541,48 +812,82 @@ object HabitRepository {
         // 14 days window (from today - 13 days to today)
         val dayWindow = (13 downTo 0).map { offset -> today.minusDays(offset.toLong()) }
 
+        // Scheduled habits today for Discipline Overview:
+        val scheduledHabitsToday = _habitsList.value.filter { h ->
+            when (h.repeatType) {
+                HabitRepeatType.EVERYDAY -> true
+                HabitRepeatType.SPECIFIC_DAYS -> h.repeatDays.contains(today.dayOfWeek.value)
+                HabitRepeatType.WEEKLY_X -> true
+            }
+        }
+
+        var totalProgressPoints = 0f
         var completedTodayCount = 0
-        val totalTodayCount = _habitsList.value.size
+        val totalTodayCount = scheduledHabitsToday.size
 
         val statsList = _habitsList.value.map { habit ->
             val logsForHabit = _logsMap.value[habit.id] ?: emptyMap()
+            val todayRecord = logsForHabit[today.format(dateFormatter)] ?: HabitDayRecord()
+            val target = habit.targetValue.coerceAtLeast(1)
+
+            // Today's progress fraction for this habit
+            val todayFraction: Float = when (habit.type) {
+                HabitType.TARGET -> {
+                    if (todayRecord.state == HabitDayState.DONE) 1.0f
+                    else (todayRecord.value.toFloat() / target.toFloat()).coerceIn(0f, 1f)
+                }
+                HabitType.YES_NO -> {
+                    if (todayRecord.state == HabitDayState.DONE) 1.0f else 0.0f
+                }
+            }
+
+            val isTodayScheduled = when (habit.repeatType) {
+                HabitRepeatType.EVERYDAY -> true
+                HabitRepeatType.SPECIFIC_DAYS -> habit.repeatDays.contains(today.dayOfWeek.value)
+                HabitRepeatType.WEEKLY_X -> true
+            }
+
+            if (isTodayScheduled) {
+                totalProgressPoints += todayFraction
+                if (todayFraction >= 1.0f || todayRecord.state == HabitDayState.DONE) {
+                    completedTodayCount++
+                }
+            }
 
             // Build 14-day info
             val dayInfos = dayWindow.map { d ->
                 val dStr = d.format(dateFormatter)
-                val state = logsForHabit[dStr] ?: HabitDayState.UNMARKED
+                val record = logsForHabit[dStr] ?: HabitDayRecord()
+                val isRest = (habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(d.dayOfWeek.value))
                 HabitDayInfo(
                     date = d,
                     dayNumber = d.dayOfMonth,
                     dayLabel = formatDayLabel(d.dayOfWeek),
                     isToday = d == today,
-                    state = state
+                    state = record.state,
+                    value = record.value,
+                    isRestDay = isRest
                 )
             }
 
-            if (logsForHabit[today.format(dateFormatter)] == HabitDayState.DONE) {
-                completedTodayCount++
-            }
-
-            // Streak computation (counting backward from today or yesterday)
-            var currentStreak = 0
-            var checkDate = if (logsForHabit[today.format(dateFormatter)] == HabitDayState.DONE) today else today.minusDays(1)
-            while (true) {
-                val state = logsForHabit[checkDate.format(dateFormatter)]
-                if (state == HabitDayState.DONE) {
-                    currentStreak++
-                    checkDate = checkDate.minusDays(1)
-                } else {
-                    break
+            // Weekly count this week
+            val startOfWeek = today.with(DayOfWeek.MONDAY)
+            var weeklyDoneCount = 0
+            var cur = startOfWeek
+            while (!cur.isAfter(today.with(DayOfWeek.SUNDAY))) {
+                val rec = logsForHabit[cur.format(dateFormatter)]
+                if (isDayComplete(habit, rec)) {
+                    weeklyDoneCount++
                 }
+                cur = cur.plusDays(1)
             }
 
-            val totalDone = logsForHabit.values.count { it == HabitDayState.DONE }
-            val totalMissed = logsForHabit.values.count { it == HabitDayState.MISSED }
-            val totalLogged = totalDone + totalMissed
-            val adherence = if (totalLogged > 0) (totalDone.toFloat() / totalLogged * 100f) else 100f
+            val currentStreak = calculateStreak(habit, logsForHabit, today)
+            val bestStreak = calculateBestStreak(habit, logsForHabit, currentStreak)
+            val adherence = calculateAdherence(habit, logsForHabit, today)
 
-            val bestStreak = maxOf(currentStreak, (totalDone / 2).coerceAtLeast(currentStreak))
+            val totalDone = logsForHabit.values.count { isDayComplete(habit, it) }
+            val totalMissed = logsForHabit.values.count { it.state == HabitDayState.MISSED }
 
             HabitWithStats(
                 habit = habit,
@@ -591,13 +896,17 @@ object HabitRepository {
                 doneCount = totalDone,
                 missedCount = totalMissed,
                 adherenceRate = adherence,
-                days = dayInfos
+                days = dayInfos,
+                todayValue = todayRecord.value,
+                todayProgressFraction = todayFraction,
+                isTodayScheduled = isTodayScheduled,
+                weeklyDoneThisWeek = weeklyDoneCount
             )
         }
 
         _habitsWithStats.value = statsList
 
-        val pct = if (totalTodayCount > 0) ((completedTodayCount.toFloat() / totalTodayCount) * 100).toInt() else 0
+        val pct = if (totalTodayCount > 0) ((totalProgressPoints / totalTodayCount) * 100).toInt().coerceIn(0, 100) else 0
         _disciplineOverview.value = DisciplineOverviewStats(
             completedToday = completedTodayCount,
             totalToday = totalTodayCount,
