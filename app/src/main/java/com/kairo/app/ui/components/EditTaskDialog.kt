@@ -83,6 +83,10 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+private const val SHOW_PRIORITY_FIELD = false
+private const val SHOW_LOCATION_FIELD = false
+private const val SHOW_ATTACHMENT_FIELD = false
+
 @Composable
 fun EditTaskDialog(
     task: Task,
@@ -448,94 +452,95 @@ fun EditTaskDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Priority Dropdown (Left side)
-                    Box(modifier = Modifier.weight(1f)) {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp)
-                                .clickable { priorityMenuExpanded = true },
-                            shape = RoundedCornerShape(14.dp),
-                            color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
-                            border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
-                        ) {
-                            Row(
+                    if (SHOW_PRIORITY_FIELD) {
+                        // Priority Dropdown (Left side)
+                        Box(modifier = Modifier.weight(1f)) {
+                            Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                    .height(50.dp)
+                                    .clickable { priorityMenuExpanded = true },
+                                shape = RoundedCornerShape(14.dp),
+                                color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
+                                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
                             ) {
                                 Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    val chipColor = when (selectedPriority) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        val chipColor = when (selectedPriority) {
+                                            Priority.LOW -> KairoSecondary
+                                            Priority.MEDIUM -> KairoPrimary
+                                            Priority.HIGH -> Color(0xFFFFB77D)
+                                            Priority.URGENT -> KairoError
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .background(chipColor, RoundedCornerShape(4.dp))
+                                        )
+                                        Text(
+                                            text = selectedPriority.label,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color.White
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.ExpandMore,
+                                        contentDescription = "Expand",
+                                        tint = Color(0xFFC8C4D9),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = priorityMenuExpanded,
+                                onDismissRequest = { priorityMenuExpanded = false },
+                                modifier = Modifier.background(KairoSurfaceContainerHigh)
+                            ) {
+                                Priority.entries.forEach { p ->
+                                    val pColor = when (p) {
                                         Priority.LOW -> KairoSecondary
                                         Priority.MEDIUM -> KairoPrimary
                                         Priority.HIGH -> Color(0xFFFFB77D)
                                         Priority.URGENT -> KairoError
                                     }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .background(chipColor, RoundedCornerShape(4.dp))
-                                    )
-                                    Text(
-                                        text = selectedPriority.label,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color.White
-                                    )
-                                }
-                                Icon(
-                                    imageVector = Icons.Default.ExpandMore,
-                                    contentDescription = "Expand",
-                                    tint = Color(0xFFC8C4D9),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-
-                        DropdownMenu(
-                            expanded = priorityMenuExpanded,
-                            onDismissRequest = { priorityMenuExpanded = false },
-                            modifier = Modifier.background(KairoSurfaceContainerHigh)
-                        ) {
-                            Priority.entries.forEach { p ->
-                                val pColor = when (p) {
-                                    Priority.LOW -> KairoSecondary
-                                    Priority.MEDIUM -> KairoPrimary
-                                    Priority.HIGH -> Color(0xFFFFB77D)
-                                    Priority.URGENT -> KairoError
-                                }
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .background(pColor, RoundedCornerShape(4.dp))
-                                            )
-                                            Text(p.label, color = Color.White)
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .background(pColor, RoundedCornerShape(4.dp))
+                                                )
+                                                Text(p.label, color = Color.White)
+                                            }
+                                        },
+                                        onClick = {
+                                            selectedPriority = p
+                                            priorityMenuExpanded = false
                                         }
-                                    },
-                                    onClick = {
-                                        selectedPriority = p
-                                        priorityMenuExpanded = false
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }
 
                     // Date & Time Selector (Right side beside priority)
                     Surface(
-                        modifier = Modifier
-                            .weight(1.3f)
+                        modifier = (if (SHOW_PRIORITY_FIELD) Modifier.weight(1.3f) else Modifier.fillMaxWidth())
                             .height(50.dp)
                             .clickable { showDateTimePicker() },
                         shape = RoundedCornerShape(14.dp),
@@ -614,134 +619,138 @@ fun EditTaskDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                if (SHOW_LOCATION_FIELD) {
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                // 4. Location Selector (Optional)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .clickable { showLocationPicker = true },
-                    shape = RoundedCornerShape(14.dp),
-                    color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
-                    border = BorderStroke(1.dp, if (locationText.isNotBlank()) KairoPrimary.copy(alpha = 0.6f) else KairoOutlineVariant.copy(alpha = 0.35f))
-                ) {
-                    Row(
+                    // 4. Location Selector (Optional)
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .height(52.dp)
+                            .clickable { showLocationPicker = true },
+                        shape = RoundedCornerShape(14.dp),
+                        color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
+                        border = BorderStroke(1.dp, if (locationText.isNotBlank()) KairoPrimary.copy(alpha = 0.6f) else KairoOutlineVariant.copy(alpha = 0.35f))
                     ) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Place,
-                                contentDescription = "Location",
-                                tint = if (locationText.isNotBlank()) KairoPrimary else Color(0xFF918EA2),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            if (locationText.isNotBlank()) {
-                                Column {
-                                    Text(
-                                        text = locationText,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color.White,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "${locationRadius}m radius • AI Alert",
-                                        fontSize = 11.sp,
-                                        color = KairoPrimary.copy(alpha = 0.85f)
-                                    )
-                                }
-                            } else {
-                                Text(
-                                    text = "Location & Geofence (optional)",
-                                    color = Color(0xFF6B687C),
-                                    fontSize = 13.sp
-                                )
-                            }
-                        }
-
-                        if (locationText.isNotBlank()) {
-                            IconButton(
-                                onClick = {
-                                    locationText = ""
-                                    latitude = null
-                                    longitude = null
-                                },
-                                modifier = Modifier.size(28.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear Location",
-                                    tint = Color(0xFF918EA2),
-                                    modifier = Modifier.size(16.dp)
+                                    imageVector = Icons.Default.Place,
+                                    contentDescription = "Location",
+                                    tint = if (locationText.isNotBlank()) KairoPrimary else Color(0xFF918EA2),
+                                    modifier = Modifier.size(20.dp)
                                 )
+                                if (locationText.isNotBlank()) {
+                                    Column {
+                                        Text(
+                                            text = locationText,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color.White,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${locationRadius}m radius • AI Alert",
+                                            fontSize = 11.sp,
+                                            color = KairoPrimary.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = "Location & Geofence (optional)",
+                                        color = Color(0xFF6B687C),
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+
+                            if (locationText.isNotBlank()) {
+                                IconButton(
+                                    onClick = {
+                                        locationText = ""
+                                        latitude = null
+                                        longitude = null
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Clear Location",
+                                        tint = Color(0xFF918EA2),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                if (SHOW_ATTACHMENT_FIELD) {
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                // 5. Photos / File Selection Button
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp)
-                        .clickable { showAttachmentSourceDialog = true },
-                    shape = RoundedCornerShape(14.dp),
-                    color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
-                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
-                ) {
-                    Row(
+                    // 5. Photos / File Selection Button
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .height(50.dp)
+                            .clickable { showAttachmentSourceDialog = true },
+                        shape = RoundedCornerShape(14.dp),
+                        color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
+                        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
                     ) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.weight(1f, fill = false)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.AttachFile,
-                                contentDescription = "Files",
-                                tint = if (attachmentName != null) KairoPrimary else Color(0xFF918EA2),
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = attachmentName ?: "Photos / Files",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = if (attachmentName != null) Color.White else Color(0xFF918EA2),
-                                maxLines = 1
-                            )
-                        }
-
-                        if (attachmentName != null) {
-                            IconButton(
-                                onClick = {
-                                    attachmentName = null
-                                    attachmentUri = null
-                                },
-                                modifier = Modifier.size(24.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f, fill = false)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Remove",
-                                    tint = Color(0xFFC8C4D9),
-                                    modifier = Modifier.size(16.dp)
+                                    imageVector = Icons.Default.AttachFile,
+                                    contentDescription = "Files",
+                                    tint = if (attachmentName != null) KairoPrimary else Color(0xFF918EA2),
+                                    modifier = Modifier.size(18.dp)
                                 )
+                                Text(
+                                    text = attachmentName ?: "Photos / Files",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (attachmentName != null) Color.White else Color(0xFF918EA2),
+                                    maxLines = 1
+                                )
+                            }
+
+                            if (attachmentName != null) {
+                                IconButton(
+                                    onClick = {
+                                        attachmentName = null
+                                        attachmentUri = null
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Remove",
+                                        tint = Color(0xFFC8C4D9),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                         }
                     }

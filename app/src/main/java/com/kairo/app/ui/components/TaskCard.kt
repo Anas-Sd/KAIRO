@@ -98,6 +98,10 @@ import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 
+private const val SHOW_PRIORITY_CAPSULE = false
+private const val SHOW_LOCATION_CAPSULE = false
+private const val SHOW_ATTACHMENT_CAPSULE = false
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TaskCard(
@@ -336,19 +340,21 @@ fun TaskCard(
                         )
                     }
 
-                    // Priority Capsule
-                    val priorityBg = when (task.priority) {
-                        Priority.LOW -> Color(0xFF16A34A) // Green bg
-                        Priority.MEDIUM -> Color(0xFF2563EB) // Blue bg
-                        Priority.HIGH -> Color(0xFFDC2626) // Red bg
-                        Priority.URGENT -> Color(0xFFDC2626) // Same as Red
+                    if (SHOW_PRIORITY_CAPSULE) {
+                        // Priority Capsule
+                        val priorityBg = when (task.priority) {
+                            Priority.LOW -> Color(0xFF16A34A) // Green bg
+                            Priority.MEDIUM -> Color(0xFF2563EB) // Blue bg
+                            Priority.HIGH -> Color(0xFFDC2626) // Red bg
+                            Priority.URGENT -> Color(0xFFDC2626) // Same as Red
+                        }
+                        val priorityText = Color.White // White text for all priorities
+                        TaskCapsule(
+                            text = task.priority.label,
+                            containerColor = priorityBg,
+                            contentColor = priorityText
+                        )
                     }
-                    val priorityText = Color.White // White text for all priorities
-                    TaskCapsule(
-                        text = task.priority.label,
-                        containerColor = priorityBg,
-                        contentColor = priorityText
-                    )
 
                     // Date & Time Capsules
                     val formattedDate = com.kairo.app.ui.utils.DateUtils.formatDisplayDate(task.dueDate, task.dueDateMillis)
@@ -373,28 +379,32 @@ fun TaskCard(
                         )
                     }
 
-                    // Location Capsule: Sky blue bg with just location icon (similar to attachment icon)
-                    val locationStr = task.location
-                    if (!locationStr.isNullOrBlank()) {
-                        TaskCapsule(
-                            icon = Icons.Default.Place,
-                            iconTint = Color.White,
-                            text = null, // Only location icon inside capsule
-                            containerColor = Color(0xFF0284C7), // Sky blue bg
-                            contentColor = Color.White
-                        )
+                    if (SHOW_LOCATION_CAPSULE) {
+                        // Location Capsule: Sky blue bg with just location icon (similar to attachment icon)
+                        val locationStr = task.location
+                        if (!locationStr.isNullOrBlank()) {
+                            TaskCapsule(
+                                icon = Icons.Default.Place,
+                                iconTint = Color.White,
+                                text = null, // Only location icon inside capsule
+                                containerColor = Color(0xFF0284C7), // Sky blue bg
+                                contentColor = Color.White
+                            )
+                        }
                     }
 
-                    // Attachment Capsule: Yellow bg with attachment symbol
-                    val fileStr = task.attachmentName
-                    if (!fileStr.isNullOrBlank()) {
-                        TaskCapsule(
-                            icon = Icons.Default.AttachFile,
-                            iconTint = Color(0xFF1A1A24),
-                            text = null, // Only the attachment icon inside the capsule
-                            containerColor = Color(0xFFEAB308), // Yellow bg
-                            contentColor = Color(0xFF1A1A24)
-                        )
+                    if (SHOW_ATTACHMENT_CAPSULE) {
+                        // Attachment Capsule: Yellow bg with attachment symbol
+                        val fileStr = task.attachmentName
+                        if (!fileStr.isNullOrBlank()) {
+                            TaskCapsule(
+                                icon = Icons.Default.AttachFile,
+                                iconTint = Color(0xFF1A1A24),
+                                text = null, // Only the attachment icon inside the capsule
+                                containerColor = Color(0xFFEAB308), // Yellow bg
+                                contentColor = Color(0xFF1A1A24)
+                            )
+                        }
                     }
 
                     // Subtask Progress Capsule (e.g. "3/10 done")
