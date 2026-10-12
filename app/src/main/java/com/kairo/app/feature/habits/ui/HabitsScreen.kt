@@ -1,9 +1,6 @@
 package com.kairo.app.feature.habits.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,20 +13,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Swipe
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -39,19 +32,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kairo.app.feature.habits.data.HabitRepository
-import com.kairo.app.feature.habits.model.Habit
 import com.kairo.app.feature.habits.model.HabitWithStats
+import com.kairo.app.ui.components.AppHeader
+import com.kairo.app.ui.components.SettingsDialog
 import com.kairo.app.ui.theme.KairoBackground
-import com.kairo.app.ui.theme.KairoPrimary
+import com.kairo.app.ui.theme.KairoError
 import com.kairo.app.ui.theme.KairoPrimaryContainer
-import com.kairo.app.ui.theme.KairoSecondary
 import java.time.LocalDate
 
 @Composable
@@ -63,10 +54,31 @@ fun HabitsScreen(
 
     var selectedHabitForDetail by remember { mutableStateOf<HabitWithStats?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+
+    // Search query state for Habits tab
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearchActive by remember { mutableStateOf(false) }
+
+    // Filter habits according to search query
+    val filteredHabits = remember(habitsWithStats, searchQuery) {
+        if (searchQuery.isBlank()) {
+            habitsWithStats
+        } else {
+            habitsWithStats.filter {
+                it.habit.title.contains(searchQuery.trim(), ignoreCase = true)
+            }
+        }
+    }
+
+    // Back button handling
+    BackHandler(enabled = isSearchActive) {
+        isSearchActive = false
+        searchQuery = ""
+    }
 
     // If a habit is selected for detail analytics, show HabitDetailScreen
     if (selectedHabitForDetail != null) {
-        // Keep selectedHabitForDetail updated if its state changes
         val currentSelected = habitsWithStats.find { it.habit.id == selectedHabitForDetail?.habit?.id }
             ?: selectedHabitForDetail!!
 
@@ -102,8 +114,36 @@ fun HabitsScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
         ) {
-            // Header Bar
-            HabitsHeaderBar()
+            // Working Header from tasks (Anas + Synced cloud pill + Date + Search + 3 dots + Settings)
+            AppHeader(
+                searchQuery = searchQuery,
+                isSearchActive = isSearchActive,
+                onSearchQueryChange = { searchQuery = it },
+                onToggleSearch = {
+                    isSearchActive = !isSearchActive
+                    if (!isSearchActive) searchQuery = ""
+                },
+                onCloseSearch = {
+                    isSearchActive = false
+                    searchQuery = ""
+                },
+                searchPlaceholder = "Search habits...",
+                onSettingsClick = { showSettingsDialog = true },
+                moreMenuContent = { dismissMenu ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "Refresh Habits",
+                                fontWeight = FontWeight.Medium
+                            )
+                        },
+                        onClick = {
+                            dismissMenu()
+                            HabitRepository.fetchFromSupabase()
+                        }
+                    )
+                }
+            )
 
             // Scrollable Content
             LazyColumn(
@@ -128,8 +168,8 @@ fun HabitsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "All Habits",
-                            fontSize = 18.sp,
+                            text = if (searchQuery.isBlank()) "All Habits" else "Search Results (${filteredHabits.size})",
+                            fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
@@ -154,19 +194,36 @@ fun HabitsScreen(
                 }
 
                 // 3. Habit Cards
-                items(
-                    items = habitsWithStats,
-                    key = { it.habit.id }
-                ) { item ->
-                    HabitCard(
-                        habitWithStats = item,
-                        onTitleClick = {
-                            selectedHabitForDetail = item
-                        },
-                        onDayClick = { date ->
-                            HabitRepository.toggleHabitDay(item.habit.id, date)
+                if (filteredHabits.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 40.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (searchQuery.isNotBlank()) "No habits matching \"$searchQuery\"" else "No habits yet. Tap + to add one!",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 14.sp
+                            )
                         }
-                    )
+                    }
+                } else {
+                    items(
+                        items = filteredHabits,
+                        key = { it.habit.id }
+                    ) { item ->
+                        HabitCard(
+                            habitWithStats = item,
+                            onTitleClick = {
+                                selectedHabitForDetail = item
+                            },
+                            onDayClick = { date ->
+                                HabitRepository.toggleHabitDay(item.habit.id, date)
+                            }
+                        )
+                    }
                 }
 
                 // Bottom padding for FAB & BottomBar
@@ -217,83 +274,9 @@ fun HabitsScreen(
             }
         )
     }
-}
 
-@Composable
-private fun HabitsHeaderBar() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Logo & Title
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xFF4F46E5), Color(0xFF34D399))
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = "⚡", fontSize = 16.sp)
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            Text(
-                text = "KAIRO",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(text = "•", color = Color.Gray, fontSize = 14.sp)
-            Spacer(modifier = Modifier.width(6.dp))
-
-            Text(
-                text = "Habits",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-        }
-
-        // Action Icons
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = {}) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
-                    tint = Color(0xFF94A3B8),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            IconButton(onClick = {}) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = "AI Assistant",
-                    tint = KairoPrimary,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            IconButton(onClick = {}) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Settings",
-                    tint = Color(0xFF94A3B8),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-        }
+    // Common Settings Dialog
+    if (showSettingsDialog) {
+        SettingsDialog(onDismissRequest = { showSettingsDialog = false })
     }
 }
