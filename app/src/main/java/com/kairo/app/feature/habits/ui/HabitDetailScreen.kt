@@ -1,13 +1,10 @@
 package com.kairo.app.feature.habits.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,21 +24,23 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
-import androidx.compose.material.icons.filled.CalendarViewWeek
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EventBusy
-import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.TaskAlt
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -50,8 +49,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -61,10 +63,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kairo.app.feature.habits.data.HabitRepository
 import com.kairo.app.feature.habits.model.Habit
+import com.kairo.app.feature.habits.model.HabitDayState
 import com.kairo.app.feature.habits.model.HabitWithStats
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoPrimary
@@ -74,6 +79,11 @@ import com.kairo.app.ui.theme.KairoSurfaceContainer
 import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import com.kairo.app.ui.theme.KairoSurfaceContainerHighest
 import com.kairo.app.ui.theme.KairoSurfaceContainerLow
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 
 @Composable
 fun HabitDetailScreen(
@@ -84,10 +94,12 @@ fun HabitDetailScreen(
     onDeleteHabit: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val habit = habitWithStats.habit
+    var currentHabit by remember(habitWithStats) { mutableStateOf(habitWithStats.habit) }
     var showOverflowMenu by remember { mutableStateOf(false) }
-    var selectedTooltip by remember { mutableStateOf("Oct 24: Completed 100% Target") }
-    var selectedPeriod by remember { mutableStateOf("2026") }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
 
     Column(
         modifier = modifier
@@ -138,14 +150,23 @@ fun HabitDetailScreen(
                     DropdownMenuItem(
                         text = { Text("Share", color = Color.White) },
                         leadingIcon = { Icon(Icons.Default.Share, null, tint = Color(0xFFC8C4D9)) },
-                        onClick = { showOverflowMenu = false }
+                        onClick = {
+                            showOverflowMenu = false
+                            val sendIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, "I'm tracking \"${currentHabit.title}\" with Kairo! Current streak: ${habitWithStats.streak} days.")
+                                type = "text/plain"
+                            }
+                            val shareIntent = Intent.createChooser(sendIntent, "Share Habit")
+                            context.startActivity(shareIntent)
+                        }
                     )
                     DropdownMenuItem(
                         text = { Text("Edit", color = Color.White) },
                         leadingIcon = { Icon(Icons.Default.Edit, null, tint = Color(0xFFC8C4D9)) },
                         onClick = {
                             showOverflowMenu = false
-                            onEditHabit(habit)
+                            showEditDialog = true
                         }
                     )
                     HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
@@ -154,7 +175,7 @@ fun HabitDetailScreen(
                         leadingIcon = { Icon(Icons.Default.Delete, null, tint = Color(0xFFFFB4AB)) },
                         onClick = {
                             showOverflowMenu = false
-                            onDeleteHabit(habit.id)
+                            showDeleteConfirmDialog = true
                         }
                     )
                 }
@@ -261,15 +282,15 @@ fun HabitDetailScreen(
 
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = habit.title,
+                                text = currentHabit.title,
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
 
-                            if (habit.targetValue > 1) {
+                            if (currentHabit.targetValue > 1) {
                                 Text(
-                                    text = "Target: ${habit.targetValue} ${habit.targetUnit} daily",
+                                    text = "Target: ${currentHabit.targetValue} ${currentHabit.targetUnit} daily",
                                     fontSize = 13.sp,
                                     color = Color(0xFF94A3B8)
                                 )
@@ -291,7 +312,7 @@ fun HabitDetailScreen(
                                 .padding(10.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = "🔥", fontSize = 18.sp)
+                                Text(text = "\uD83D\uDD25", fontSize = 18.sp)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
                                     Text(text = "Current Streak", fontSize = 11.sp, color = Color(0xFF94A3B8))
@@ -309,44 +330,13 @@ fun HabitDetailScreen(
                                 .padding(10.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = "🏆", fontSize = 18.sp)
+                                Text(text = "⭐", fontSize = 18.sp)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
-                                    Text(text = "All-Time Best", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                                    Text(text = "Best Streak", fontSize = 11.sp, color = Color(0xFF94A3B8))
                                     Text(text = "${habitWithStats.bestStreak} Days", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                 }
                             }
-                        }
-                    }
-
-                    // Check-in CTA
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(
-                            onClick = onCheckInToday,
-                            colors = ButtonDefaults.buttonColors(containerColor = KairoSecondary),
-                            shape = RoundedCornerShape(100.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(46.dp)
-                        ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.Black, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Check In Today", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .size(46.dp)
-                                .clip(CircleShape)
-                                .background(KairoSurfaceContainerHigh)
-                                .clickable { onEditHabit(habit) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Tune, contentDescription = "Edit", tint = Color.White, modifier = Modifier.size(20.dp))
                         }
                     }
                 }
@@ -368,7 +358,7 @@ fun HabitDetailScreen(
 
                 MetricCard(
                     label = "Adherence",
-                    value = "${String.format(java.util.Locale.US, "%.1f", habitWithStats.adherenceRate)}%",
+                    value = "${String.format(Locale.US, "%.1f", habitWithStats.adherenceRate)}%",
                     subtext = "Top consistency",
                     icon = Icons.Default.Verified,
                     accentColor = KairoPrimary,
@@ -391,7 +381,7 @@ fun HabitDetailScreen(
 
                 MetricCard(
                     label = "Velocity",
-                    value = if (habit.targetValue > 1) "${habit.targetValue} ${habit.targetUnit}/d" else "1.0 /d",
+                    value = if (currentHabit.targetValue > 1) "${currentHabit.targetValue} ${currentHabit.targetUnit}/d" else "1.0 /d",
                     subtext = "Steady pace",
                     icon = Icons.Default.Speed,
                     accentColor = KairoSecondary,
@@ -399,286 +389,606 @@ fun HabitDetailScreen(
                 )
             }
 
-            // 3. Consistency Heatmap Card
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(KairoSurfaceContainer)
-                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-                    .padding(16.dp)
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // Title and Period Toggles
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CalendarViewWeek, null, tint = KairoSecondary, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Consistency Heatmap", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        }
+            // 3. Monthly Heatmap Card
+            MonthlyHeatmapSection(
+                habitId = currentHabit.id
+            )
 
+            Spacer(modifier = Modifier.height(30.dp))
+        }
+    }
+
+    // Edit Habit Dialog
+    if (showEditDialog) {
+        CreateHabitDialog(
+            initialHabit = currentHabit,
+            onDismiss = { showEditDialog = false },
+            onConfirm = { title, type, targetValue, targetUnit, repeatType, repeatDays, weeklyTargetCount, reminderEnabled, reminderTime, reminderToneUri, reminderToneTitle ->
+                val updated = currentHabit.copy(
+                    title = title,
+                    type = type,
+                    targetValue = targetValue,
+                    targetUnit = targetUnit,
+                    repeatType = repeatType,
+                    repeatDays = repeatDays,
+                    weeklyTargetCount = weeklyTargetCount,
+                    reminderEnabled = reminderEnabled,
+                    reminderTime = reminderTime,
+                    reminderToneUri = reminderToneUri,
+                    reminderToneTitle = reminderToneTitle,
+                    updatedAt = System.currentTimeMillis()
+                )
+                currentHabit = updated
+                HabitRepository.updateHabit(updated)
+                onEditHabit(updated)
+                showEditDialog = false
+            }
+        )
+    }
+
+    // Delete Confirmation Dialog
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = {
+                Text(
+                    text = "Delete Habit?",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to delete \"${currentHabit.title}\"? All habit history and streak data will be permanently deleted from Supabase.",
+                    color = Color(0xFFC8C4D9),
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirmDialog = false
+                        onDeleteHabit(currentHabit.id)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB4AB))
+                ) {
+                    Text("Delete", color = Color(0xFF690005), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text("Cancel", color = Color.White)
+                }
+            },
+            containerColor = KairoSurfaceContainerHigh,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+}
+
+@Composable
+fun MonthlyHeatmapSection(
+    habitId: String,
+    modifier: Modifier = Modifier
+) {
+    val allLogsMap by HabitRepository.logsMap.collectAsState()
+    val habitLogs = allLogsMap[habitId] ?: emptyMap()
+    val today = remember { LocalDate.now() }
+
+    var selectedYear by remember { mutableIntStateOf(today.year) }
+    var selectedMonth by remember { mutableIntStateOf(today.monthValue) } // 1..12
+    var selectedDayDate by remember { mutableStateOf<LocalDate?>(today) }
+    var showPickerMenu by remember { mutableStateOf(false) }
+
+    val yearMonth = remember(selectedYear, selectedMonth) { YearMonth.of(selectedYear, selectedMonth) }
+    val daysInMonth = yearMonth.lengthOfMonth()
+    val startDayOfWeek = yearMonth.atDay(1).dayOfWeek.value // 1 (Mon) .. 7 (Sun)
+    val startOffset = startDayOfWeek - 1 // 0..6
+    val totalCells = startOffset + daysInMonth
+    val numRows = (totalCells + 6) / 7
+
+    val monthName = yearMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault())
+
+    // Month stats
+    val (monthDoneCount, monthMissedCount) = remember(habitLogs, selectedYear, selectedMonth) {
+        var done = 0
+        var missed = 0
+        for (day in 1..daysInMonth) {
+            val dStr = LocalDate.of(selectedYear, selectedMonth, day).format(DateTimeFormatter.ISO_LOCAL_DATE)
+            when (habitLogs[dStr]) {
+                HabitDayState.DONE -> done++
+                HabitDayState.MISSED -> missed++
+                else -> {}
+            }
+        }
+        done to missed
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(KairoSurfaceContainer)
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+            .padding(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // Header with navigation & picker
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarMonth,
+                        contentDescription = null,
+                        tint = KairoSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Monthly Heatmap",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                // Month / Year Stepper & Picker
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (selectedMonth == 1) {
+                                selectedMonth = 12
+                                selectedYear -= 1
+                            } else {
+                                selectedMonth -= 1
+                            }
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ChevronLeft,
+                            contentDescription = "Previous Month",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Box {
                         Row(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(100.dp))
                                 .background(KairoSurfaceContainerHigh)
-                                .padding(2.dp)
-                        ) {
-                            listOf("2026", "6M", "90D").forEach { p ->
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(100.dp))
-                                        .background(if (selectedPeriod == p) KairoPrimaryContainer else Color.Transparent)
-                                        .clickable { selectedPeriod = p }
-                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    Text(
-                                        text = p,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (selectedPeriod == p) Color.White else Color(0xFFC8C4D9)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Text(
-                        text = "${habitWithStats.doneCount * 3 + 12} active days in 2026 • Longest streak: ${habitWithStats.bestStreak} days",
-                        fontSize = 12.sp,
-                        color = Color(0xFF94A3B8)
-                    )
-
-                    // Tooltip banner
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(KairoSurfaceContainerHighest)
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(7.dp)
-                                        .clip(CircleShape)
-                                        .background(KairoSecondary)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(text = selectedTooltip, fontSize = 12.sp, color = Color.White)
-                            }
-                            Text(text = "100% Target", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = KairoSecondary)
-                        }
-                    }
-
-                    // Heatmap Grid: 7 rows (Mon-Sun) x 18 cols
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        // Day labels
-                        Column(
-                            verticalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.height(100.dp).padding(end = 4.dp)
-                        ) {
-                            Text("M", fontSize = 10.sp, color = Color.Gray)
-                            Text("W", fontSize = 10.sp, color = Color.Gray)
-                            Text("F", fontSize = 10.sp, color = Color.Gray)
-                        }
-
-                        // Grid Columns (weeks)
-                        for (w in 0 until 18) {
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                for (d in 0 until 7) {
-                                    val cellLevel = (w * 7 + d) % 5
-                                    val cellColor = when (cellLevel) {
-                                        0 -> KairoSurfaceContainerHighest
-                                        1 -> KairoSecondary.copy(alpha = 0.30f)
-                                        2 -> KairoSecondary.copy(alpha = 0.55f)
-                                        3 -> KairoSecondary.copy(alpha = 0.80f)
-                                        else -> KairoSecondary
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(10.dp)
-                                            .clip(RoundedCornerShape(2.dp))
-                                            .background(cellColor)
-                                            .clickable {
-                                                selectedTooltip = "Week ${w + 1}, Day ${d + 1}: Done"
-                                            }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Legend
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Consistency", fontSize = 11.sp, color = Color.Gray)
-                        Row(
+                                .clickable { showPickerMenu = true }
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text("Less", fontSize = 10.sp, color = Color.Gray)
-                            Box(modifier = Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(KairoSurfaceContainerHighest))
-                            Box(modifier = Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(KairoSecondary.copy(alpha = 0.3f)))
-                            Box(modifier = Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(KairoSecondary.copy(alpha = 0.6f)))
-                            Box(modifier = Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(KairoSecondary))
-                            Text("More", fontSize = 10.sp, color = Color.Gray)
+                            Text(
+                                text = "$monthName $selectedYear",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "Select month/year",
+                                tint = Color(0xFFC8C4D9),
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
-                    }
-                }
-            }
 
-            // 4. Completion Distribution Histogram (Time of Day)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(KairoSurfaceContainer)
-                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-                    .padding(16.dp)
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Schedule, null, tint = KairoSecondary, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Completion Distribution", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(100.dp))
-                                .background(KairoPrimary.copy(alpha = 0.15f))
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        DropdownMenu(
+                            expanded = showPickerMenu,
+                            onDismissRequest = { showPickerMenu = false },
+                            modifier = Modifier.background(KairoSurfaceContainerHigh)
                         ) {
-                            Text(text = "Time of Day", fontSize = 11.sp, color = KairoPrimary, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-
-                    Text(
-                        text = "Hourly frequency breakdown of habit completions",
-                        fontSize = 12.sp,
-                        color = Color(0xFF94A3B8)
-                    )
-
-                    // Bar Chart
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(KairoSurfaceContainerLow)
-                            .padding(12.dp)
-                    ) {
-                        val hours = listOf(
-                            "6a" to 12,
-                            "8a" to 26,
-                            "10a" to 34, // Peak
-                            "12p" to 18,
-                            "2p" to 22,
-                            "5p" to 14,
-                            "8p" to 8,
-                            "10p" to 4
-                        )
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Bottom
-                        ) {
-                            hours.forEach { (hr, pct) ->
-                                val isPeak = hr == "10a"
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Bottom,
-                                    modifier = Modifier.weight(1f)
+                            // Year stepper
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
+                                    onClick = { selectedYear -= 1 },
+                                    modifier = Modifier.size(28.dp)
                                 ) {
-                                    Text(
-                                        text = "$pct%",
-                                        fontSize = 10.sp,
-                                        fontWeight = if (isPeak) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isPeak) KairoSecondary else Color.Gray
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .width(18.dp)
-                                            .height((pct * 2.5f).dp)
-                                            .clip(RoundedCornerShape(100.dp))
-                                            .background(
-                                                if (isPeak) KairoSecondary
-                                                else if (hr == "2p") KairoPrimaryContainer
-                                                else KairoSecondary.copy(alpha = 0.45f)
+                                    Icon(Icons.Default.ChevronLeft, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                }
+                                Text("$selectedYear", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                                IconButton(
+                                    onClick = { selectedYear += 1 },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.ChevronRight, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+                            // 12 Months
+                            val monthNames = (1..12).map { m ->
+                                java.time.Month.of(m).getDisplayName(TextStyle.SHORT, Locale.getDefault())
+                            }
+                            monthNames.chunked(3).forEachIndexed { rowIndex, rowMonths ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    rowMonths.forEachIndexed { colIndex, mName ->
+                                        val mVal = rowIndex * 3 + colIndex + 1
+                                        val isSelected = mVal == selectedMonth
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (isSelected) KairoPrimaryContainer else Color.Transparent)
+                                                .clickable {
+                                                    selectedMonth = mVal
+                                                    showPickerMenu = false
+                                                }
+                                                .padding(vertical = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = mName,
+                                                fontSize = 12.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) Color.White else Color(0xFFC8C4D9)
                                             )
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = hr,
-                                        fontSize = 10.sp,
-                                        fontWeight = if (isPeak) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isPeak) KairoSecondary else Color(0xFF94A3B8)
-                                    )
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // Peak Flow Callout
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(KairoSurfaceContainerHigh)
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Insights, null, tint = KairoSecondary, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Peak: 8:00 – 10:30 AM",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White
-                                )
+                    IconButton(
+                        onClick = {
+                            if (selectedMonth == 12) {
+                                selectedMonth = 1
+                                selectedYear += 1
+                            } else {
+                                selectedMonth += 1
                             }
-                            Text(
-                                text = "72% before 12 PM",
-                                fontSize = 11.sp,
-                                color = Color(0xFFC8C4D9)
-                            )
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "Next Month",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            // Summary text for selected month
+            Text(
+                text = "$monthDoneCount days completed • $monthMissedCount days missed in $monthName $selectedYear",
+                fontSize = 12.sp,
+                color = Color(0xFF94A3B8)
+            )
+
+            // Day of week column headers: Mon Tue Wed Thu Fri Sat Sun
+            val weekDayHeaders = listOf("M", "T", "W", "T", "F", "S", "S")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                weekDayHeaders.forEach { h ->
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = h,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                }
+            }
+
+            // Monthly Heatmap Calendar Grid
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (r in 0 until numRows) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        for (c in 0 until 7) {
+                            val cellIndex = r * 7 + c
+                            if (cellIndex < startOffset || cellIndex >= totalCells) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(38.dp)
+                                )
+                            } else {
+                                val dayNum = cellIndex - startOffset + 1
+                                val cellDate = LocalDate.of(selectedYear, selectedMonth, dayNum)
+                                val cellDateStr = cellDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                                val state = habitLogs[cellDateStr] ?: HabitDayState.UNMARKED
+                                val isSelected = selectedDayDate == cellDate
+                                val isToday = cellDate == today
+
+                                val bgColor = when (state) {
+                                    HabitDayState.DONE -> KairoSecondary
+                                    HabitDayState.MISSED -> Color(0xFFFFB77D)
+                                    HabitDayState.UNMARKED -> KairoSurfaceContainerHighest
+                                }
+                                val textColor = when (state) {
+                                    HabitDayState.DONE -> Color(0xFF003822)
+                                    HabitDayState.MISSED -> Color(0xFF4E2600)
+                                    HabitDayState.UNMARKED -> Color(0xFFCBD5E1)
+                                }
+
+                                val borderModifier = if (isSelected) {
+                                    Modifier.border(2.dp, KairoPrimary, RoundedCornerShape(8.dp))
+                                } else if (isToday) {
+                                    Modifier.border(1.5.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                                } else {
+                                    Modifier.border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(38.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(bgColor)
+                                        .then(borderModifier)
+                                        .clickable {
+                                            selectedDayDate = cellDate
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Text(
+                                            text = "$dayNum",
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Medium,
+                                            color = textColor
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(30.dp))
+            // Day Status & Direct Edit Panel
+            if (selectedDayDate != null) {
+                val sDate = selectedDayDate!!
+                val sDateStr = sDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                val dayState = habitLogs[sDateStr] ?: HabitDayState.UNMARKED
+                val formattedSelectedDate = sDate.format(DateTimeFormatter.ofPattern("EEEE, MMM d, yyyy"))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(KairoSurfaceContainerHigh)
+                        .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(14.dp))
+                        .padding(12.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = formattedSelectedDate,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = if (sDate == today) "Today" else if (sDate.isAfter(today)) "Upcoming day" else "Past day",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+
+                            // Current state badge
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(100.dp))
+                                    .background(
+                                        when (dayState) {
+                                            HabitDayState.DONE -> KairoSecondary.copy(alpha = 0.20f)
+                                            HabitDayState.MISSED -> Color(0xFFFFB77D).copy(alpha = 0.20f)
+                                            HabitDayState.UNMARKED -> KairoSurfaceContainerHighest
+                                        }
+                                    )
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = when (dayState) {
+                                        HabitDayState.DONE -> "Completed"
+                                        HabitDayState.MISSED -> "Missed"
+                                        HabitDayState.UNMARKED -> "Unmarked"
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = when (dayState) {
+                                        HabitDayState.DONE -> KairoSecondary
+                                        HabitDayState.MISSED -> Color(0xFFFFB77D)
+                                        HabitDayState.UNMARKED -> Color(0xFFC8C4D9)
+                                    }
+                                )
+                            }
+                        }
+
+                        // Status toggle action chips
+                        Text(
+                            text = "Set Status (syncs to Supabase):",
+                            fontSize = 11.sp,
+                            color = Color(0xFF94A3B8),
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Completed Button
+                            val isDone = dayState == HabitDayState.DONE
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isDone) KairoSecondary else KairoSurfaceContainerHighest)
+                                    .border(
+                                        1.dp,
+                                        if (isDone) KairoSecondary else Color.White.copy(alpha = 0.08f),
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable {
+                                        HabitRepository.setHabitDayState(habitId, sDate, HabitDayState.DONE)
+                                    }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = if (isDone) Color(0xFF003822) else Color(0xFFCBD5E1),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = "Done",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDone) Color(0xFF003822) else Color(0xFFCBD5E1)
+                                    )
+                                }
+                            }
+
+                            // Missed Button
+                            val isMissed = dayState == HabitDayState.MISSED
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isMissed) Color(0xFFFFB77D) else KairoSurfaceContainerHighest)
+                                    .border(
+                                        1.dp,
+                                        if (isMissed) Color(0xFFFFB77D) else Color.White.copy(alpha = 0.08f),
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable {
+                                        HabitRepository.setHabitDayState(habitId, sDate, HabitDayState.MISSED)
+                                    }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = null,
+                                        tint = if (isMissed) Color(0xFF4E2600) else Color(0xFFCBD5E1),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = "Missed",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isMissed) Color(0xFF4E2600) else Color(0xFFCBD5E1)
+                                    )
+                                }
+                            }
+
+                            // Clear / Reset Button
+                            val isUnmarked = dayState == HabitDayState.UNMARKED
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isUnmarked) Color.White.copy(alpha = 0.12f) else KairoSurfaceContainerHighest)
+                                    .border(
+                                        1.dp,
+                                        if (isUnmarked) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f),
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable {
+                                        HabitRepository.setHabitDayState(habitId, sDate, HabitDayState.UNMARKED)
+                                    }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.RestartAlt,
+                                        contentDescription = null,
+                                        tint = Color(0xFFCBD5E1),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = "Clear",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFFCBD5E1)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Legend
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Legend", fontSize = 11.sp, color = Color.Gray)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(KairoSecondary))
+                        Text("Completed", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFFFFB77D)))
+                        Text("Missed", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(KairoSurfaceContainerHighest))
+                        Text("Unmarked", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                    }
+                }
+            }
         }
     }
 }

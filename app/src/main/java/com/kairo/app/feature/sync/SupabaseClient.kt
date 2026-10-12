@@ -420,6 +420,24 @@ object SupabaseClient {
         }
     }
 
+    suspend fun deleteHabitLogsForHabit(habitId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encodedHabitId = java.net.URLEncoder.encode(habitId, "UTF-8")
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/habit_logs?habit_id=eq.$encodedHabitId")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .delete()
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val err = response.body?.string().orEmpty()
+                error("Failed to delete habit logs: HTTP ${response.code} $err")
+            }
+        }
+    }
+
     suspend fun getHabitLogs(userCode: String? = com.kairo.app.data.auth.AuthManager.getUserCode()): Result<List<com.kairo.app.feature.habits.data.HabitLogDto>> = withContext(Dispatchers.IO) {
         runCatching {
             val url = if (!userCode.isNullOrBlank()) {

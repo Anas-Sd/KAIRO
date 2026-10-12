@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.kairo.app.feature.habits.model.Habit
 import com.kairo.app.feature.habits.model.HabitRepeatType
 import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.ui.components.TonePickerDialog
@@ -67,6 +68,7 @@ import java.util.Locale
 
 @Composable
 fun CreateHabitDialog(
+    initialHabit: Habit? = null,
     onDismiss: () -> Unit,
     onConfirm: (
         title: String,
@@ -85,19 +87,19 @@ fun CreateHabitDialog(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    var title by remember { mutableStateOf("") }
-    var habitType by remember { mutableStateOf(HabitType.YES_NO) }
-    var targetValue by remember { mutableIntStateOf(1) }
-    var targetUnit by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf(initialHabit?.title ?: "") }
+    var habitType by remember { mutableStateOf(initialHabit?.type ?: HabitType.YES_NO) }
+    var targetValue by remember { mutableIntStateOf(initialHabit?.targetValue ?: 1) }
+    var targetUnit by remember { mutableStateOf(initialHabit?.targetUnit ?: "") }
 
-    var repeatType by remember { mutableStateOf(HabitRepeatType.EVERYDAY) }
-    var selectedDays by remember { mutableStateOf(setOf(1, 2, 3, 4, 5, 6, 7)) } // 1=Mon .. 7=Sun
-    var weeklyCount by remember { mutableIntStateOf(3) }
+    var repeatType by remember { mutableStateOf(initialHabit?.repeatType ?: HabitRepeatType.EVERYDAY) }
+    var selectedDays by remember { mutableStateOf(initialHabit?.repeatDays?.toSet() ?: setOf(1, 2, 3, 4, 5, 6, 7)) } // 1=Mon .. 7=Sun
+    var weeklyCount by remember { mutableIntStateOf(initialHabit?.weeklyTargetCount ?: 3) }
 
-    var reminderEnabled by remember { mutableStateOf(false) }
-    var reminderTime by remember { mutableStateOf("08:00 AM") }
-    var reminderToneUri by remember { mutableStateOf<String?>(null) }
-    var reminderToneTitle by remember { mutableStateOf("Default Notification Tone") }
+    var reminderEnabled by remember { mutableStateOf(initialHabit?.reminderEnabled ?: false) }
+    var reminderTime by remember { mutableStateOf(initialHabit?.reminderTime ?: "08:00 AM") }
+    var reminderToneUri by remember { mutableStateOf<String?>(initialHabit?.reminderToneUri) }
+    var reminderToneTitle by remember { mutableStateOf(initialHabit?.reminderToneTitle ?: "Default Notification Tone") }
     var showTonePicker by remember { mutableStateOf(false) }
 
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -121,7 +123,7 @@ fun CreateHabitDialog(
             ) {
                 // Modal Title
                 Text(
-                    text = "New Habit",
+                    text = if (initialHabit != null) "Edit Habit" else "New Habit",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -510,7 +512,7 @@ fun CreateHabitDialog(
                         shape = RoundedCornerShape(100.dp)
                     ) {
                         Text(
-                            text = "Create Habit",
+                            text = if (initialHabit != null) "Save Changes" else "Create Habit",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp

@@ -43,6 +43,7 @@ object HabitRepository {
     private val _habitsList = MutableStateFlow<List<Habit>>(emptyList())
     // Map of habitId -> Map of "YYYY-MM-DD" -> HabitDayState
     private val _logsMap = MutableStateFlow<Map<String, Map<String, HabitDayState>>>(emptyMap())
+    val logsMap: StateFlow<Map<String, Map<String, HabitDayState>>> = _logsMap.asStateFlow()
 
     private val _habitsWithStats = MutableStateFlow<List<HabitWithStats>>(emptyList())
     val habitsWithStats: StateFlow<List<HabitWithStats>> = _habitsWithStats.asStateFlow()
@@ -319,6 +320,7 @@ object HabitRepository {
         recomputeAllStats()
 
         scope.launch {
+            SupabaseClient.deleteHabitLogsForHabit(habitId)
             SupabaseClient.deleteHabit(habitId)
         }
     }
@@ -440,7 +442,48 @@ object HabitRepository {
 
         scope.launch {
             habitIds.forEach { id ->
+                SupabaseClient.deleteHabitLogsForHabit(id)
                 SupabaseClient.deleteHabit(id)
+            }
+        }
+    }
+
+    fun getHabitLogs(habitId: String): Map<String, HabitDayState> {
+        return _logsMap.value[habitId] ?: emptyMap()
+    }
+
+    fun setHabitDayState(habitId: String, date: LocalDate, state: HabitDayState) {
+        val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val currentLogs = _logsMap.value.toMutableMap()
+        val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
+
+        if (state == HabitDayState.UNMARKED) {
+            habitDates.remove(dateStr)
+        } else {
+            habitDates[dateStr] = state
+        }
+        currentLogs[habitId] = habitDates
+        _logsMap.value = currentLogs
+
+        persistData()
+        recomputeAllStats()
+
+        // Sync to Supabase
+        val userCode = AuthManager.getUserCode() ?: "DEFAULT"
+        scope.launch {
+            if (state == HabitDayState.UNMARKED) {
+                SupabaseClient.deleteHabitLog(habitId, dateStr)
+            } else {
+                val logDto = HabitLogDto(
+                    id = "${habitId}_${dateStr}",
+                    habitId = habitId,
+                    userCode = userCode,
+                    date = dateStr,
+                    state = state.name,
+                    value = null,
+                    createdAt = System.currentTimeMillis()
+                )
+                SupabaseClient.upsertHabitLog(logDto)
             }
         }
     }
