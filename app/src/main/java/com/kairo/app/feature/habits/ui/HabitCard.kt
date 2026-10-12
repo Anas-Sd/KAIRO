@@ -21,10 +21,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,7 +57,12 @@ fun HabitCard(
     habitWithStats: HabitWithStats,
     onTitleClick: () -> Unit,
     onDayClick: (LocalDate) -> Unit,
-    onReorderClick: (() -> Unit)? = null,
+    dragHandleModifier: Modifier = Modifier,
+    isBeingDragged: Boolean = false,
+    dragOffsetY: Float = 0f,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onSelectionChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val habit = habitWithStats.habit
@@ -70,33 +78,71 @@ fun HabitCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(KairoSurfaceContainer)
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .border(
+                1.dp,
+                if (isBeingDragged) KairoPrimary else Color.White.copy(alpha = 0.08f),
+                RoundedCornerShape(16.dp)
+            )
+            .padding(horizontal = 10.dp, vertical = 10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // LEFT: 3 dots for reorder / options
-            Box(
-                modifier = Modifier
-                    .padding(end = 6.dp)
-                    .clickable { onReorderClick?.invoke() },
-                contentAlignment = Alignment.Center
+            // LEFT COLUMN: Drag Grabbing Icon + Selection Checkbox below it
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(end = 6.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "Reorder Habit",
-                    tint = Color(0xFF64748B),
-                    modifier = Modifier.size(22.dp)
-                )
+                // Drag Handle
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .then(dragHandleModifier),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DragIndicator,
+                        contentDescription = "Drag to reorder",
+                        tint = if (isBeingDragged) KairoPrimary else Color(0xFF64748B),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // Small Selection Checkbox below the grabbing icon when in select mode
+                if (isSelectionMode) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(if (isSelected) KairoPrimary else Color.White.copy(alpha = 0.05f))
+                            .border(
+                                1.dp,
+                                if (isSelected) KairoPrimary else Color.White.copy(alpha = 0.35f),
+                                RoundedCornerShape(5.dp)
+                            )
+                            .clickable { onSelectionChange(!isSelected) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selected",
+                                tint = Color.Black,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+                }
             }
 
             // MIDDLE: Task Name + Underline + Horizontal Swipable Checkbox Strip
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(end = 8.dp)
+                    .padding(end = 6.dp)
             ) {
                 // Task Name
                 Text(
@@ -118,14 +164,14 @@ fun HabitCard(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Bottom Swipable Checkbox Strip
+                // Bottom Swipable Compact Date Strip
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(scrollState),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     habitWithStats.days.forEach { dayInfo ->
@@ -249,10 +295,10 @@ private fun DayCheckboxNode(
             .then(
                 if (dayInfo.isToday) {
                     Modifier
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(8.dp))
                         .background(KairoPrimary.copy(alpha = 0.08f))
-                        .border(1.dp, KairoPrimary.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 3.dp, vertical = 2.dp)
+                        .border(1.dp, KairoPrimary.copy(alpha = 0.30f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 2.dp, vertical = 2.dp)
                 } else {
                     Modifier.padding(horizontal = 1.dp, vertical = 2.dp)
                 }
@@ -276,33 +322,33 @@ private fun DayCheckboxNode(
             )
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(3.dp))
 
-        // Checkbox Box (Rounded square matching wireframe)
+        // Checkbox Box (Compact size: 21.dp with small indicator icons)
         Box(
             modifier = Modifier
-                .size(26.dp)
+                .size(21.dp)
                 .scale(scaleAnim)
-                .clip(RoundedCornerShape(7.dp))
+                .clip(RoundedCornerShape(6.dp))
                 .then(
                     when (dayInfo.state) {
                         HabitDayState.DONE -> {
                             Modifier
                                 .background(KairoSecondary.copy(alpha = 0.20f))
-                                .border(1.5.dp, KairoSecondary, RoundedCornerShape(7.dp))
+                                .border(1.2.dp, KairoSecondary, RoundedCornerShape(6.dp))
                         }
                         HabitDayState.MISSED -> {
                             Modifier
                                 .background(Color(0xFFF43F5E).copy(alpha = 0.12f))
-                                .border(1.5.dp, Color(0xFFFB7185).copy(alpha = 0.6f), RoundedCornerShape(7.dp))
+                                .border(1.2.dp, Color(0xFFFB7185).copy(alpha = 0.6f), RoundedCornerShape(6.dp))
                         }
                         HabitDayState.UNMARKED -> {
                             Modifier
-                                .background(Color.White.copy(alpha = 0.04f))
+                                .background(Color.White.copy(alpha = 0.03f))
                                 .border(
-                                    1.2.dp,
-                                    if (dayInfo.isToday) KairoPrimary.copy(alpha = 0.60f) else Color.White.copy(alpha = 0.18f),
-                                    RoundedCornerShape(7.dp)
+                                    1.dp,
+                                    if (dayInfo.isToday) KairoPrimary.copy(alpha = 0.60f) else Color.White.copy(alpha = 0.15f),
+                                    RoundedCornerShape(6.dp)
                                 )
                         }
                     }
@@ -319,7 +365,7 @@ private fun DayCheckboxNode(
                         imageVector = Icons.Default.Check,
                         contentDescription = "Done",
                         tint = KairoSecondary,
-                        modifier = Modifier.size(15.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                 }
                 HabitDayState.MISSED -> {
@@ -327,7 +373,7 @@ private fun DayCheckboxNode(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Missed",
                         tint = Color(0xFFFB7185),
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(12.dp)
                     )
                 }
                 HabitDayState.UNMARKED -> {

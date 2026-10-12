@@ -359,6 +359,92 @@ object HabitRepository {
         }
     }
 
+    fun reorderHabitsByIds(orderedIds: List<String>) {
+        val current = _habitsList.value
+        val map = current.associateBy { it.id }
+        val reordered = orderedIds.mapNotNull { map[it] }
+        val finalOrder = if (reordered.size == current.size) reordered else {
+            val missing = current.filter { !orderedIds.contains(it.id) }
+            reordered + missing
+        }
+        val reindexed = finalOrder.mapIndexed { idx, h -> h.copy(position = idx) }
+        _habitsList.value = reindexed
+        persistData()
+        recomputeAllStats()
+
+        scope.launch {
+            reindexed.forEach { h ->
+                val dto = HabitDto(
+                    id = h.id,
+                    userCode = h.userCode,
+                    title = h.title,
+                    type = h.type.name,
+                    targetValue = h.targetValue,
+                    targetUnit = h.targetUnit,
+                    repeatType = h.repeatType.name,
+                    repeatDays = h.repeatDays.joinToString(","),
+                    weeklyTargetCount = h.weeklyTargetCount,
+                    reminderEnabled = h.reminderEnabled,
+                    reminderTime = h.reminderTime,
+                    reminderToneUri = h.reminderToneUri,
+                    reminderToneTitle = h.reminderToneTitle,
+                    position = h.position,
+                    createdAt = h.createdAt,
+                    updatedAt = h.updatedAt
+                )
+                SupabaseClient.upsertHabit(dto)
+            }
+        }
+    }
+
+    fun completeHabitsToday(habitIds: Set<String>) {
+        val today = LocalDate.now()
+        val dateStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val currentLogs = _logsMap.value.toMutableMap()
+        val userCode = AuthManager.getUserCode() ?: "DEFAULT"
+
+        habitIds.forEach { hId ->
+            val habitDates = currentLogs[hId]?.toMutableMap() ?: mutableMapOf()
+            habitDates[dateStr] = HabitDayState.DONE
+            currentLogs[hId] = habitDates
+
+            scope.launch {
+                val logDto = HabitLogDto(
+                    id = "${hId}_${dateStr}",
+                    habitId = hId,
+                    userCode = userCode,
+                    date = dateStr,
+                    state = HabitDayState.DONE.name,
+                    value = null,
+                    createdAt = System.currentTimeMillis()
+                )
+                SupabaseClient.upsertHabitLog(logDto)
+            }
+        }
+
+        _logsMap.value = currentLogs
+        persistData()
+        recomputeAllStats()
+    }
+
+    fun deleteHabits(habitIds: Set<String>) {
+        if (habitIds.isEmpty()) return
+        val list = _habitsList.value.filter { !habitIds.contains(it.id) }
+        val logs = _logsMap.value.toMutableMap().apply {
+            habitIds.forEach { remove(it) }
+        }
+        _habitsList.value = list
+        _logsMap.value = logs
+        persistData()
+        recomputeAllStats()
+
+        scope.launch {
+            habitIds.forEach { id ->
+                SupabaseClient.deleteHabit(id)
+            }
+        }
+    }
+
     /**
      * Cycles day state: UNMARKED -> DONE -> MISSED -> UNMARKED
      */

@@ -1,7 +1,10 @@
 package com.kairo.app.feature.habits.ui
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,27 +15,42 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Swipe
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,7 +60,11 @@ import com.kairo.app.ui.components.AppHeader
 import com.kairo.app.ui.components.SettingsDialog
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoError
+import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoPrimaryContainer
+import com.kairo.app.ui.theme.KairoSecondary
+import com.kairo.app.ui.theme.KairoSurfaceContainer
+import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import java.time.LocalDate
 
 @Composable
@@ -51,6 +73,7 @@ fun HabitsScreen(
 ) {
     val habitsWithStats by HabitRepository.habitsWithStats.collectAsState()
     val disciplineOverview by HabitRepository.disciplineOverview.collectAsState()
+    val context = LocalContext.current
 
     var selectedHabitForDetail by remember { mutableStateOf<HabitWithStats?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -60,19 +83,89 @@ fun HabitsScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
 
+    // Selection mode state
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedHabitIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showCompleteConfirmDialog by remember { mutableStateOf(false) }
+
+    // Drag-to-reorder state
+    var draggingHabitId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var localReorderList by remember { mutableStateOf<List<HabitWithStats>?>(null) }
+
     // Filter habits according to search query
-    val filteredHabits = remember(habitsWithStats, searchQuery) {
+    val activeList = if (draggingHabitId != null && localReorderList != null) {
+        localReorderList!!
+    } else habitsWithStats
+
+    val filteredHabits = remember(activeList, searchQuery) {
         if (searchQuery.isBlank()) {
-            habitsWithStats
+            activeList
         } else {
-            habitsWithStats.filter {
+            activeList.filter {
                 it.habit.title.contains(searchQuery.trim(), ignoreCase = true)
             }
         }
     }
 
+    fun buildDragHandleModifier(habitItem: HabitWithStats, currentList: List<HabitWithStats>): Modifier {
+        return Modifier.pointerInput(habitItem.habit.id) {
+            detectDragGestures(
+                onDragStart = {
+                    draggingHabitId = habitItem.habit.id
+                    dragOffsetY = 0f
+                    localReorderList = currentList
+                },
+                onDrag = { change, dragAmount ->
+                    change.consume()
+                    dragOffsetY += dragAmount.y
+                    val list = localReorderList
+                    val currentId = draggingHabitId
+                    if (list != null && currentId != null) {
+                        val currentIndex = list.indexOfFirst { it.habit.id == currentId }
+                        val itemThreshold = 100f
+                        if (dragOffsetY > itemThreshold && currentIndex in 0 until list.lastIndex) {
+                            val mutable = list.toMutableList()
+                            val targetIndex = currentIndex + 1
+                            val item = mutable.removeAt(currentIndex)
+                            mutable.add(targetIndex, item)
+                            localReorderList = mutable
+                            dragOffsetY -= itemThreshold
+                        } else if (dragOffsetY < -itemThreshold && currentIndex > 0) {
+                            val mutable = list.toMutableList()
+                            val targetIndex = currentIndex - 1
+                            val item = mutable.removeAt(currentIndex)
+                            mutable.add(targetIndex, item)
+                            localReorderList = mutable
+                            dragOffsetY += itemThreshold
+                        }
+                    }
+                },
+                onDragEnd = {
+                    localReorderList?.let { reordered ->
+                        HabitRepository.reorderHabitsByIds(reordered.map { it.habit.id })
+                    }
+                    draggingHabitId = null
+                    dragOffsetY = 0f
+                    localReorderList = null
+                },
+                onDragCancel = {
+                    draggingHabitId = null
+                    dragOffsetY = 0f
+                    localReorderList = null
+                }
+            )
+        }
+    }
+
     // Back button handling
-    BackHandler(enabled = isSearchActive) {
+    BackHandler(enabled = isSelectionMode) {
+        isSelectionMode = false
+        selectedHabitIds = emptySet()
+    }
+
+    BackHandler(enabled = !isSelectionMode && isSearchActive) {
         isSearchActive = false
         searchQuery = ""
     }
@@ -103,47 +196,104 @@ fun HabitsScreen(
         return
     }
 
-    // Main Habits List Screen
+    // Main Habits List Screen - NO statusBarsPadding so it matches Tasks exactly
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(KairoBackground)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
+            modifier = Modifier.fillMaxSize()
         ) {
-            // Working Header from tasks (Anas + Synced cloud pill + Date + Search + 3 dots + Settings)
-            AppHeader(
-                searchQuery = searchQuery,
-                isSearchActive = isSearchActive,
-                onSearchQueryChange = { searchQuery = it },
-                onToggleSearch = {
-                    isSearchActive = !isSearchActive
-                    if (!isSearchActive) searchQuery = ""
-                },
-                onCloseSearch = {
-                    isSearchActive = false
-                    searchQuery = ""
-                },
-                searchPlaceholder = "Search habits...",
-                onSettingsClick = { showSettingsDialog = true },
-                moreMenuContent = { dismissMenu ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = "Refresh Habits",
-                                fontWeight = FontWeight.Medium
+            // Top Header: Selection Mode vs Normal AppHeader
+            if (isSelectionMode) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .background(KairoBackground)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        IconButton(onClick = {
+                            isSelectionMode = false
+                            selectedHabitIds = emptySet()
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Cancel selection",
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
-                        },
-                        onClick = {
-                            dismissMenu()
-                            HabitRepository.fetchFromSupabase()
                         }
-                    )
+                        Text(
+                            text = if (selectedHabitIds.isEmpty()) "Select habits" else "${selectedHabitIds.size} selected",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    // Select All / Deselect All
+                    TextButton(onClick = {
+                        selectedHabitIds = if (selectedHabitIds.size == habitsWithStats.size) {
+                            emptySet()
+                        } else {
+                            habitsWithStats.map { it.habit.id }.toSet()
+                        }
+                    }) {
+                        Text(
+                            text = if (selectedHabitIds.size == habitsWithStats.size) "Deselect All" else "Select All",
+                            color = KairoPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                    }
                 }
-            )
+            } else {
+                AppHeader(
+                    searchQuery = searchQuery,
+                    isSearchActive = isSearchActive,
+                    onSearchQueryChange = { searchQuery = it },
+                    onToggleSearch = {
+                        isSearchActive = !isSearchActive
+                        if (!isSearchActive) searchQuery = ""
+                    },
+                    onCloseSearch = {
+                        isSearchActive = false
+                        searchQuery = ""
+                    },
+                    searchPlaceholder = "Search habits...",
+                    onSettingsClick = { showSettingsDialog = true },
+                    moreMenuContent = { dismissMenu ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "Select",
+                                    fontWeight = FontWeight.Medium
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.SelectAll,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                dismissMenu()
+                                isSelectionMode = true
+                                selectedHabitIds = emptySet()
+                            }
+                        )
+                    }
+                )
+            }
 
             // Scrollable Content
             LazyColumn(
@@ -214,42 +364,213 @@ fun HabitsScreen(
                         items = filteredHabits,
                         key = { it.habit.id }
                     ) { item ->
+                        val isBeingDragged = (item.habit.id == draggingHabitId)
                         HabitCard(
                             habitWithStats = item,
                             onTitleClick = {
-                                selectedHabitForDetail = item
+                                if (isSelectionMode) {
+                                    val isSel = selectedHabitIds.contains(item.habit.id)
+                                    selectedHabitIds = if (isSel) selectedHabitIds - item.habit.id else selectedHabitIds + item.habit.id
+                                } else {
+                                    selectedHabitForDetail = item
+                                }
                             },
                             onDayClick = { date ->
                                 HabitRepository.toggleHabitDay(item.habit.id, date)
+                            },
+                            dragHandleModifier = buildDragHandleModifier(item, filteredHabits),
+                            isBeingDragged = isBeingDragged,
+                            dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                            isSelectionMode = isSelectionMode,
+                            isSelected = selectedHabitIds.contains(item.habit.id),
+                            onSelectionChange = { checked ->
+                                selectedHabitIds = if (checked) selectedHabitIds + item.habit.id else selectedHabitIds - item.habit.id
                             }
                         )
                     }
                 }
 
-                // Bottom padding for FAB & BottomBar
+                // Bottom padding for FAB & Selection bar
                 item {
-                    Spacer(modifier = Modifier.height(84.dp))
+                    Spacer(modifier = Modifier.height(96.dp))
                 }
             }
         }
 
-        // Floating Action Button (+)
-        FloatingActionButton(
-            onClick = { showCreateDialog = true },
-            containerColor = KairoPrimaryContainer,
-            contentColor = Color.White,
-            shape = CircleShape,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 16.dp)
-                .size(56.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Create Habit",
-                modifier = Modifier.size(28.dp)
-            )
+        // Selection Bottom Action Bar (Complete & Delete)
+        if (isSelectionMode) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = KairoSurfaceContainerHigh,
+                tonalElevation = 8.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${selectedHabitIds.size} selected",
+                        color = Color.White,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // Complete Button
+                        Button(
+                            onClick = {
+                                if (selectedHabitIds.isEmpty()) {
+                                    Toast.makeText(context, "No habits selected", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showCompleteConfirmDialog = true
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = KairoSecondary.copy(alpha = 0.2f)),
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.5f))
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null, tint = KairoSecondary, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Complete", color = KairoSecondary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+
+                        // Delete Button
+                        Button(
+                            onClick = {
+                                if (selectedHabitIds.isEmpty()) {
+                                    Toast.makeText(context, "No habits selected", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showDeleteConfirmDialog = true
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = KairoError.copy(alpha = 0.2f)),
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, KairoError.copy(alpha = 0.5f))
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, tint = KairoError, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Delete", color = KairoError, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        } else {
+            // Floating Action Button (+) when not in selection mode
+            FloatingActionButton(
+                onClick = { showCreateDialog = true },
+                containerColor = KairoPrimaryContainer,
+                contentColor = Color.White,
+                shape = CircleShape,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 16.dp)
+                    .size(56.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Create Habit",
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         }
+    }
+
+    // Batch Complete Warning Dialog
+    if (showCompleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showCompleteConfirmDialog = false },
+            title = {
+                Text(
+                    text = "Complete ${selectedHabitIds.size} habit${if (selectedHabitIds.size > 1) "s" else ""} today?",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "This will mark all ${selectedHabitIds.size} selected habit(s) as completed for today.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val count = selectedHabitIds.size
+                        HabitRepository.completeHabitsToday(selectedHabitIds)
+                        isSelectionMode = false
+                        selectedHabitIds = emptySet()
+                        showCompleteConfirmDialog = false
+                        Toast.makeText(context, "$count habit(s) completed today", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text(
+                        text = "Yes, Complete",
+                        color = KairoSecondary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCompleteConfirmDialog = false }) {
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurface)
+                }
+            },
+            containerColor = KairoSurfaceContainerHigh,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    // Batch Delete Warning Dialog
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = {
+                Text(
+                    text = "Delete ${selectedHabitIds.size} habit${if (selectedHabitIds.size > 1) "s" else ""}?",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "You are deleting ${selectedHabitIds.size} habit${if (selectedHabitIds.size > 1) "s" else ""}. Are you sure you want to delete them permanently from Supabase?",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val count = selectedHabitIds.size
+                        HabitRepository.deleteHabits(selectedHabitIds)
+                        isSelectionMode = false
+                        selectedHabitIds = emptySet()
+                        showDeleteConfirmDialog = false
+                        Toast.makeText(context, "$count habit(s) deleted", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text(
+                        text = "Yes, Delete",
+                        color = KairoError,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurface)
+                }
+            },
+            containerColor = KairoSurfaceContainerHigh,
+            shape = RoundedCornerShape(20.dp)
+        )
     }
 
     // Create Habit Dialog

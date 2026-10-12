@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,7 +33,6 @@ fun ListsScreen(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxSize()
             .background(KairoBackground)
-            .statusBarsPadding()
     ) {
         AppHeader(
             searchQuery = searchQuery,
@@ -73,7 +71,6 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxSize()
             .background(KairoBackground)
-            .statusBarsPadding()
     ) {
         AppHeader(
             searchQuery = searchQuery,
@@ -112,7 +109,6 @@ fun AnalyticsScreen(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxSize()
             .background(KairoBackground)
-            .statusBarsPadding()
     ) {
         AppHeader(
             searchQuery = searchQuery,

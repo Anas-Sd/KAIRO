@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,9 +45,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kairo.app.data.auth.AuthManager
 import com.kairo.app.data.sync.SyncManager
+import com.kairo.app.feature.habits.data.HabitRepository
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoSecondary
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -68,6 +72,7 @@ fun AppHeader(
     val pendingSyncCount by SyncManager.pendingSyncCount.collectAsState()
     val displayName = session?.name ?: "Anas"
     val currentDateStr = SimpleDateFormat("EEEE, MMM d", Locale.getDefault()).format(Date())
+    val coroutineScope = rememberCoroutineScope()
 
     var showMenu by remember { mutableStateOf(false) }
 
@@ -158,12 +163,12 @@ fun AppHeader(
                 )
             }
 
-            // Right: Search Icon, 3-dots Menu Icon, Settings Icon
+            // Right: 1. Search -> 2. Settings -> 3. 3-dots Menu (Overall Refresh / Actions)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Search button
+                // 1. Search button
                 IconButton(onClick = onToggleSearch) {
                     Icon(
                         imageVector = Icons.Default.Search,
@@ -172,7 +177,16 @@ fun AppHeader(
                     )
                 }
 
-                // 3-dots Menu button
+                // 2. Settings button
+                IconButton(onClick = onSettingsClick) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // 3. 3-dots Menu button (Positioned on the far right of Settings)
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         Icon(
@@ -182,23 +196,38 @@ fun AppHeader(
                         )
                     }
 
-                    if (moreMenuContent != null) {
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            moreMenuContent { showMenu = false }
-                        }
-                    }
-                }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        // Global Overall Refresh (syncs tasks, habits, and cloud)
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "Refresh",
+                                    fontWeight = FontWeight.Medium
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = null,
+                                    tint = KairoPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                coroutineScope.launch {
+                                    SyncManager.performSync(forceCheckNetwork = true)
+                                    HabitRepository.fetchFromSupabase()
+                                }
+                            }
+                        )
 
-                // Settings button
-                IconButton(onClick = onSettingsClick) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Settings",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                        // Additional menu items if passed (e.g. Select Mode)
+                        moreMenuContent?.invoke { showMenu = false }
+                    }
                 }
             }
         }
