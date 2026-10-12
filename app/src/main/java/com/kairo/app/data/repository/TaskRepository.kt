@@ -265,6 +265,13 @@ object TaskRepository {
         }
     }
 
+    fun completeTasks(taskIds: Set<String>) {
+        if (taskIds.isEmpty()) return
+        taskIds.forEach { id ->
+            markTaskCompleted(id)
+        }
+    }
+
     fun markTaskOverdue(taskId: String) {
         runCatching {
             AlarmScheduler.cancelAlarm(KairoApplication.instance, taskId)

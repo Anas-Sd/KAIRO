@@ -2,7 +2,9 @@ package com.kairo.app.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -78,15 +80,28 @@ fun SectionHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (showCheckbox) {
-                Checkbox(
-                    checked = isChecked,
-                    onCheckedChange = onCheckedChange,
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = KairoPrimary,
-                        uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    modifier = Modifier.size(24.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(if (isChecked) KairoPrimary else Color.White.copy(alpha = 0.05f))
+                        .border(
+                            1.dp,
+                            if (isChecked) KairoPrimary else Color.White.copy(alpha = 0.35f),
+                            RoundedCornerShape(5.dp)
+                        )
+                        .clickable { onCheckedChange?.invoke(!isChecked) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isChecked) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Selected",
+                            tint = Color.Black,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
             }
             when (sectionType) {
                 SectionType.SNOOZED -> {

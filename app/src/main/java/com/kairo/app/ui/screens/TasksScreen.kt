@@ -28,11 +28,15 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.ui.graphics.Color
 import com.kairo.app.data.sync.SyncManager
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
@@ -42,7 +46,10 @@ import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.BorderStroke
+import com.kairo.app.ui.components.AppHeader
 import com.kairo.app.ui.theme.KairoError
 import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import androidx.compose.material3.OutlinedTextField
@@ -112,6 +119,7 @@ fun TasksScreen(
     var selectedTaskIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteWarningDialog by remember { mutableStateOf(false) }
+    var showCompleteWarningDialog by remember { mutableStateOf(false) }
 
     // Back button handling:
     // 0. If in selection mode, exit selection mode
@@ -201,7 +209,8 @@ fun TasksScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp),
+                                .height(56.dp)
+                                .background(KairoBackground),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -227,200 +236,54 @@ fun TasksScreen(
                                 )
                             }
 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        if (selectedTaskIds.isEmpty()) {
-                                            Toast.makeText(context, "No tasks selected", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            showDeleteWarningDialog = true
-                                        }
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Delete selected tasks",
-                                        tint = if (selectedTaskIds.isNotEmpty()) KairoError else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                    )
+                            // Select All / Deselect All
+                            TextButton(onClick = {
+                                selectedTaskIds = if (selectedTaskIds.size == uiState.allTasks.size) {
+                                    emptySet()
+                                } else {
+                                    uiState.allTasks.map { it.id }.toSet()
                                 }
+                            }) {
+                                Text(
+                                    text = if (selectedTaskIds.size == uiState.allTasks.size) "Deselect All" else "Select All",
+                                    color = KairoPrimary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp
+                                )
                             }
                         }
                     } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            // Title and Date
-                            Column {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Text(
-                                        text = displayName,
-                                        style = MaterialTheme.typography.headlineSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-
-                                    // Connection & Sync Status Pill
-                                    val pillBg = when {
-                                        isSyncing -> KairoPrimary.copy(alpha = 0.15f)
-                                        !isOnline -> Color(0xFFF59E0B).copy(alpha = 0.15f)
-                                        else -> KairoSecondary.copy(alpha = 0.12f)
+                        AppHeader(
+                            searchQuery = uiState.searchQuery,
+                            isSearchActive = uiState.isSearchActive,
+                            onSearchQueryChange = { viewModel.updateSearch(it) },
+                            onToggleSearch = { viewModel.toggleSearchBar() },
+                            onCloseSearch = { viewModel.closeSearchBar() },
+                            searchPlaceholder = "Search tasks...",
+                            onSettingsClick = { showSettingsDialog = true },
+                            moreMenuContent = { dismissMenu ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = "Select",
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.SelectAll,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        dismissMenu()
+                                        isSelectionMode = true
+                                        selectedTaskIds = emptySet()
                                     }
-                                    val pillBorder = when {
-                                        isSyncing -> KairoPrimary.copy(alpha = 0.4f)
-                                        !isOnline -> Color(0xFFF59E0B).copy(alpha = 0.4f)
-                                        else -> KairoSecondary.copy(alpha = 0.35f)
-                                    }
-                                    val pillTint = when {
-                                        isSyncing -> KairoPrimary
-                                        !isOnline -> Color(0xFFF59E0B)
-                                        else -> KairoSecondary
-                                    }
-                                    val pillIcon = when {
-                                        isSyncing -> Icons.Default.Sync
-                                        !isOnline -> Icons.Default.CloudOff
-                                        else -> Icons.Default.CloudDone
-                                    }
-                                    val pillText = when {
-                                        isSyncing -> "Syncing..."
-                                        !isOnline -> if (pendingSyncCount > 0) "Offline ($pendingSyncCount)" else "Offline"
-                                        pendingSyncCount > 0 -> "Syncing ($pendingSyncCount)"
-                                        else -> "Synced"
-                                    }
-
-                                    Box(
-                                        modifier = Modifier
-                                            .background(color = pillBg, shape = RoundedCornerShape(100.dp))
-                                            .border(1.dp, pillBorder, RoundedCornerShape(100.dp))
-                                            .clickable { showSettingsDialog = true }
-                                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = pillIcon,
-                                                contentDescription = pillText,
-                                                tint = pillTint,
-                                                modifier = Modifier.size(13.dp)
-                                            )
-                                            Text(
-                                                text = pillText,
-                                                color = pillTint,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Text(
-                                    currentDateStr,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-
-                            // Action Icons
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                IconButton(onClick = { viewModel.toggleSearchBar() }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Search,
-                                        contentDescription = "Search",
-                                        tint = if (uiState.isSearchActive) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-
-                                // 3 dots button on left of settings button
-                                Box {
-                                    IconButton(onClick = { showMenu = true }) {
-                                        Icon(
-                                            imageVector = Icons.Default.MoreVert,
-                                            contentDescription = "More options",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-
-                                    DropdownMenu(
-                                        expanded = showMenu,
-                                        onDismissRequest = { showMenu = false }
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    text = "Delete",
-                                                    color = KairoError,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                            },
-                                            leadingIcon = {
-                                                Icon(
-                                                    imageVector = Icons.Default.Delete,
-                                                    contentDescription = null,
-                                                    tint = KairoError
-                                                )
-                                            },
-                                            onClick = {
-                                                showMenu = false
-                                                isSelectionMode = true
-                                                selectedTaskIds = emptySet()
-                                            }
-                                        )
-                                    }
-                                }
-
-                                IconButton(onClick = {
-                                    showSettingsDialog = true
-                                }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Settings,
-                                        contentDescription = "Settings",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Expandable Search Bar
-                    AnimatedVisibility(visible = uiState.isSearchActive) {
-                        OutlinedTextField(
-                            value = uiState.searchQuery,
-                            onValueChange = { viewModel.updateSearch(it) },
-                            placeholder = { Text("Search tasks...") },
-                            trailingIcon = {
-                                if (uiState.searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { viewModel.updateSearch("") }) {
-                                        Icon(
-                                            Icons.Default.Close,
-                                            contentDescription = "Clear",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = KairoPrimary,
-                                unfocusedBorderColor = KairoOutlineVariant.copy(alpha = 0.4f),
-                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp)
                         )
                     }
 
@@ -507,68 +370,32 @@ fun TasksScreen(
                             } else null
                             val isBeingDragged = (task.id == draggingTaskId)
 
-                            if (isSelectionMode) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = selectedTaskIds.contains(task.id),
-                                        onCheckedChange = { checked ->
-                                            selectedTaskIds = if (checked) selectedTaskIds + task.id else selectedTaskIds - task.id
-                                        },
-                                        colors = CheckboxDefaults.colors(
-                                            checkedColor = KairoPrimary,
-                                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                        ),
-                                        modifier = Modifier.padding(end = 4.dp)
-                                    )
-                                    TaskCard(
-                                        task = task,
-                                        hasSubtasks = hasSubtasks,
-                                        subtaskProgress = subtaskProgress,
-                                        parentTitle = parentTitle,
-                                        onToggleCompletion = {
-                                            viewModel.toggleTask(task.id)
-                                            val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                        },
-                                        onDeleteTask = { viewModel.openDeleteConfirm(task) },
-                                        onShowDetails = { viewModel.showTaskDetails(task) },
-                                        onEditTask = { viewModel.showEditTask(task) },
-                                        onAddSubtask = { viewModel.openAddSubtask(task) },
-                                        onAdjustParent = { viewModel.openAdjustParent(task) },
-                                        onDrillDown = { viewModel.drillDown(task) },
-                                        onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
-                                        dragHandleModifier = Modifier,
-                                        isBeingDragged = isBeingDragged,
-                                        dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                            TaskCard(
+                                task = task,
+                                hasSubtasks = hasSubtasks,
+                                subtaskProgress = subtaskProgress,
+                                parentTitle = parentTitle,
+                                onToggleCompletion = {
+                                    viewModel.toggleTask(task.id)
+                                    val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                },
+                                onDeleteTask = { viewModel.openDeleteConfirm(task) },
+                                onShowDetails = { viewModel.showTaskDetails(task) },
+                                onEditTask = { viewModel.showEditTask(task) },
+                                onAddSubtask = { viewModel.openAddSubtask(task) },
+                                onAdjustParent = { viewModel.openAdjustParent(task) },
+                                onDrillDown = { viewModel.drillDown(task) },
+                                onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
+                                dragHandleModifier = Modifier,
+                                isBeingDragged = isBeingDragged,
+                                dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedTaskIds.contains(task.id),
+                                onSelectionChange = { checked ->
+                                    selectedTaskIds = if (checked) selectedTaskIds + task.id else selectedTaskIds - task.id
                                 }
-                            } else {
-                                TaskCard(
-                                    task = task,
-                                    hasSubtasks = hasSubtasks,
-                                    subtaskProgress = subtaskProgress,
-                                    parentTitle = parentTitle,
-                                    onToggleCompletion = {
-                                        viewModel.toggleTask(task.id)
-                                        val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    },
-                                    onDeleteTask = { viewModel.openDeleteConfirm(task) },
-                                    onShowDetails = { viewModel.showTaskDetails(task) },
-                                    onEditTask = { viewModel.showEditTask(task) },
-                                    onAddSubtask = { viewModel.openAddSubtask(task) },
-                                    onAdjustParent = { viewModel.openAdjustParent(task) },
-                                    onDrillDown = { viewModel.drillDown(task) },
-                                    onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
-                                    dragHandleModifier = Modifier,
-                                    isBeingDragged = isBeingDragged,
-                                    dragOffsetY = if (isBeingDragged) dragOffsetY else 0f
-                                )
-                            }
+                            )
                         }
                     }
                 }
@@ -605,71 +432,33 @@ fun TasksScreen(
                             } else null
                             val isBeingDragged = (task.id == draggingTaskId)
 
-                            if (isSelectionMode) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = selectedTaskIds.contains(task.id),
-                                        onCheckedChange = { checked ->
-                                            selectedTaskIds = if (checked) selectedTaskIds + task.id else selectedTaskIds - task.id
-                                        },
-                                        colors = CheckboxDefaults.colors(
-                                            checkedColor = KairoPrimary,
-                                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                        ),
-                                        modifier = Modifier.padding(end = 4.dp)
-                                    )
-                                    TaskCard(
-                                        task = task,
-                                        hasSubtasks = hasSubtasks,
-                                        subtaskProgress = subtaskProgress,
-                                        parentTitle = parentTitle,
-                                        onToggleCompletion = {
-                                            viewModel.toggleTask(task.id)
-                                            val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                        },
-                                        onDeleteTask = { viewModel.openDeleteConfirm(task) },
-                                        onShowDetails = { viewModel.showTaskDetails(task) },
-                                        onEditTask = { viewModel.showEditTask(task) },
-                                        onAddSubtask = { viewModel.openAddSubtask(task) },
-                                        onAdjustParent = { viewModel.openAdjustParent(task) },
-                                        onDrillDown = { viewModel.drillDown(task) },
-                                        onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
-                                        dragHandleModifier = buildDragHandleModifier(task, overdueList),
-                                        isBeingDragged = isBeingDragged,
-                                        dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .animateItem()
-                                    )
-                                }
-                            } else {
-                                TaskCard(
-                                    task = task,
-                                    hasSubtasks = hasSubtasks,
-                                    subtaskProgress = subtaskProgress,
-                                    parentTitle = parentTitle,
-                                    onToggleCompletion = {
-                                        viewModel.toggleTask(task.id)
-                                        val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    },
-                                    onDeleteTask = { viewModel.openDeleteConfirm(task) },
-                                    onShowDetails = { viewModel.showTaskDetails(task) },
-                                    onEditTask = { viewModel.showEditTask(task) },
-                                    onAddSubtask = { viewModel.openAddSubtask(task) },
-                                    onAdjustParent = { viewModel.openAdjustParent(task) },
-                                    onDrillDown = { viewModel.drillDown(task) },
-                                    onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
-                                    dragHandleModifier = buildDragHandleModifier(task, overdueList),
-                                    isBeingDragged = isBeingDragged,
-                                    dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
-                                    modifier = Modifier.animateItem()
-                                )
-                            }
+                            TaskCard(
+                                task = task,
+                                hasSubtasks = hasSubtasks,
+                                subtaskProgress = subtaskProgress,
+                                parentTitle = parentTitle,
+                                onToggleCompletion = {
+                                    viewModel.toggleTask(task.id)
+                                    val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                },
+                                onDeleteTask = { viewModel.openDeleteConfirm(task) },
+                                onShowDetails = { viewModel.showTaskDetails(task) },
+                                onEditTask = { viewModel.showEditTask(task) },
+                                onAddSubtask = { viewModel.openAddSubtask(task) },
+                                onAdjustParent = { viewModel.openAdjustParent(task) },
+                                onDrillDown = { viewModel.drillDown(task) },
+                                onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
+                                dragHandleModifier = buildDragHandleModifier(task, overdueList),
+                                isBeingDragged = isBeingDragged,
+                                dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedTaskIds.contains(task.id),
+                                onSelectionChange = { checked ->
+                                    selectedTaskIds = if (checked) selectedTaskIds + task.id else selectedTaskIds - task.id
+                                },
+                                modifier = Modifier.animateItem()
+                            )
                         }
                     }
                 }
@@ -706,71 +495,33 @@ fun TasksScreen(
                             } else null
                             val isBeingDragged = (task.id == draggingTaskId)
 
-                            if (isSelectionMode) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = selectedTaskIds.contains(task.id),
-                                        onCheckedChange = { checked ->
-                                            selectedTaskIds = if (checked) selectedTaskIds + task.id else selectedTaskIds - task.id
-                                        },
-                                        colors = CheckboxDefaults.colors(
-                                            checkedColor = KairoPrimary,
-                                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                        ),
-                                        modifier = Modifier.padding(end = 4.dp)
-                                    )
-                                    TaskCard(
-                                        task = task,
-                                        hasSubtasks = hasSubtasks,
-                                        subtaskProgress = subtaskProgress,
-                                        parentTitle = parentTitle,
-                                        onToggleCompletion = {
-                                            viewModel.toggleTask(task.id)
-                                            val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                        },
-                                        onDeleteTask = { viewModel.openDeleteConfirm(task) },
-                                        onShowDetails = { viewModel.showTaskDetails(task) },
-                                        onEditTask = { viewModel.showEditTask(task) },
-                                        onAddSubtask = { viewModel.openAddSubtask(task) },
-                                        onAdjustParent = { viewModel.openAdjustParent(task) },
-                                        onDrillDown = { viewModel.drillDown(task) },
-                                        onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
-                                        dragHandleModifier = buildDragHandleModifier(task, todayList),
-                                        isBeingDragged = isBeingDragged,
-                                        dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .animateItem()
-                                    )
-                                }
-                            } else {
-                                TaskCard(
-                                    task = task,
-                                    hasSubtasks = hasSubtasks,
-                                    subtaskProgress = subtaskProgress,
-                                    parentTitle = parentTitle,
-                                    onToggleCompletion = {
-                                        viewModel.toggleTask(task.id)
-                                        val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    },
-                                    onDeleteTask = { viewModel.openDeleteConfirm(task) },
-                                    onShowDetails = { viewModel.showTaskDetails(task) },
-                                    onEditTask = { viewModel.showEditTask(task) },
-                                    onAddSubtask = { viewModel.openAddSubtask(task) },
-                                    onAdjustParent = { viewModel.openAdjustParent(task) },
-                                    onDrillDown = { viewModel.drillDown(task) },
-                                    onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
-                                    dragHandleModifier = buildDragHandleModifier(task, todayList),
-                                    isBeingDragged = isBeingDragged,
-                                    dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
-                                    modifier = Modifier.animateItem()
-                                )
-                            }
+                            TaskCard(
+                                task = task,
+                                hasSubtasks = hasSubtasks,
+                                subtaskProgress = subtaskProgress,
+                                parentTitle = parentTitle,
+                                onToggleCompletion = {
+                                    viewModel.toggleTask(task.id)
+                                    val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                },
+                                onDeleteTask = { viewModel.openDeleteConfirm(task) },
+                                onShowDetails = { viewModel.showTaskDetails(task) },
+                                onEditTask = { viewModel.showEditTask(task) },
+                                onAddSubtask = { viewModel.openAddSubtask(task) },
+                                onAdjustParent = { viewModel.openAdjustParent(task) },
+                                onDrillDown = { viewModel.drillDown(task) },
+                                onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
+                                dragHandleModifier = buildDragHandleModifier(task, todayList),
+                                isBeingDragged = isBeingDragged,
+                                dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedTaskIds.contains(task.id),
+                                onSelectionChange = { checked ->
+                                    selectedTaskIds = if (checked) selectedTaskIds + task.id else selectedTaskIds - task.id
+                                },
+                                modifier = Modifier.animateItem()
+                            )
                         }
                     }
                 }
@@ -807,71 +558,33 @@ fun TasksScreen(
                             } else null
                             val isBeingDragged = (task.id == draggingTaskId)
 
-                            if (isSelectionMode) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = selectedTaskIds.contains(task.id),
-                                        onCheckedChange = { checked ->
-                                            selectedTaskIds = if (checked) selectedTaskIds + task.id else selectedTaskIds - task.id
-                                        },
-                                        colors = CheckboxDefaults.colors(
-                                            checkedColor = KairoPrimary,
-                                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                        ),
-                                        modifier = Modifier.padding(end = 4.dp)
-                                    )
-                                    TaskCard(
-                                        task = task,
-                                        hasSubtasks = hasSubtasks,
-                                        subtaskProgress = subtaskProgress,
-                                        parentTitle = parentTitle,
-                                        onToggleCompletion = {
-                                            viewModel.toggleTask(task.id)
-                                            val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                        },
-                                        onDeleteTask = { viewModel.openDeleteConfirm(task) },
-                                        onShowDetails = { viewModel.showTaskDetails(task) },
-                                        onEditTask = { viewModel.showEditTask(task) },
-                                        onAddSubtask = { viewModel.openAddSubtask(task) },
-                                        onAdjustParent = { viewModel.openAdjustParent(task) },
-                                        onDrillDown = { viewModel.drillDown(task) },
-                                        onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
-                                        dragHandleModifier = buildDragHandleModifier(task, upcomingList),
-                                        isBeingDragged = isBeingDragged,
-                                        dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .animateItem()
-                                    )
-                                }
-                            } else {
-                                TaskCard(
-                                    task = task,
-                                    hasSubtasks = hasSubtasks,
-                                    subtaskProgress = subtaskProgress,
-                                    parentTitle = parentTitle,
-                                    onToggleCompletion = {
-                                        viewModel.toggleTask(task.id)
-                                        val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    },
-                                    onDeleteTask = { viewModel.openDeleteConfirm(task) },
-                                    onShowDetails = { viewModel.showTaskDetails(task) },
-                                    onEditTask = { viewModel.showEditTask(task) },
-                                    onAddSubtask = { viewModel.openAddSubtask(task) },
-                                    onAdjustParent = { viewModel.openAdjustParent(task) },
-                                    onDrillDown = { viewModel.drillDown(task) },
-                                    onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
-                                    dragHandleModifier = buildDragHandleModifier(task, upcomingList),
-                                    isBeingDragged = isBeingDragged,
-                                    dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
-                                    modifier = Modifier.animateItem()
-                                )
-                            }
+                            TaskCard(
+                                task = task,
+                                hasSubtasks = hasSubtasks,
+                                subtaskProgress = subtaskProgress,
+                                parentTitle = parentTitle,
+                                onToggleCompletion = {
+                                    viewModel.toggleTask(task.id)
+                                    val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                },
+                                onDeleteTask = { viewModel.openDeleteConfirm(task) },
+                                onShowDetails = { viewModel.showTaskDetails(task) },
+                                onEditTask = { viewModel.showEditTask(task) },
+                                onAddSubtask = { viewModel.openAddSubtask(task) },
+                                onAdjustParent = { viewModel.openAdjustParent(task) },
+                                onDrillDown = { viewModel.drillDown(task) },
+                                onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
+                                dragHandleModifier = buildDragHandleModifier(task, upcomingList),
+                                isBeingDragged = isBeingDragged,
+                                dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedTaskIds.contains(task.id),
+                                onSelectionChange = { checked ->
+                                    selectedTaskIds = if (checked) selectedTaskIds + task.id else selectedTaskIds - task.id
+                                },
+                                modifier = Modifier.animateItem()
+                            )
                         }
                     }
                 }
@@ -908,71 +621,33 @@ fun TasksScreen(
                             } else null
                             val isBeingDragged = (task.id == draggingTaskId)
 
-                            if (isSelectionMode) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = selectedTaskIds.contains(task.id),
-                                        onCheckedChange = { checked ->
-                                            selectedTaskIds = if (checked) selectedTaskIds + task.id else selectedTaskIds - task.id
-                                        },
-                                        colors = CheckboxDefaults.colors(
-                                            checkedColor = KairoPrimary,
-                                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                        ),
-                                        modifier = Modifier.padding(end = 4.dp)
-                                    )
-                                    TaskCard(
-                                        task = task,
-                                        hasSubtasks = hasSubtasks,
-                                        subtaskProgress = subtaskProgress,
-                                        parentTitle = parentTitle,
-                                        onToggleCompletion = {
-                                            viewModel.toggleTask(task.id)
-                                            val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                        },
-                                        onDeleteTask = { viewModel.openDeleteConfirm(task) },
-                                        onShowDetails = { viewModel.showTaskDetails(task) },
-                                        onEditTask = { viewModel.showEditTask(task) },
-                                        onAddSubtask = { viewModel.openAddSubtask(task) },
-                                        onAdjustParent = { viewModel.openAdjustParent(task) },
-                                        onDrillDown = { viewModel.drillDown(task) },
-                                        onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
-                                        dragHandleModifier = buildDragHandleModifier(task, completedList),
-                                        isBeingDragged = isBeingDragged,
-                                        dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .animateItem()
-                                    )
-                                }
-                            } else {
-                                TaskCard(
-                                    task = task,
-                                    hasSubtasks = hasSubtasks,
-                                    subtaskProgress = subtaskProgress,
-                                    parentTitle = parentTitle,
-                                    onToggleCompletion = {
-                                        viewModel.toggleTask(task.id)
-                                        val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    },
-                                    onDeleteTask = { viewModel.openDeleteConfirm(task) },
-                                    onShowDetails = { viewModel.showTaskDetails(task) },
-                                    onEditTask = { viewModel.showEditTask(task) },
-                                    onAddSubtask = { viewModel.openAddSubtask(task) },
-                                    onAdjustParent = { viewModel.openAdjustParent(task) },
-                                    onDrillDown = { viewModel.drillDown(task) },
-                                    onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
-                                    dragHandleModifier = buildDragHandleModifier(task, completedList),
-                                    isBeingDragged = isBeingDragged,
-                                    dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
-                                    modifier = Modifier.animateItem()
-                                )
-                            }
+                            TaskCard(
+                                task = task,
+                                hasSubtasks = hasSubtasks,
+                                subtaskProgress = subtaskProgress,
+                                parentTitle = parentTitle,
+                                onToggleCompletion = {
+                                    viewModel.toggleTask(task.id)
+                                    val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                },
+                                onDeleteTask = { viewModel.openDeleteConfirm(task) },
+                                onShowDetails = { viewModel.showTaskDetails(task) },
+                                onEditTask = { viewModel.showEditTask(task) },
+                                onAddSubtask = { viewModel.openAddSubtask(task) },
+                                onAdjustParent = { viewModel.openAdjustParent(task) },
+                                onDrillDown = { viewModel.drillDown(task) },
+                                onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
+                                dragHandleModifier = buildDragHandleModifier(task, completedList),
+                                isBeingDragged = isBeingDragged,
+                                dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedTaskIds.contains(task.id),
+                                onSelectionChange = { checked ->
+                                    selectedTaskIds = if (checked) selectedTaskIds + task.id else selectedTaskIds - task.id
+                                },
+                                modifier = Modifier.animateItem()
+                            )
                         }
                     }
                 }
@@ -1154,7 +829,7 @@ fun TasksScreen(
                     },
                     text = {
                         Text(
-                            text = "You are deleting ${selectedTaskIds.size} task${if (selectedTaskIds.size > 1) "s" else ""}. Are you sure you want to delete them from the database?",
+                            text = "You are deleting ${selectedTaskIds.size} task${if (selectedTaskIds.size > 1) "s" else ""}. Are you sure you want to delete them permanently from the database?",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
@@ -1170,7 +845,7 @@ fun TasksScreen(
                             }
                         ) {
                             Text(
-                                text = "Yes",
+                                text = "Yes, Delete",
                                 color = KairoError,
                                 fontWeight = FontWeight.Bold
                             )
@@ -1181,7 +856,7 @@ fun TasksScreen(
                             onClick = { showDeleteWarningDialog = false }
                         ) {
                             Text(
-                                text = "No",
+                                text = "Cancel",
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -1189,6 +864,123 @@ fun TasksScreen(
                     containerColor = KairoSurfaceContainerHigh,
                     shape = RoundedCornerShape(20.dp)
                 )
+            }
+
+            // Batch Complete Confirmation Dialog
+            if (showCompleteWarningDialog) {
+                AlertDialog(
+                    onDismissRequest = { showCompleteWarningDialog = false },
+                    title = {
+                        Text(
+                            text = "Complete ${selectedTaskIds.size} task${if (selectedTaskIds.size > 1) "s" else ""}?",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "This will mark all ${selectedTaskIds.size} selected task(s) as completed.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val count = selectedTaskIds.size
+                                viewModel.completeTasks(selectedTaskIds)
+                                isSelectionMode = false
+                                selectedTaskIds = emptySet()
+                                showCompleteWarningDialog = false
+                                Toast.makeText(context, "$count task(s) completed", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Text(
+                                text = "Yes, Complete",
+                                color = KairoSecondary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = { showCompleteWarningDialog = false }
+                        ) {
+                            Text(
+                                text = "Cancel",
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    },
+                    containerColor = KairoSurfaceContainerHigh,
+                    shape = RoundedCornerShape(20.dp)
+                )
+            }
+        }
+
+        // Selection Bottom Action Bar (Complete & Delete)
+        if (isSelectionMode) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = KairoSurfaceContainerHigh,
+                tonalElevation = 8.dp,
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${selectedTaskIds.size} selected",
+                        color = Color.White,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // Complete Button
+                        Button(
+                            onClick = {
+                                if (selectedTaskIds.isEmpty()) {
+                                    Toast.makeText(context, "No tasks selected", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showCompleteWarningDialog = true
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = KairoSecondary.copy(alpha = 0.2f)),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.5f))
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null, tint = KairoSecondary, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.size(6.dp))
+                            Text("Complete", color = KairoSecondary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+
+                        // Delete Button
+                        Button(
+                            onClick = {
+                                if (selectedTaskIds.isEmpty()) {
+                                    Toast.makeText(context, "No tasks selected", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showDeleteWarningDialog = true
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = KairoError.copy(alpha = 0.2f)),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, KairoError.copy(alpha = 0.5f))
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, tint = KairoError, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.size(6.dp))
+                            Text("Delete", color = KairoError, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                }
             }
         }
 

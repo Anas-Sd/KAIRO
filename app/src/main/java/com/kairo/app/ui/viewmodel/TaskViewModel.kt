@@ -453,6 +453,13 @@ class TaskViewModel(
         }
     }
 
+    fun completeTasks(taskIds: Set<String>) {
+        if (taskIds.isEmpty()) return
+        viewModelScope.launch {
+            repository.completeTasks(taskIds)
+        }
+    }
+
     // Undo / Done Bar
     fun performUndo() {
         viewModelScope.launch {

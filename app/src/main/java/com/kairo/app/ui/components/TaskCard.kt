@@ -116,6 +116,9 @@ fun TaskCard(
     dragHandleModifier: Modifier = Modifier,
     isBeingDragged: Boolean = false,
     dragOffsetY: Float = 0f,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onSelectionChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -200,47 +203,76 @@ fun TaskCard(
                 .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment = Alignment.Top
         ) {
-            // Left Drag Handle (for reordering tasks up/down)
-            Box(
-                modifier = Modifier
-                    .padding(top = 2.dp, end = 8.dp)
-                    .size(24.dp)
-                    .then(dragHandleModifier),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.DragIndicator,
-                    contentDescription = "Drag to reorder",
-                    tint = if (isBeingDragged) KairoPrimary else Color(0xFF918EA2),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
+            // Left Column: Drag Handle + Checkbox under/next to it
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(end = 10.dp)
             ) {
+                // Drag Handle (for reordering tasks up/down)
                 Box(
                     modifier = Modifier
-                        .padding(top = 2.dp)
-                        .size(24.dp)
-                        .scale(bounceScale.value)
-                        .background(checkboxBg, shape = RoundedCornerShape(8.dp))
-                        .border(
-                            1.dp,
-                            if (isLocallyCompleted) Color.Transparent else KairoOutlineVariant.copy(alpha = 0.45f),
-                            RoundedCornerShape(8.dp)
-                        )
-                        .clickable { handleToggle() },
+                        .size(22.dp)
+                        .then(dragHandleModifier),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isLocallyCompleted) {
-                        Icon(
-                            imageVector = Icons.Default.Done,
-                            contentDescription = "Completed",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
+                    Icon(
+                        imageVector = Icons.Default.DragIndicator,
+                        contentDescription = "Drag to reorder",
+                        tint = if (isBeingDragged) KairoPrimary else Color(0xFF918EA2),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // Small Selection Checkbox below grabbing icon when in select mode
+                if (isSelectionMode) {
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(if (isSelected) KairoPrimary else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f))
+                            .border(
+                                1.dp,
+                                if (isSelected) KairoPrimary else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.35f),
+                                RoundedCornerShape(5.dp)
+                            )
+                            .clickable { onSelectionChange(!isSelected) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Done,
+                                contentDescription = "Selected",
+                                tint = androidx.compose.ui.graphics.Color.Black,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Completion Checkbox (21.dp matching habits)
+                if (!isSelectionMode) {
+                    Box(
+                        modifier = Modifier
+                            .size(21.dp)
+                            .scale(bounceScale.value)
+                            .background(checkboxBg, shape = RoundedCornerShape(6.dp))
+                            .border(
+                                1.dp,
+                                if (isLocallyCompleted) Color.Transparent else KairoOutlineVariant.copy(alpha = 0.45f),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .clickable { handleToggle() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isLocallyCompleted) {
+                            Icon(
+                                imageVector = Icons.Default.Done,
+                                contentDescription = "Completed",
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
                 }
 
@@ -254,8 +286,6 @@ fun TaskCard(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.width(12.dp))
 
             // 2. Middle Content Column: Task Name, Notes, and Equal-Height Capsules
             Column(modifier = Modifier.weight(1f)) {
