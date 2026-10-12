@@ -89,7 +89,7 @@ fun CreateHabitDialog(
 
     var title by remember { mutableStateOf(initialHabit?.title ?: "") }
     var habitType by remember { mutableStateOf(initialHabit?.type ?: HabitType.YES_NO) }
-    var targetValue by remember { mutableIntStateOf(initialHabit?.targetValue ?: 1) }
+    var targetValueText by remember { mutableStateOf((initialHabit?.targetValue ?: 1).toString()) }
     var targetUnit by remember { mutableStateOf(initialHabit?.targetUnit ?: "") }
 
     var repeatType by remember { mutableStateOf(initialHabit?.repeatType ?: HabitRepeatType.EVERYDAY) }
@@ -203,28 +203,79 @@ fun CreateHabitDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedTextField(
-                            value = if (targetValue > 0) targetValue.toString() else "",
-                            onValueChange = {
-                                targetValue = it.toIntOrNull() ?: 1
-                            },
-                            label = { Text("Target", fontSize = 12.sp) },
-                            textStyle = TextStyle(fontSize = 13.sp, color = Color.White),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = KairoPrimary,
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            ),
-                            modifier = Modifier.weight(0.35f)
-                        )
+                        // Stepper + Text input for Target Number
+                        Row(
+                            modifier = Modifier.weight(0.48f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    val current = targetValueText.toIntOrNull() ?: 1
+                                    if (current > 1) {
+                                        targetValueText = (current - 1).toString()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(KairoSurfaceContainerHigh)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Remove,
+                                    contentDescription = "Decrease target",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
 
+                            OutlinedTextField(
+                                value = targetValueText,
+                                onValueChange = { newStr ->
+                                    // Allow numbers only, up to 5 digits, and allow empty string so user can delete and type
+                                    if (newStr.all { it.isDigit() } && newStr.length <= 5) {
+                                        targetValueText = newStr
+                                    }
+                                },
+                                label = { Text("Target", fontSize = 11.sp) },
+                                placeholder = { Text("1", fontSize = 12.sp, color = Color.Gray) },
+                                textStyle = TextStyle(fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.Bold),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = KairoPrimary,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    val current = targetValueText.toIntOrNull() ?: 0
+                                    targetValueText = (current + 1).toString()
+                                },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(KairoSurfaceContainerHigh)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Increase target",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        // Unit input (e.g. glasses, pages, km)
                         OutlinedTextField(
                             value = targetUnit,
                             onValueChange = { targetUnit = it },
-                            label = { Text("Unit (e.g. pages, times)", fontSize = 12.sp) },
+                            label = { Text("Unit", fontSize = 11.sp) },
+                            placeholder = { Text("e.g. glasses", fontSize = 12.sp, color = Color.Gray) },
                             textStyle = TextStyle(fontSize = 13.sp, color = Color.White),
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
@@ -233,7 +284,7 @@ fun CreateHabitDialog(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White
                             ),
-                            modifier = Modifier.weight(0.65f)
+                            modifier = Modifier.weight(0.52f)
                         )
                     }
                 }
@@ -494,10 +545,15 @@ fun CreateHabitDialog(
                                 errorMessage = "Please enter a habit name"
                                 return@Button
                             }
+                            val finalTarget = if (habitType == HabitType.TARGET) {
+                                targetValueText.toIntOrNull()?.coerceAtLeast(1) ?: 1
+                            } else {
+                                1
+                            }
                             onConfirm(
                                 title.trim(),
                                 habitType,
-                                targetValue,
+                                finalTarget,
                                 targetUnit.trim(),
                                 repeatType,
                                 selectedDays.toList().sorted(),
