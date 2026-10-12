@@ -27,14 +27,6 @@ fun ListsScreen(modifier: Modifier = Modifier) {
     )
 }
 
-@Composable
-fun HabitsScreen(modifier: Modifier = Modifier) {
-    PlaceholderScreen(
-        title = "Habits Tracker",
-        subtitle = "Build daily streaks, monitor routines, and hit consistency targets.",
-        modifier = modifier
-    )
-}
 
 @Composable
 fun CalendarScreen(modifier: Modifier = Modifier) {
