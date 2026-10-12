@@ -355,4 +355,131 @@ object SupabaseClient {
             }
         }
     }
+
+    // ==================== HABITS & HABIT LOGS SUPABASE SYNC ====================
+
+    suspend fun getHabits(userCode: String? = com.kairo.app.data.auth.AuthManager.getUserCode()): Result<List<com.kairo.app.feature.habits.data.HabitDto>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = if (!userCode.isNullOrBlank()) {
+                val encoded = java.net.URLEncoder.encode(userCode, "UTF-8")
+                "$SUPABASE_URL/rest/v1/habits?user_code=eq.$encoded&select=*&order=position.asc"
+            } else {
+                "$SUPABASE_URL/rest/v1/habits?select=*&order=position.asc"
+            }
+
+            val request = Request.Builder()
+                .url(url)
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .get()
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                error("Failed to fetch habits: HTTP ${response.code} $body")
+            }
+            json.decodeFromString<List<com.kairo.app.feature.habits.data.HabitDto>>(body)
+        }
+    }
+
+    suspend fun upsertHabit(habitDto: com.kairo.app.feature.habits.data.HabitDto): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val bodyJson = json.encodeToString(habitDto)
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/habits")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Prefer", "resolution=merge-duplicates,return=minimal")
+                .post(bodyJson.toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val err = response.body?.string().orEmpty()
+                error("Failed to upsert habit: HTTP ${response.code} $err")
+            }
+        }
+    }
+
+    suspend fun deleteHabit(habitId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encodedId = java.net.URLEncoder.encode(habitId, "UTF-8")
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/habits?id=eq.$encodedId")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .delete()
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val err = response.body?.string().orEmpty()
+                error("Failed to delete habit: HTTP ${response.code} $err")
+            }
+        }
+    }
+
+    suspend fun getHabitLogs(userCode: String? = com.kairo.app.data.auth.AuthManager.getUserCode()): Result<List<com.kairo.app.feature.habits.data.HabitLogDto>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = if (!userCode.isNullOrBlank()) {
+                val encoded = java.net.URLEncoder.encode(userCode, "UTF-8")
+                "$SUPABASE_URL/rest/v1/habit_logs?user_code=eq.$encoded&select=*"
+            } else {
+                "$SUPABASE_URL/rest/v1/habit_logs?select=*"
+            }
+
+            val request = Request.Builder()
+                .url(url)
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .get()
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                error("Failed to fetch habit logs: HTTP ${response.code} $body")
+            }
+            json.decodeFromString<List<com.kairo.app.feature.habits.data.HabitLogDto>>(body)
+        }
+    }
+
+    suspend fun upsertHabitLog(logDto: com.kairo.app.feature.habits.data.HabitLogDto): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val bodyJson = json.encodeToString(logDto)
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/habit_logs")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Prefer", "resolution=merge-duplicates,return=minimal")
+                .post(bodyJson.toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val err = response.body?.string().orEmpty()
+                error("Failed to upsert habit log: HTTP ${response.code} $err")
+            }
+        }
+    }
+
+    suspend fun deleteHabitLog(habitId: String, date: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encodedHabitId = java.net.URLEncoder.encode(habitId, "UTF-8")
+            val encodedDate = java.net.URLEncoder.encode(date, "UTF-8")
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/habit_logs?habit_id=eq.$encodedHabitId&date=eq.$encodedDate")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .delete()
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val err = response.body?.string().orEmpty()
+                error("Failed to delete habit log: HTTP ${response.code} $err")
+            }
+        }
+    }
 }

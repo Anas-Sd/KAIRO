@@ -14,13 +14,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
@@ -45,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -80,6 +83,7 @@ fun CreateHabitDialog(
     ) -> Unit
 ) {
     val context = LocalContext.current
+    val scrollState = rememberScrollState()
 
     var title by remember { mutableStateOf("") }
     var habitType by remember { mutableStateOf(HabitType.YES_NO) }
@@ -105,24 +109,25 @@ fun CreateHabitDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .clip(RoundedCornerShape(24.dp)),
+                .clip(RoundedCornerShape(20.dp)),
             color = KairoSurfaceContainer,
             tonalElevation = 8.dp
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp)
+                    .verticalScroll(scrollState)
+                    .padding(18.dp)
             ) {
-                // Header
+                // Modal Title
                 Text(
                     text = "New Habit",
-                    fontSize = 20.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Habit Name Field
                 OutlinedTextField(
@@ -131,7 +136,9 @@ fun CreateHabitDialog(
                         title = it
                         if (it.isNotBlank()) errorMessage = null
                     },
-                    label = { Text("Habit Name (e.g. Read Book, Drink Water)") },
+                    label = { Text("Habit Name", fontSize = 13.sp) },
+                    placeholder = { Text("e.g. Read Book, Drink Water", fontSize = 13.sp, color = Color.Gray) },
+                    textStyle = TextStyle(fontSize = 14.sp, color = Color.White),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = KairoPrimary,
@@ -149,18 +156,19 @@ fun CreateHabitDialog(
                     Text(
                         text = errorMessage ?: "",
                         color = Color(0xFFF87171),
-                        fontSize = 12.sp
+                        fontSize = 11.sp
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Type: a. Yes/No  b. Target
                 Text(
-                    text = "Type",
-                    fontSize = 13.sp,
+                    text = "TYPE",
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF94A3B8)
+                    color = Color(0xFF94A3B8),
+                    letterSpacing = 0.5.sp
                 )
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -187,7 +195,7 @@ fun CreateHabitDialog(
 
                 // If Target: show target value & unit inputs
                 if (habitType == HabitType.TARGET) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -198,7 +206,8 @@ fun CreateHabitDialog(
                             onValueChange = {
                                 targetValue = it.toIntOrNull() ?: 1
                             },
-                            label = { Text("Target") },
+                            label = { Text("Target", fontSize = 12.sp) },
+                            textStyle = TextStyle(fontSize = 13.sp, color = Color.White),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
@@ -207,13 +216,14 @@ fun CreateHabitDialog(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White
                             ),
-                            modifier = Modifier.weight(0.4f)
+                            modifier = Modifier.weight(0.35f)
                         )
 
                         OutlinedTextField(
                             value = targetUnit,
                             onValueChange = { targetUnit = it },
-                            label = { Text("Unit (e.g. pages, times, ml)") },
+                            label = { Text("Unit (e.g. pages, times)", fontSize = 12.sp) },
+                            textStyle = TextStyle(fontSize = 13.sp, color = Color.White),
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = KairoPrimary,
@@ -221,19 +231,20 @@ fun CreateHabitDialog(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White
                             ),
-                            modifier = Modifier.weight(0.6f)
+                            modifier = Modifier.weight(0.65f)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Repeat: Everyday, Specific Days, Weekly X
                 Text(
-                    text = "Repeat",
-                    fontSize = 13.sp,
+                    text = "REPEAT",
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF94A3B8)
+                    color = Color(0xFF94A3B8),
+                    letterSpacing = 0.5.sp
                 )
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -269,7 +280,7 @@ fun CreateHabitDialog(
 
                 // If Specific Days: show M T W T F S S chips
                 if (repeatType == HabitRepeatType.SPECIFIC_DAYS) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     val dayLabels = listOf("M" to 1, "T" to 2, "W" to 3, "T" to 4, "F" to 5, "S" to 6, "S" to 7)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -279,7 +290,7 @@ fun CreateHabitDialog(
                             val isDaySelected = selectedDays.contains(dayIdx)
                             Box(
                                 modifier = Modifier
-                                    .size(34.dp)
+                                    .size(32.dp)
                                     .clip(CircleShape)
                                     .background(if (isDaySelected) KairoSecondary else KairoSurfaceContainerHigh)
                                     .clickable {
@@ -293,7 +304,7 @@ fun CreateHabitDialog(
                             ) {
                                 Text(
                                     text = lbl,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isDaySelected) Color.Black else Color.White
                                 )
@@ -304,42 +315,42 @@ fun CreateHabitDialog(
 
                 // If Weekly X: show count stepper
                 if (repeatType == HabitRepeatType.WEEKLY_X) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(10.dp))
                             .background(KairoSurfaceContainerHigh)
-                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
                     ) {
                         IconButton(
                             onClick = { if (weeklyCount > 1) weeklyCount-- },
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(26.dp)
                         ) {
-                            Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = Color.White)
+                            Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = Color.White, modifier = Modifier.size(16.dp))
                         }
 
-                        Spacer(modifier = Modifier.width(16.dp))
+                        Spacer(modifier = Modifier.width(14.dp))
                         Text(
                             text = "$weeklyCount times per week",
                             color = Color.White,
-                            fontSize = 14.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Medium
                         )
-                        Spacer(modifier = Modifier.width(16.dp))
+                        Spacer(modifier = Modifier.width(14.dp))
 
                         IconButton(
                             onClick = { if (weeklyCount < 7) weeklyCount++ },
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(26.dp)
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = "Increase", tint = Color.White)
+                            Icon(Icons.Default.Add, contentDescription = "Increase", tint = Color.White, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Reminder (Optional)
                 Row(
@@ -352,18 +363,18 @@ fun CreateHabitDialog(
                             imageVector = Icons.Default.Notifications,
                             contentDescription = null,
                             tint = if (reminderEnabled) KairoPrimary else Color.Gray,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
                                 text = "Reminder Notification",
                                 color = Color.White,
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Gentle alert with sound",
+                                text = "Notification alert with selected tone",
                                 color = Color.Gray,
                                 fontSize = 11.sp
                             )
@@ -384,7 +395,7 @@ fun CreateHabitDialog(
 
                 // If reminder enabled: Time Picker and Tone Picker
                 if (reminderEnabled) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -393,25 +404,25 @@ fun CreateHabitDialog(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(10.dp))
                                 .background(KairoSurfaceContainerHigh)
-                                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
-                                .clickable {
-                                    val cal = Calendar.getInstance()
-                                    TimePickerDialog(
-                                        context,
-                                        { _, hourOfDay, minute ->
-                                            val isPm = hourOfDay >= 12
-                                            val hour12 = if (hourOfDay == 0) 12 else if (hourOfDay > 12) hourOfDay - 12 else hourOfDay
-                                            val amPm = if (isPm) "PM" else "AM"
-                                            reminderTime = String.format(Locale.US, "%02d:%02d %s", hour12, minute, amPm)
-                                        },
-                                        cal.get(Calendar.HOUR_OF_DAY),
-                                        cal.get(Calendar.MINUTE),
-                                        false
-                                    ).show()
-                                }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                            .clickable {
+                                val cal = Calendar.getInstance()
+                                TimePickerDialog(
+                                    context,
+                                    { _, hourOfDay, minute ->
+                                        val isPm = hourOfDay >= 12
+                                        val hour12 = if (hourOfDay == 0) 12 else if (hourOfDay > 12) hourOfDay - 12 else hourOfDay
+                                        val amPm = if (isPm) "PM" else "AM"
+                                        reminderTime = String.format(Locale.US, "%02d:%02d %s", hour12, minute, amPm)
+                                    },
+                                    cal.get(Calendar.HOUR_OF_DAY),
+                                    cal.get(Calendar.MINUTE),
+                                    false
+                                ).show()
+                            }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
                             contentAlignment = Alignment.CenterStart
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -419,12 +430,12 @@ fun CreateHabitDialog(
                                     imageVector = Icons.Default.Schedule,
                                     contentDescription = null,
                                     tint = KairoPrimary,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = reminderTime,
-                                    fontSize = 13.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = Color.White
                                 )
@@ -435,11 +446,11 @@ fun CreateHabitDialog(
                         Box(
                             modifier = Modifier
                                 .weight(1.3f)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(10.dp))
                                 .background(KairoSurfaceContainerHigh)
-                                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
-                                .clickable { showTonePicker = true }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                            .clickable { showTonePicker = true }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
                             contentAlignment = Alignment.CenterStart
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -447,12 +458,12 @@ fun CreateHabitDialog(
                                     imageVector = Icons.Default.MusicNote,
                                     contentDescription = null,
                                     tint = KairoSecondary,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = reminderToneTitle.take(15) + (if (reminderToneTitle.length > 15) "..." else ""),
-                                    fontSize = 13.sp,
+                                    text = reminderToneTitle.take(16) + (if (reminderToneTitle.length > 16) "..." else ""),
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = Color.White
                                 )
@@ -461,7 +472,7 @@ fun CreateHabitDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 // Actions: Cancel / Create
                 Row(
@@ -470,7 +481,7 @@ fun CreateHabitDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     TextButton(onClick = onDismiss) {
-                        Text("Cancel", color = Color.Gray, fontSize = 14.sp)
+                        Text("Cancel", color = Color.Gray, fontSize = 13.sp)
                     }
 
                     Spacer(modifier = Modifier.width(8.dp))
@@ -502,7 +513,7 @@ fun CreateHabitDialog(
                             text = "Create Habit",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                            fontSize = 13.sp
                         )
                     }
                 }
@@ -534,20 +545,20 @@ private fun TypePill(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(if (isSelected) KairoPrimary.copy(alpha = 0.18f) else KairoSurfaceContainerHigh)
             .border(
                 1.dp,
                 if (isSelected) KairoPrimary else Color.White.copy(alpha = 0.08f),
-                RoundedCornerShape(12.dp)
+                RoundedCornerShape(10.dp)
             )
             .clickable { onClick() }
-            .padding(vertical = 10.dp, horizontal = 4.dp),
+            .padding(vertical = 8.dp, horizontal = 4.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
             color = if (isSelected) KairoPrimary else Color(0xFFCBD5E1)
         )

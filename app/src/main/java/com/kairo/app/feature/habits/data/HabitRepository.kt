@@ -2,6 +2,7 @@ package com.kairo.app.feature.habits.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import com.kairo.app.KairoApplication
 import com.kairo.app.data.auth.AuthManager
 import com.kairo.app.feature.habits.model.DisciplineOverviewStats
@@ -11,9 +12,14 @@ import com.kairo.app.feature.habits.model.HabitDayState
 import com.kairo.app.feature.habits.model.HabitRepeatType
 import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.feature.habits.model.HabitWithStats
+import com.kairo.app.feature.sync.SupabaseClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.DayOfWeek
@@ -23,9 +29,12 @@ import java.util.UUID
 
 object HabitRepository {
 
+    private const val TAG = "HabitRepository"
     private const val PREFS_NAME = "kairo_habits_prefs"
     private const val KEY_HABITS = "saved_habits"
     private const val KEY_LOGS = "saved_habit_logs"
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val prefs: SharedPreferences by lazy {
         KairoApplication.instance.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -44,16 +53,18 @@ object HabitRepository {
             totalToday = 0,
             percentage = 0,
             remainingToday = 0,
-            streakDays = 14
+            streakDays = 0
         )
     )
     val disciplineOverview: StateFlow<DisciplineOverviewStats> = _disciplineOverview.asStateFlow()
 
     init {
-        loadData()
+        loadDataFromLocal()
+        // Pull latest from Supabase on init
+        fetchFromSupabase()
     }
 
-    private fun loadData() {
+    private fun loadDataFromLocal() {
         val habitsJson = prefs.getString(KEY_HABITS, null)
         val logsJson = prefs.getString(KEY_LOGS, null)
 
@@ -89,11 +100,6 @@ object HabitRepository {
             }
         }
 
-        // If no habits saved yet, seed initial reference habits
-        if (loadedHabits.isEmpty()) {
-            loadedHabits.addAll(getInitialSeedHabits())
-        }
-
         val loadedLogs = mutableMapOf<String, MutableMap<String, HabitDayState>>()
         if (!logsJson.isNullOrBlank()) {
             try {
@@ -113,9 +119,6 @@ object HabitRepository {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-        } else {
-            // Seed sample logs corresponding to reference HTML
-            loadedLogs.putAll(getInitialSeedLogs(loadedHabits))
         }
 
         _habitsList.value = loadedHabits
@@ -166,6 +169,58 @@ object HabitRepository {
         }
     }
 
+    fun fetchFromSupabase() {
+        scope.launch {
+            val userCode = AuthManager.getUserCode()
+            val habitsResult = SupabaseClient.getHabits(userCode)
+            val logsResult = SupabaseClient.getHabitLogs(userCode)
+
+            if (habitsResult.isSuccess) {
+                val dtoList = habitsResult.getOrNull().orEmpty()
+                val habits = dtoList.map { dto ->
+                    Habit(
+                        id = dto.id,
+                        userCode = dto.userCode,
+                        title = dto.title,
+                        type = runCatching { HabitType.valueOf(dto.type) }.getOrDefault(HabitType.YES_NO),
+                        targetValue = dto.targetValue,
+                        targetUnit = dto.targetUnit,
+                        repeatType = runCatching { HabitRepeatType.valueOf(dto.repeatType) }.getOrDefault(HabitRepeatType.EVERYDAY),
+                        repeatDays = parseDays(dto.repeatDays),
+                        weeklyTargetCount = dto.weeklyTargetCount,
+                        reminderEnabled = dto.reminderEnabled,
+                        reminderTime = dto.reminderTime,
+                        reminderToneUri = dto.reminderToneUri,
+                        reminderToneTitle = dto.reminderToneTitle,
+                        position = dto.position,
+                        createdAt = dto.createdAt,
+                        updatedAt = dto.updatedAt
+                    )
+                }.sortedBy { it.position }
+
+                _habitsList.value = habits
+            } else {
+                Log.w(TAG, "Could not fetch habits from Supabase: ${habitsResult.exceptionOrNull()?.message}")
+            }
+
+            if (logsResult.isSuccess) {
+                val dtoList = logsResult.getOrNull().orEmpty()
+                val logs = mutableMapOf<String, MutableMap<String, HabitDayState>>()
+                dtoList.forEach { dto ->
+                    val habitMap = logs.getOrPut(dto.habitId) { mutableMapOf() }
+                    val state = runCatching { HabitDayState.valueOf(dto.state) }.getOrDefault(HabitDayState.DONE)
+                    habitMap[dto.date] = state
+                }
+                _logsMap.value = logs
+            } else {
+                Log.w(TAG, "Could not fetch habit logs from Supabase: ${logsResult.exceptionOrNull()?.message}")
+            }
+
+            persistData()
+            recomputeAllStats()
+        }
+    }
+
     fun addHabit(
         title: String,
         type: HabitType = HabitType.YES_NO,
@@ -201,6 +256,29 @@ object HabitRepository {
         _habitsList.value = updated
         persistData()
         recomputeAllStats()
+
+        // Sync to Supabase
+        scope.launch {
+            val dto = HabitDto(
+                id = newHabit.id,
+                userCode = newHabit.userCode,
+                title = newHabit.title,
+                type = newHabit.type.name,
+                targetValue = newHabit.targetValue,
+                targetUnit = newHabit.targetUnit,
+                repeatType = newHabit.repeatType.name,
+                repeatDays = newHabit.repeatDays.joinToString(","),
+                weeklyTargetCount = newHabit.weeklyTargetCount,
+                reminderEnabled = newHabit.reminderEnabled,
+                reminderTime = newHabit.reminderTime,
+                reminderToneUri = newHabit.reminderToneUri,
+                reminderToneTitle = newHabit.reminderToneTitle,
+                position = newHabit.position,
+                createdAt = newHabit.createdAt,
+                updatedAt = newHabit.updatedAt
+            )
+            SupabaseClient.upsertHabit(dto)
+        }
     }
 
     fun updateHabit(updatedHabit: Habit) {
@@ -208,6 +286,28 @@ object HabitRepository {
         _habitsList.value = list
         persistData()
         recomputeAllStats()
+
+        scope.launch {
+            val dto = HabitDto(
+                id = updatedHabit.id,
+                userCode = updatedHabit.userCode,
+                title = updatedHabit.title,
+                type = updatedHabit.type.name,
+                targetValue = updatedHabit.targetValue,
+                targetUnit = updatedHabit.targetUnit,
+                repeatType = updatedHabit.repeatType.name,
+                repeatDays = updatedHabit.repeatDays.joinToString(","),
+                weeklyTargetCount = updatedHabit.weeklyTargetCount,
+                reminderEnabled = updatedHabit.reminderEnabled,
+                reminderTime = updatedHabit.reminderTime,
+                reminderToneUri = updatedHabit.reminderToneUri,
+                reminderToneTitle = updatedHabit.reminderToneTitle,
+                position = updatedHabit.position,
+                createdAt = updatedHabit.createdAt,
+                updatedAt = updatedHabit.updatedAt
+            )
+            SupabaseClient.upsertHabit(dto)
+        }
     }
 
     fun deleteHabit(habitId: String) {
@@ -217,6 +317,10 @@ object HabitRepository {
         _logsMap.value = logs
         persistData()
         recomputeAllStats()
+
+        scope.launch {
+            SupabaseClient.deleteHabit(habitId)
+        }
     }
 
     fun reorderHabits(fromIndex: Int, toIndex: Int) {
@@ -228,6 +332,30 @@ object HabitRepository {
             _habitsList.value = reindexed
             persistData()
             recomputeAllStats()
+
+            scope.launch {
+                reindexed.forEach { h ->
+                    val dto = HabitDto(
+                        id = h.id,
+                        userCode = h.userCode,
+                        title = h.title,
+                        type = h.type.name,
+                        targetValue = h.targetValue,
+                        targetUnit = h.targetUnit,
+                        repeatType = h.repeatType.name,
+                        repeatDays = h.repeatDays.joinToString(","),
+                        weeklyTargetCount = h.weeklyTargetCount,
+                        reminderEnabled = h.reminderEnabled,
+                        reminderTime = h.reminderTime,
+                        reminderToneUri = h.reminderToneUri,
+                        reminderToneTitle = h.reminderToneTitle,
+                        position = h.position,
+                        createdAt = h.createdAt,
+                        updatedAt = h.updatedAt
+                    )
+                    SupabaseClient.upsertHabit(dto)
+                }
+            }
         }
     }
 
@@ -246,12 +374,35 @@ object HabitRepository {
             HabitDayState.MISSED -> HabitDayState.UNMARKED
         }
 
-        habitDates[dateStr] = nextState
+        if (nextState == HabitDayState.UNMARKED) {
+            habitDates.remove(dateStr)
+        } else {
+            habitDates[dateStr] = nextState
+        }
         currentLogs[habitId] = habitDates
         _logsMap.value = currentLogs
 
         persistData()
         recomputeAllStats()
+
+        // Sync to Supabase
+        val userCode = AuthManager.getUserCode() ?: "DEFAULT"
+        scope.launch {
+            if (nextState == HabitDayState.UNMARKED) {
+                SupabaseClient.deleteHabitLog(habitId, dateStr)
+            } else {
+                val logDto = HabitLogDto(
+                    id = "${habitId}_${dateStr}",
+                    habitId = habitId,
+                    userCode = userCode,
+                    date = dateStr,
+                    state = nextState.name,
+                    value = null,
+                    createdAt = System.currentTimeMillis()
+                )
+                SupabaseClient.upsertHabitLog(logDto)
+            }
+        }
     }
 
     private fun recomputeAllStats() {
@@ -341,89 +492,5 @@ object HabitRepository {
 
     private fun parseDays(str: String): List<Int> {
         return str.split(",").mapNotNull { it.trim().toIntOrNull() }
-    }
-
-    private fun getInitialSeedHabits(): List<Habit> {
-        val userCode = AuthManager.getUserCode() ?: "DEFAULT"
-        return listOf(
-            Habit(
-                id = "1",
-                userCode = userCode,
-                title = "Drink 750ml Water Daily",
-                type = HabitType.TARGET,
-                targetValue = 4,
-                targetUnit = "times",
-                repeatType = HabitRepeatType.EVERYDAY,
-                position = 0
-            ),
-            Habit(
-                id = "2",
-                userCode = userCode,
-                title = "Morning Meditation",
-                type = HabitType.YES_NO,
-                repeatType = HabitRepeatType.EVERYDAY,
-                position = 1
-            ),
-            Habit(
-                id = "3",
-                userCode = userCode,
-                title = "Morning Workout / Run",
-                type = HabitType.YES_NO,
-                repeatType = HabitRepeatType.SPECIFIC_DAYS,
-                repeatDays = listOf(1, 3, 5, 6),
-                position = 2
-            ),
-            Habit(
-                id = "4",
-                userCode = userCode,
-                title = "Read 20 pages of Book",
-                type = HabitType.TARGET,
-                targetValue = 20,
-                targetUnit = "pages",
-                repeatType = HabitRepeatType.EVERYDAY,
-                position = 3
-            ),
-            Habit(
-                id = "5",
-                userCode = userCode,
-                title = "No Social Media past 9 PM",
-                type = HabitType.YES_NO,
-                repeatType = HabitRepeatType.EVERYDAY,
-                position = 4
-            ),
-            Habit(
-                id = "6",
-                userCode = userCode,
-                title = "Daily Gratitude Journal",
-                type = HabitType.YES_NO,
-                repeatType = HabitRepeatType.EVERYDAY,
-                position = 5
-            )
-        )
-    }
-
-    private fun getInitialSeedLogs(habits: List<Habit>): Map<String, MutableMap<String, HabitDayState>> {
-        val today = LocalDate.now()
-        val fmt = DateTimeFormatter.ISO_LOCAL_DATE
-        val result = mutableMapOf<String, MutableMap<String, HabitDayState>>()
-
-        habits.forEachIndexed { idx, h ->
-            val map = mutableMapOf<String, HabitDayState>()
-            for (offset in 0..13) {
-                val d = today.minusDays(offset.toLong())
-                val dStr = d.format(fmt)
-                // Seed some variations like the reference HTML
-                val state = when {
-                    offset == 0 -> if (idx < 4) HabitDayState.DONE else HabitDayState.UNMARKED
-                    offset == 1 -> if (idx == 2 || idx == 5) HabitDayState.MISSED else HabitDayState.DONE
-                    offset == 5 -> if (idx == 3) HabitDayState.MISSED else HabitDayState.DONE
-                    offset % 4 == 0 -> HabitDayState.MISSED
-                    else -> HabitDayState.DONE
-                }
-                map[dStr] = state
-            }
-            result[h.id] = map
-        }
-        return result
     }
 }

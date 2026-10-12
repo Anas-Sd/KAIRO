@@ -21,8 +21,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,12 +54,13 @@ fun HabitCard(
     habitWithStats: HabitWithStats,
     onTitleClick: () -> Unit,
     onDayClick: (LocalDate) -> Unit,
+    onReorderClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val habit = habitWithStats.habit
     val scrollState = rememberScrollState()
 
-    // Automatically scroll to today (the rightmost day) on first layout
+    // Automatically scroll to today (the rightmost day)
     LaunchedEffect(Unit) {
         scrollState.scrollTo(scrollState.maxValue)
     }
@@ -69,141 +71,158 @@ fun HabitCard(
             .clip(RoundedCornerShape(16.dp))
             .background(KairoSurfaceContainer)
             .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
-            .padding(14.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Drag Indicator Handle
-            Icon(
-                imageVector = Icons.Default.DragIndicator,
-                contentDescription = "Drag to reorder",
-                tint = Color(0xFF64748B), // slate-500
+            // LEFT: 3 dots for reorder / options
+            Box(
                 modifier = Modifier
-                    .size(20.dp)
-                    .padding(top = 2.dp, end = 6.dp)
-            )
+                    .padding(end = 6.dp)
+                    .clickable { onReorderClick?.invoke() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "Reorder Habit",
+                    tint = Color(0xFF64748B),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
 
-            // Content column
+            // MIDDLE: Task Name + Underline + Horizontal Swipable Checkbox Strip
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
+                    .padding(end = 8.dp)
             ) {
-                // Title and Badges row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    // Habit Title (clickable to open detail analytics)
-                    Text(
-                        text = habit.title,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 8.dp)
-                            .clickable { onTitleClick() }
-                    )
+                // Task Name
+                Text(
+                    text = habit.title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .clickable { onTitleClick() }
+                        .padding(bottom = 4.dp)
+                )
 
-                    // Badges stack (Streak, Done, Missed)
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Streak badge
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(100.dp))
-                                .background(Color(0xFFF59E0B).copy(alpha = 0.12f))
-                                .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.25f), RoundedCornerShape(100.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.LocalFireDepartment,
-                                contentDescription = null,
-                                tint = Color(0xFFFCD34D),
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(
-                                text = "${habitWithStats.streak}d",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFFCD34D)
-                            )
-                        }
+                // Divider line right under task name
+                HorizontalDivider(
+                    thickness = 1.dp,
+                    color = Color.White.copy(alpha = 0.08f),
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                        // Done badge
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(100.dp))
-                                .background(KairoSecondary.copy(alpha = 0.15f))
-                                .border(1.dp, KairoSecondary.copy(alpha = 0.30f), RoundedCornerShape(100.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = KairoSecondary,
-                                modifier = Modifier.size(11.dp)
-                            )
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(
-                                text = "${habitWithStats.doneCount}",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = KairoSecondary
-                            )
-                        }
+                Spacer(modifier = Modifier.height(8.dp))
 
-                        // Missed badge
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(100.dp))
-                                .background(Color(0xFFF43F5E).copy(alpha = 0.12f))
-                                .border(1.dp, Color(0xFFF43F5E).copy(alpha = 0.25f), RoundedCornerShape(100.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = null,
-                                tint = Color(0xFFFDA4AF),
-                                modifier = Modifier.size(11.dp)
-                            )
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(
-                                text = "${habitWithStats.missedCount}",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFFDA4AF)
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Date Scroll Track
+                // Bottom Swipable Checkbox Strip
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(scrollState),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     habitWithStats.days.forEach { dayInfo ->
-                        DayToggleNode(
+                        DayCheckboxNode(
                             dayInfo = dayInfo,
                             onToggle = { onDayClick(dayInfo.date) }
+                        )
+                    }
+                }
+            }
+
+            // RIGHT: 3 stacked indicator buttons (Streak / Done / Missed)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(start = 2.dp)
+            ) {
+                // 1. Streak Button
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFFF59E0B).copy(alpha = 0.14f))
+                        .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.35f), RoundedCornerShape(6.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocalFireDepartment,
+                            contentDescription = "Streak",
+                            tint = Color(0xFFFCD34D),
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Text(
+                            text = "${habitWithStats.streak}",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFCD34D)
+                        )
+                    }
+                }
+
+                // 2. Completed / Done Button
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(KairoSecondary.copy(alpha = 0.16f))
+                        .border(1.dp, KairoSecondary.copy(alpha = 0.40f), RoundedCornerShape(6.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Completed",
+                            tint = KairoSecondary,
+                            modifier = Modifier.size(10.dp)
+                        )
+                        Text(
+                            text = "${habitWithStats.doneCount}",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = KairoSecondary
+                        )
+                    }
+                }
+
+                // 3. Not Completed / Missed Button
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFFF43F5E).copy(alpha = 0.14f))
+                        .border(1.dp, Color(0xFFF43F5E).copy(alpha = 0.35f), RoundedCornerShape(6.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Missed",
+                            tint = Color(0xFFFDA4AF),
+                            modifier = Modifier.size(10.dp)
+                        )
+                        Text(
+                            text = "${habitWithStats.missedCount}",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFDA4AF)
                         )
                     }
                 }
@@ -213,13 +232,13 @@ fun HabitCard(
 }
 
 @Composable
-private fun DayToggleNode(
+private fun DayCheckboxNode(
     dayInfo: HabitDayInfo,
     onToggle: () -> Unit
 ) {
     var isPressed by remember { mutableStateOf(false) }
     val scaleAnim by animateFloatAsState(
-        targetValue = if (isPressed) 0.88f else 1f,
+        targetValue = if (isPressed) 0.86f else 1f,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
         label = "pop_bounce",
         finishedListener = { isPressed = false }
@@ -230,60 +249,60 @@ private fun DayToggleNode(
             .then(
                 if (dayInfo.isToday) {
                     Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(KairoPrimary.copy(alpha = 0.10f))
-                        .border(1.dp, KairoPrimary.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(KairoPrimary.copy(alpha = 0.08f))
+                        .border(1.dp, KairoPrimary.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 3.dp, vertical = 2.dp)
                 } else {
-                    Modifier.padding(horizontal = 2.dp, vertical = 2.dp)
+                    Modifier.padding(horizontal = 1.dp, vertical = 2.dp)
                 }
             ),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Date & Day header label
+        // Date Number and Day of Week
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = "${dayInfo.dayNumber}",
-                fontSize = 11.sp,
+                fontSize = 10.sp,
                 fontWeight = if (dayInfo.isToday) FontWeight.Bold else FontWeight.Medium,
                 color = if (dayInfo.isToday) KairoPrimary else Color(0xFF94A3B8)
             )
-            Spacer(modifier = Modifier.width(2.dp))
+            Spacer(modifier = Modifier.width(1.dp))
             Text(
                 text = dayInfo.dayLabel,
-                fontSize = 9.sp,
+                fontSize = 8.sp,
                 fontWeight = FontWeight.Normal,
                 color = if (dayInfo.isToday) KairoPrimary.copy(alpha = 0.8f) else Color(0xFF64748B)
             )
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-        // Interactive Button
+        // Checkbox Box (Rounded square matching wireframe)
         Box(
             modifier = Modifier
-                .size(28.dp)
+                .size(26.dp)
                 .scale(scaleAnim)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(7.dp))
                 .then(
                     when (dayInfo.state) {
                         HabitDayState.DONE -> {
                             Modifier
-                                .background(KairoSecondary.copy(alpha = 0.18f))
-                                .border(1.dp, KairoSecondary.copy(alpha = 0.50f), RoundedCornerShape(8.dp))
+                                .background(KairoSecondary.copy(alpha = 0.20f))
+                                .border(1.5.dp, KairoSecondary, RoundedCornerShape(7.dp))
                         }
                         HabitDayState.MISSED -> {
                             Modifier
-                                .background(Color.White.copy(alpha = 0.03f))
-                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                                .background(Color(0xFFF43F5E).copy(alpha = 0.12f))
+                                .border(1.5.dp, Color(0xFFFB7185).copy(alpha = 0.6f), RoundedCornerShape(7.dp))
                         }
                         HabitDayState.UNMARKED -> {
                             Modifier
-                                .background(Color.White.copy(alpha = 0.03f))
+                                .background(Color.White.copy(alpha = 0.04f))
                                 .border(
-                                    1.dp,
-                                    if (dayInfo.isToday) KairoPrimary.copy(alpha = 0.40f) else Color.White.copy(alpha = 0.10f),
-                                    RoundedCornerShape(8.dp)
+                                    1.2.dp,
+                                    if (dayInfo.isToday) KairoPrimary.copy(alpha = 0.60f) else Color.White.copy(alpha = 0.18f),
+                                    RoundedCornerShape(7.dp)
                                 )
                         }
                     }
@@ -300,19 +319,19 @@ private fun DayToggleNode(
                         imageVector = Icons.Default.Check,
                         contentDescription = "Done",
                         tint = KairoSecondary,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                 }
                 HabitDayState.MISSED -> {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Missed",
-                        tint = Color(0xFFFB7185), // rose-400
-                        modifier = Modifier.size(15.dp)
+                        tint = Color(0xFFFB7185),
+                        modifier = Modifier.size(14.dp)
                     )
                 }
                 HabitDayState.UNMARKED -> {
-                    // Empty square
+                    // Empty rounded square checkbox
                 }
             }
         }
