@@ -190,7 +190,7 @@ fun TargetDayPickerBottomSheet(
                     }
                     val badgeText = when {
                         isDone -> "Goal Reached"
-                        isMissed -> if (currentValue > 0) "Missed (✕$currentValue)" else "Missed"
+                        isMissed -> if (currentValue > 0) "Missed (${currentValue}✕)" else "Missed"
                         currentValue > 0 -> "${(progressFraction * 100).toInt()}% Done"
                         else -> "Unmarked"
                     }
@@ -409,36 +409,38 @@ fun TargetDayPickerBottomSheet(
                     }
                 }
 
-                // Clear
-                Surface(
-                    onClick = {
-                        currentValue = 0
-                        currentState = HabitDayState.UNMARKED
-                        notesMap.clear()
-                    },
-                    shape = RoundedCornerShape(10.dp),
-                    color = KairoSurfaceContainerHigh,
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                    modifier = Modifier.weight(0.9f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(vertical = 10.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+                // Clear (Only for today — past days only have Done / Missed)
+                if (!isPastDay) {
+                    Surface(
+                        onClick = {
+                            currentValue = 0
+                            currentState = HabitDayState.UNMARKED
+                            notesMap.clear()
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        color = KairoSurfaceContainerHigh,
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                        modifier = Modifier.weight(0.9f)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.RestartAlt,
-                            contentDescription = null,
-                            tint = Color(0xFFCBD5E1),
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text(
-                            text = "Clear",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFFCBD5E1)
-                        )
+                        Row(
+                            modifier = Modifier.padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.RestartAlt,
+                                contentDescription = null,
+                                tint = Color(0xFFCBD5E1),
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "Clear",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFCBD5E1)
+                            )
+                        }
                     }
                 }
             }

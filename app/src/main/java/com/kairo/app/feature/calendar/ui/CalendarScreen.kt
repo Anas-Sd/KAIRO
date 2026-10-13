@@ -376,7 +376,9 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 dayHabits.forEach { habit ->
-                                    val log = logsMap[habit.id]?.get(selectedDateStr) ?: HabitDayRecord()
+                                    val rawLog = logsMap[habit.id]?.get(selectedDateStr)
+                                    val isPastDay = selectedDate.isBefore(LocalDate.now())
+                                    val log = rawLog ?: if (isPastDay) HabitDayRecord(state = HabitDayState.MISSED, value = 0, note = "missed") else HabitDayRecord()
                                     CalendarHabitItemRow(
                                         habit = habit,
                                         date = selectedDate,
@@ -401,19 +403,35 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
                                             HabitRepository.incrementHabitDay(habit.id, selectedDate, -1)
                                         },
                                         onToggleDone = {
-                                            if (log.state == HabitDayState.DONE) {
-                                                HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.MISSED)
-                                                activeHabitNoteDialog = CalendarActiveNoteDialog(
-                                                    habit = habit,
-                                                    date = selectedDate,
-                                                    state = HabitDayState.MISSED,
-                                                    initialNote = log.note,
-                                                    isAppend = false
-                                                )
-                                            } else if (log.state == HabitDayState.MISSED) {
-                                                HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.UNMARKED, clearNote = true)
+                                            if (isPastDay) {
+                                                // For previous days, ONLY 2 options: DONE / MISSED (no unmarked box)
+                                                if (log.state == HabitDayState.DONE) {
+                                                    HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.MISSED)
+                                                    activeHabitNoteDialog = CalendarActiveNoteDialog(
+                                                        habit = habit,
+                                                        date = selectedDate,
+                                                        state = HabitDayState.MISSED,
+                                                        initialNote = log.note,
+                                                        isAppend = false
+                                                    )
+                                                } else {
+                                                    HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.DONE)
+                                                }
                                             } else {
-                                                HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.DONE)
+                                                if (log.state == HabitDayState.DONE) {
+                                                    HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.MISSED)
+                                                    activeHabitNoteDialog = CalendarActiveNoteDialog(
+                                                        habit = habit,
+                                                        date = selectedDate,
+                                                        state = HabitDayState.MISSED,
+                                                        initialNote = log.note,
+                                                        isAppend = false
+                                                    )
+                                                } else if (log.state == HabitDayState.MISSED) {
+                                                    HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.UNMARKED, clearNote = true)
+                                                } else {
+                                                    HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.DONE)
+                                                }
                                             }
                                         },
                                         onNoteClick = {
@@ -1342,11 +1360,13 @@ private fun CalendarHabitItemRow(
 
                         Spacer(modifier = Modifier.width(6.dp))
 
+                        val isPast = date.isBefore(LocalDate.now())
+                        val isItemMissed = isMissed || (isPast && !isDone)
                         Text(
-                            text = "${record.value}/${habit.targetValue}",
+                            text = if (isItemMissed) "${record.value}✕/${habit.targetValue}" else "${record.value}/${habit.targetValue}",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isDone) KairoSecondary else Color.White
+                            color = if (isDone) KairoSecondary else if (isItemMissed) Color(0xFFFB7185) else Color.White
                         )
 
                         Spacer(modifier = Modifier.width(6.dp))

@@ -426,12 +426,10 @@ fun HabitsScreen(
                                         initialRecord = currentRecord
                                     )
                                 } else {
-                                    // Yes/No habit: toggle UNMARKED -> DONE -> MISSED -> UNMARKED
-                                    when (currentRecord.state) {
-                                        HabitDayState.UNMARKED -> {
-                                            HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.DONE)
-                                        }
-                                        HabitDayState.DONE -> {
+                                    val isPast = date.isBefore(LocalDate.now())
+                                    if (isPast) {
+                                        // For previous days, ONLY 2 options: DONE / MISSED (no unmarked box)
+                                        if (currentRecord.state == HabitDayState.DONE) {
                                             HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.MISSED)
                                             activeIncrementNote = ActiveIncrementNote(
                                                 habit = item.habit,
@@ -440,9 +438,28 @@ fun HabitsScreen(
                                                 isMissed = true,
                                                 initialNote = currentRecord.note
                                             )
+                                        } else {
+                                            HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.DONE)
                                         }
-                                        HabitDayState.MISSED -> {
-                                            HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.UNMARKED, clearNote = true)
+                                    } else {
+                                        // Today: toggle UNMARKED -> DONE -> MISSED -> UNMARKED
+                                        when (currentRecord.state) {
+                                            HabitDayState.UNMARKED -> {
+                                                HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.DONE)
+                                            }
+                                            HabitDayState.DONE -> {
+                                                HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.MISSED)
+                                                activeIncrementNote = ActiveIncrementNote(
+                                                    habit = item.habit,
+                                                    date = date,
+                                                    countIndex = null,
+                                                    isMissed = true,
+                                                    initialNote = currentRecord.note
+                                                )
+                                            }
+                                            HabitDayState.MISSED -> {
+                                                HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.UNMARKED, clearNote = true)
+                                            }
                                         }
                                     }
                                 }

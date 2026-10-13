@@ -279,6 +279,7 @@ object HabitRepository {
         val updated = _habitsList.value.toMutableList().apply { add(newHabit) }
         _habitsList.value = updated
         persistData()
+        autoMarkMissedPastDays()
         recomputeAllStats()
 
         // Sync to Supabase
@@ -678,19 +679,26 @@ object HabitRepository {
         val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
 
         val currentRecord = habitDates[dateStr]
-        val finalNote = if (clearNote) null else (note?.trim()?.takeIf { it.isNotBlank() } ?: currentRecord?.note)
+        val isPastDate = date.isBefore(LocalDate.now())
+        val effectiveState = if (isPastDate && state == HabitDayState.UNMARKED) HabitDayState.MISSED else state
+        val finalNote = when {
+            clearNote -> null
+            note?.trim()?.isNotBlank() == true -> note.trim()
+            effectiveState == HabitDayState.MISSED && currentRecord?.note.isNullOrBlank() -> "missed"
+            else -> currentRecord?.note
+        }
 
         val targetVal = habit?.targetValue ?: 1
-        val assignedValue = when (state) {
+        val assignedValue = when (effectiveState) {
             HabitDayState.DONE -> targetVal
-            HabitDayState.MISSED -> 0
+            HabitDayState.MISSED -> currentRecord?.value ?: 0
             HabitDayState.UNMARKED -> 0
         }
 
-        if (state == HabitDayState.UNMARKED && finalNote == null) {
+        if (effectiveState == HabitDayState.UNMARKED && finalNote == null) {
             habitDates.remove(dateStr)
         } else {
-            habitDates[dateStr] = HabitDayRecord(state = state, value = assignedValue, note = finalNote)
+            habitDates[dateStr] = HabitDayRecord(state = effectiveState, value = assignedValue, note = finalNote)
         }
         currentLogs[habitId] = habitDates
         _logsMap.value = currentLogs
@@ -812,13 +820,8 @@ object HabitRepository {
         val logsToUpsert = mutableListOf<HabitLogDto>()
 
         _habitsList.value.forEach { habit ->
-            val habitCreatedDate = runCatching {
-                java.time.Instant.ofEpochMilli(habit.createdAt)
-                    .atZone(java.time.ZoneId.systemDefault())
-                    .toLocalDate()
-            }.getOrDefault(today)
-
-            val startDate = maxOf(today.minusDays(30), habitCreatedDate)
+            // Mark all past scheduled days up to 60 days back as not done (missed) by default
+            val startDate = today.minusDays(60)
             if (!startDate.isAfter(today.minusDays(1))) {
                 val habitDates = currentLogs[habit.id]?.toMutableMap() ?: mutableMapOf()
                 var checkDate = startDate
@@ -966,22 +969,31 @@ object HabitRepository {
         val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
 
         val currentRecord = habitDates[dateStr] ?: HabitDayRecord(HabitDayState.UNMARKED, 0)
-        val (nextState, nextValue) = when (currentRecord.state) {
-            HabitDayState.UNMARKED -> {
-                if (currentRecord.value in 1 until target) {
-                    HabitDayState.DONE to target
-                } else {
-                    HabitDayState.DONE to target
-                }
+        val isPastDate = date.isBefore(LocalDate.now())
+
+        val (nextState, nextValue) = if (isPastDate) {
+            // For previous days, there are ONLY 2 options: DONE / MISSED
+            if (currentRecord.state == HabitDayState.DONE) {
+                HabitDayState.MISSED to 0
+            } else {
+                HabitDayState.DONE to target
             }
-            HabitDayState.DONE -> HabitDayState.MISSED to 0
-            HabitDayState.MISSED -> HabitDayState.UNMARKED to 0
+        } else {
+            when (currentRecord.state) {
+                HabitDayState.UNMARKED -> HabitDayState.DONE to target
+                HabitDayState.DONE -> HabitDayState.MISSED to 0
+                HabitDayState.MISSED -> HabitDayState.UNMARKED to 0
+            }
         }
 
         if (nextState == HabitDayState.UNMARKED && nextValue == 0) {
             habitDates.remove(dateStr)
         } else {
-            habitDates[dateStr] = HabitDayRecord(state = nextState, value = nextValue)
+            habitDates[dateStr] = HabitDayRecord(
+                state = nextState,
+                value = nextValue,
+                note = if (nextState == HabitDayState.MISSED && currentRecord.note.isNullOrBlank()) "missed" else currentRecord.note
+            )
         }
         currentLogs[habitId] = habitDates
         _logsMap.value = currentLogs
@@ -1207,12 +1219,25 @@ object HabitRepository {
                 val dStr = d.format(dateFormatter)
                 val record = logsForHabit[dStr] ?: HabitDayRecord()
                 val isRest = (habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(d.dayOfWeek.value))
+                val isPast = d.isBefore(today)
+                // For previous days, there should be NO unmarked (empty) box: only DONE or MISSED
+                val effectiveState = when {
+                    isRest -> HabitDayState.UNMARKED
+                    isPast -> {
+                        if (record.state == HabitDayState.DONE || (habit.type == HabitType.TARGET && record.value >= target && target > 0)) {
+                            HabitDayState.DONE
+                        } else {
+                            HabitDayState.MISSED
+                        }
+                    }
+                    else -> record.state
+                }
                 HabitDayInfo(
                     date = d,
                     dayNumber = d.dayOfMonth,
                     dayLabel = formatDayLabel(d.dayOfWeek),
                     isToday = d == today,
-                    state = record.state,
+                    state = effectiveState,
                     value = record.value,
                     isRestDay = isRest,
                     note = record.note

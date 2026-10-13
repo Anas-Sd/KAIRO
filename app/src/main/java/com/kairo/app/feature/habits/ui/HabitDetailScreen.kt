@@ -903,14 +903,15 @@ fun MonthlyHeatmapSection(
         var done = 0
         var missed = 0
         for (day in 1..daysInMonth) {
-            val dStr = LocalDate.of(selectedYear, selectedMonth, day).format(DateTimeFormatter.ISO_LOCAL_DATE)
+            val cellDate = LocalDate.of(selectedYear, selectedMonth, day)
+            val dStr = cellDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
             val rec = habitLogs[dStr]
-            if (rec != null) {
-                if (rec.state == HabitDayState.DONE || (habit.type == HabitType.TARGET && rec.value >= habit.targetValue && habit.targetValue > 0)) {
-                    done++
-                } else if (rec.state == HabitDayState.MISSED) {
-                    missed++
-                }
+            val isRest = (habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(cellDate.dayOfWeek.value))
+            val isDone = rec?.state == HabitDayState.DONE || (habit.type == HabitType.TARGET && (rec?.value ?: 0) >= habit.targetValue && habit.targetValue > 0)
+            if (isDone) {
+                done++
+            } else if (!isRest && (rec?.state == HabitDayState.MISSED || cellDate.isBefore(today))) {
+                missed++
             }
         }
         done to missed
@@ -1203,7 +1204,7 @@ fun MonthlyHeatmapSection(
                                             // completed day
                                         } else if (isMissed) {
                                             Text(
-                                                text = if (recordVal > 0) "✕$recordVal" else "✕",
+                                                text = if (habit.type == HabitType.TARGET) "${recordVal}✕" else "✕",
                                                 fontSize = 9.sp,
                                                 color = Color(0xFF4E2600),
                                                 fontWeight = FontWeight.Bold,
@@ -1280,7 +1281,7 @@ fun MonthlyHeatmapSection(
                             }
                             val badgeText = when {
                                 isDateDone -> "Completed"
-                                isSelectedMissed -> if (dayValue > 0) "Missed (✕$dayValue/$target ${habit.targetUnit})" else "Missed"
+                                isSelectedMissed -> if (habit.type == HabitType.TARGET) "Missed (${dayValue}✕/$target ${habit.targetUnit})" else "Missed"
                                 isDatePartial -> "$dayValue / $target ${habit.targetUnit}"
                                 isDateRest -> "Rest Day"
                                 else -> "Unmarked"
@@ -1464,24 +1465,26 @@ fun MonthlyHeatmapSection(
                                     }
                                 }
 
-                                // Clear
-                                Surface(
-                                    onClick = {
-                                        HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.UNMARKED, clearNote = true)
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = KairoSurfaceContainerHighest,
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(vertical = 8.dp),
-                                        horizontalArrangement = Arrangement.Center,
-                                        verticalAlignment = Alignment.CenterVertically
+                                // Clear (Only for today — past days only have Done / Missed)
+                                if (!isPastSelected) {
+                                    Surface(
+                                        onClick = {
+                                            HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.UNMARKED, clearNote = true)
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = KairoSurfaceContainerHighest,
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                        modifier = Modifier.weight(1f)
                                     ) {
-                                        Icon(Icons.Default.RestartAlt, contentDescription = null, tint = Color(0xFFCBD5E1), modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(3.dp))
-                                        Text("Clear", color = Color(0xFFCBD5E1), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                        Row(
+                                            modifier = Modifier.padding(vertical = 8.dp),
+                                            horizontalArrangement = Arrangement.Center,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.RestartAlt, contentDescription = null, tint = Color(0xFFCBD5E1), modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("Clear", color = Color(0xFFCBD5E1), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                        }
                                     }
                                 }
                             }
@@ -1573,40 +1576,42 @@ fun MonthlyHeatmapSection(
                                     }
                                 }
 
-                                // Clear / Reset Button
-                                val isUnmarked = dayState == HabitDayState.UNMARKED
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(if (isUnmarked) Color.White.copy(alpha = 0.12f) else KairoSurfaceContainerHighest)
-                                        .border(
-                                            1.dp,
-                                            if (isUnmarked) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f),
-                                            RoundedCornerShape(10.dp)
-                                        )
-                                        .clickable {
-                                            HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.UNMARKED, clearNote = true)
-                                        }
-                                        .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                // Clear / Reset Button (Only for today — past days only have Done / Missed)
+                                if (!isPastSelected) {
+                                    val isUnmarked = dayState == HabitDayState.UNMARKED
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (isUnmarked) Color.White.copy(alpha = 0.12f) else KairoSurfaceContainerHighest)
+                                            .border(
+                                                1.dp,
+                                                if (isUnmarked) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f),
+                                                RoundedCornerShape(10.dp)
+                                            )
+                                            .clickable {
+                                                HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.UNMARKED, clearNote = true)
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.RestartAlt,
-                                            contentDescription = null,
-                                            tint = Color(0xFFCBD5E1),
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Text(
-                                            text = "Clear",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = Color(0xFFCBD5E1)
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.RestartAlt,
+                                                contentDescription = null,
+                                                tint = Color(0xFFCBD5E1),
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Text(
+                                                text = "Clear",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = Color(0xFFCBD5E1)
+                                            )
+                                        }
                                     }
                                 }
                             }

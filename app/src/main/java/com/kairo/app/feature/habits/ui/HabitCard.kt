@@ -573,9 +573,9 @@ private fun DayCheckboxNode(
                         )
                     }
                     dayInfo.state == HabitDayState.MISSED -> {
-                        if (dayInfo.value > 0) {
+                        if (isTargetType) {
                             Text(
-                                text = "✕${dayInfo.value}",
+                                text = "${dayInfo.value}✕",
                                 fontSize = 8.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFFFB7185)
