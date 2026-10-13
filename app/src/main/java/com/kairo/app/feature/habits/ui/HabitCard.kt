@@ -153,145 +153,151 @@ fun HabitCard(
                     .weight(1f)
                     .padding(end = 6.dp)
             ) {
-                // Header Row: Task Name + Schedule Badge
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                // Clickable upper area (header + stepper) opens HabitDetailScreen
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onTitleClick() }
                 ) {
-                    Text(
-                        text = habit.title,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .clickable { onTitleClick() }
-                    )
-
-                    // Schedule or Weekly Progress Pill
-                    when (habit.repeatType) {
-                        HabitRepeatType.WEEKLY_X -> {
-                            val doneAll = habitWithStats.weeklyDoneThisWeek >= habit.weeklyTargetCount
-                            Surface(
-                                shape = RoundedCornerShape(100.dp),
-                                color = if (doneAll) KairoSecondary.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.06f),
-                                border = BorderStroke(1.dp, if (doneAll) KairoSecondary.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.1f))
-                            ) {
-                                Text(
-                                    text = "${habitWithStats.weeklyDoneThisWeek}/${habit.weeklyTargetCount} this wk",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (doneAll) KairoSecondary else Color(0xFFC8C4D9),
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                        HabitRepeatType.SPECIFIC_DAYS -> {
-                            if (!habitWithStats.isTodayScheduled) {
-                                Surface(
-                                    shape = RoundedCornerShape(100.dp),
-                                    color = Color.White.copy(alpha = 0.05f),
-                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
-                                ) {
-                                    Text(
-                                        text = "Rest Day",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color(0xFF94A3B8),
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                        }
-                        else -> {}
-                    }
-                }
-
-                // If Target Habit: Show Live Interactive Stepper
-                if (habit.type == HabitType.TARGET) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                    // Header Row: Task Name + Schedule Badge
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.White.copy(alpha = 0.05f),
-                            border = BorderStroke(
-                                1.dp,
-                                if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary.copy(alpha = 0.45f)
-                                else Color.White.copy(alpha = 0.12f)
-                            )
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(22.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .clickable(enabled = habitWithStats.todayValue > 0) { onDecrement() },
-                                    contentAlignment = Alignment.Center
+                        Text(
+                            text = habit.title,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+
+                        // Schedule or Weekly Progress Pill
+                        when (habit.repeatType) {
+                            HabitRepeatType.WEEKLY_X -> {
+                                val doneAll = habitWithStats.weeklyDoneThisWeek >= habit.weeklyTargetCount
+                                Surface(
+                                    shape = RoundedCornerShape(100.dp),
+                                    color = if (doneAll) KairoSecondary.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.06f),
+                                    border = BorderStroke(1.dp, if (doneAll) KairoSecondary.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.1f))
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Remove,
-                                        contentDescription = "Decrease",
-                                        tint = if (habitWithStats.todayValue > 0) Color.White else Color.Gray.copy(alpha = 0.5f),
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.width(6.dp))
-
-                                Text(
-                                    text = "${habitWithStats.todayValue} / ${habit.targetValue} ${habit.targetUnit}",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else Color.White
-                                )
-
-                                Spacer(modifier = Modifier.width(6.dp))
-
-                                Box(
-                                    modifier = Modifier
-                                        .size(22.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(KairoPrimary.copy(alpha = 0.15f))
-                                        .clickable { onIncrement() },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Add,
-                                        contentDescription = "Increase",
-                                        tint = KairoPrimary,
-                                        modifier = Modifier.size(13.dp)
+                                    Text(
+                                        text = "${habitWithStats.weeklyDoneThisWeek}/${habit.weeklyTargetCount} this wk",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (doneAll) KairoSecondary else Color(0xFFC8C4D9),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }
                             }
+                            HabitRepeatType.SPECIFIC_DAYS -> {
+                                if (!habitWithStats.isTodayScheduled) {
+                                    Surface(
+                                        shape = RoundedCornerShape(100.dp),
+                                        color = Color.White.copy(alpha = 0.05f),
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                                    ) {
+                                        Text(
+                                            text = "Rest Day",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF94A3B8),
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            else -> {}
                         }
+                    }
 
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Mini progress bar fill
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(5.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(Color.White.copy(alpha = 0.08f))
+                    // If Target Habit: Show Live Interactive Stepper
+                    if (habit.type == HabitType.TARGET) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.White.copy(alpha = 0.05f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary.copy(alpha = 0.45f)
+                                    else Color.White.copy(alpha = 0.12f)
+                                )
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(22.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .clickable(enabled = habitWithStats.todayValue > 0) { onDecrement() },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Remove,
+                                            contentDescription = "Decrease",
+                                            tint = if (habitWithStats.todayValue > 0) Color.White else Color.Gray.copy(alpha = 0.5f),
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    Text(
+                                        text = "${habitWithStats.todayValue} / ${habit.targetValue} ${habit.targetUnit}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else Color.White
+                                    )
+
+                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    val canIncrement = habitWithStats.todayValue < habit.targetValue
+                                    Box(
+                                        modifier = Modifier
+                                            .size(22.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(if (canIncrement) KairoPrimary.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f))
+                                            .clickable(enabled = canIncrement) { onIncrement() },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "Increase",
+                                            tint = if (canIncrement) KairoPrimary else Color.White.copy(alpha = 0.25f),
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // Mini progress bar fill
                             Box(
                                 modifier = Modifier
-                                    .fillMaxHeight()
-                                    .fillMaxWidth(habitWithStats.todayProgressFraction)
+                                    .weight(1f)
+                                    .height(5.dp)
                                     .clip(RoundedCornerShape(3.dp))
-                                    .background(if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else KairoPrimary)
-                            )
+                                    .background(Color.White.copy(alpha = 0.08f))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxHeight()
+                                        .fillMaxWidth(habitWithStats.todayProgressFraction)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else KairoPrimary)
+                                )
+                            }
                         }
                     }
                 }
@@ -435,19 +441,12 @@ private fun DayCheckboxNode(
         finishedListener = { isPressed = false }
     )
 
+    val isFuture = dayInfo.date.isAfter(LocalDate.now())
+    val isTargetDone = isTargetType && (dayInfo.value >= targetValue || dayInfo.state == HabitDayState.DONE)
+    val isTargetPartial = isTargetType && (dayInfo.value in 1 until targetValue)
+
     Column(
-        modifier = Modifier
-            .then(
-                if (dayInfo.isToday) {
-                    Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(KairoPrimary.copy(alpha = 0.08f))
-                        .border(1.dp, KairoPrimary.copy(alpha = 0.30f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 2.dp, vertical = 2.dp)
-                } else {
-                    Modifier.padding(horizontal = 1.dp, vertical = 2.dp)
-                }
-            ),
+        modifier = Modifier.padding(horizontal = 2.dp, vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Date Number and Day of Week
@@ -455,15 +454,23 @@ private fun DayCheckboxNode(
             Text(
                 text = "${dayInfo.dayNumber}",
                 fontSize = 10.sp,
-                fontWeight = if (dayInfo.isToday) FontWeight.Bold else FontWeight.Medium,
-                color = if (dayInfo.isToday) KairoPrimary else Color(0xFF94A3B8)
+                fontWeight = if (dayInfo.isToday) FontWeight.ExtraBold else FontWeight.Medium,
+                color = when {
+                    dayInfo.isToday -> KairoPrimary
+                    isFuture -> Color(0xFF64748B)
+                    else -> Color(0xFF94A3B8)
+                }
             )
             Spacer(modifier = Modifier.width(1.dp))
             Text(
                 text = dayInfo.dayLabel,
                 fontSize = 8.sp,
-                fontWeight = FontWeight.Normal,
-                color = if (dayInfo.isToday) KairoPrimary.copy(alpha = 0.8f) else Color(0xFF64748B)
+                fontWeight = if (dayInfo.isToday) FontWeight.Bold else FontWeight.Normal,
+                color = when {
+                    dayInfo.isToday -> KairoPrimary.copy(alpha = 0.85f)
+                    isFuture -> Color(0xFF475569)
+                    else -> Color(0xFF64748B)
+                }
             )
         }
 
@@ -488,9 +495,6 @@ private fun DayCheckboxNode(
                 )
             }
         } else {
-            val isTargetDone = isTargetType && (dayInfo.value >= targetValue || dayInfo.state == HabitDayState.DONE)
-            val isTargetPartial = isTargetType && (dayInfo.value in 1 until targetValue)
-
             Box(
                 modifier = Modifier
                     .size(21.dp)
@@ -513,18 +517,23 @@ private fun DayCheckboxNode(
                                     .background(Color(0xFFF43F5E).copy(alpha = 0.12f))
                                     .border(1.2.dp, Color(0xFFFB7185).copy(alpha = 0.6f), RoundedCornerShape(6.dp))
                             }
+                            isFuture -> {
+                                Modifier
+                                    .background(Color.White.copy(alpha = 0.015f))
+                                    .border(0.8.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(6.dp))
+                            }
                             else -> {
                                 Modifier
                                     .background(Color.White.copy(alpha = 0.03f))
                                     .border(
-                                        1.dp,
-                                        if (dayInfo.isToday) KairoPrimary.copy(alpha = 0.60f) else Color.White.copy(alpha = 0.15f),
+                                        if (dayInfo.isToday) 1.5.dp else 1.dp,
+                                        if (dayInfo.isToday) KairoPrimary else Color.White.copy(alpha = 0.15f),
                                         RoundedCornerShape(6.dp)
                                     )
                             }
                         }
                     )
-                    .clickable {
+                    .clickable(enabled = !isFuture && !dayInfo.isRestDay) {
                         isPressed = true
                         onToggle()
                     },

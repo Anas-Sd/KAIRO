@@ -479,6 +479,7 @@ object HabitRepository {
      * Increments or decrements today's (or given date's) progress value for a Target habit.
      */
     fun incrementHabitDay(habitId: String, date: LocalDate, delta: Int = 1, note: String? = null) {
+        if (date.isAfter(LocalDate.now())) return
         val habit = _habitsList.value.find { it.id == habitId } ?: return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
@@ -486,7 +487,7 @@ object HabitRepository {
 
         val currentRecord = habitDates[dateStr] ?: HabitDayRecord()
         val target = habit.targetValue.coerceAtLeast(1)
-        val newValue = (currentRecord.value + delta).coerceAtLeast(0)
+        val newValue = (currentRecord.value + delta).coerceIn(0, target)
 
         val newState = when {
             newValue == 0 -> HabitDayState.UNMARKED
@@ -531,6 +532,7 @@ object HabitRepository {
      * Sets specific value for a target habit on a given date.
      */
     fun setHabitDayValue(habitId: String, date: LocalDate, value: Int, note: String? = null) {
+        if (date.isAfter(LocalDate.now())) return
         val habit = _habitsList.value.find { it.id == habitId } ?: return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
@@ -538,7 +540,7 @@ object HabitRepository {
 
         val currentRecord = habitDates[dateStr] ?: HabitDayRecord()
         val target = habit.targetValue.coerceAtLeast(1)
-        val cleanVal = value.coerceAtLeast(0)
+        val cleanVal = value.coerceIn(0, target)
         val newState = when {
             cleanVal == 0 -> HabitDayState.UNMARKED
             cleanVal >= target -> HabitDayState.DONE
@@ -585,6 +587,7 @@ object HabitRepository {
         note: String? = null,
         clearNote: Boolean = false
     ) {
+        if (date.isAfter(LocalDate.now())) return
         val habit = _habitsList.value.find { it.id == habitId }
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
@@ -632,6 +635,7 @@ object HabitRepository {
     }
 
     fun setHabitDayNote(habitId: String, date: LocalDate, note: String?) {
+        if (date.isAfter(LocalDate.now())) return
         val habit = _habitsList.value.find { it.id == habitId } ?: return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
@@ -667,6 +671,7 @@ object HabitRepository {
      * Appends an increment note to the existing note on a given day (comma-separated).
      */
     fun appendHabitDayNote(habitId: String, date: LocalDate, note: String?) {
+        if (date.isAfter(LocalDate.now())) return
         val cleanNote = note?.trim()?.takeIf { it.isNotBlank() } ?: return
         val habit = _habitsList.value.find { it.id == habitId } ?: return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
@@ -852,6 +857,7 @@ object HabitRepository {
      * Cycles day state: UNMARKED -> DONE -> MISSED -> UNMARKED
      */
     fun toggleHabitDay(habitId: String, date: LocalDate) {
+        if (date.isAfter(LocalDate.now())) return
         val habit = _habitsList.value.find { it.id == habitId }
         val target = habit?.targetValue ?: 1
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)

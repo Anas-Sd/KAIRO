@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.EventBusy
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestartAlt
@@ -510,6 +511,9 @@ fun HabitDetailScreen(
                             }
 
                             // Stepper Controls
+                            val canDecrementToday = habitWithStats.todayValue > 0
+                            val canIncrementToday = habitWithStats.todayValue < currentHabit.targetValue
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -520,9 +524,10 @@ fun HabitDetailScreen(
                                     onClick = {
                                         HabitRepository.incrementHabitDay(currentHabit.id, today, -1)
                                     },
+                                    enabled = canDecrementToday,
                                     shape = RoundedCornerShape(10.dp),
-                                    color = KairoSurfaceContainerHigh,
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                                    color = if (canDecrementToday) KairoSurfaceContainerHigh else Color.White.copy(alpha = 0.04f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (canDecrementToday) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.05f)),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Row(
@@ -530,9 +535,9 @@ fun HabitDetailScreen(
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.Remove, contentDescription = "Decrement", tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Remove, contentDescription = "Decrement", tint = if (canDecrementToday) Color.White else Color.Gray.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("-1", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text("-1", color = if (canDecrementToday) Color.White else Color.Gray.copy(alpha = 0.4f), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -548,9 +553,10 @@ fun HabitDetailScreen(
                                             isAppend = true
                                         )
                                     },
+                                    enabled = canIncrementToday,
                                     shape = RoundedCornerShape(10.dp),
-                                    color = KairoPrimary.copy(alpha = 0.2f),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.5f)),
+                                    color = if (canIncrementToday) KairoPrimary.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.04f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (canIncrementToday) KairoPrimary.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.05f)),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Row(
@@ -558,9 +564,9 @@ fun HabitDetailScreen(
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.Add, contentDescription = "Increment", tint = KairoPrimary, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Add, contentDescription = "Increment", tint = if (canIncrementToday) KairoPrimary else Color.Gray.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("+1", color = KairoPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text("+1", color = if (canIncrementToday) KairoPrimary else Color.Gray.copy(alpha = 0.4f), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -1282,13 +1288,41 @@ fun MonthlyHeatmapSection(
                         }
 
                         // Target stepper vs Yes/No buttons
-                        if (habit.type == HabitType.TARGET) {
+                        if (sDate.isAfter(today)) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color.White.copy(alpha = 0.04f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = null,
+                                        tint = Color(0xFF94A3B8),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Future date — habit actions are locked until this day arrives.",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF94A3B8)
+                                    )
+                                }
+                            }
+                        } else if (habit.type == HabitType.TARGET) {
                             Text(
                                 text = "Adjust count for $formattedSelectedDate (syncs to Supabase):",
                                 fontSize = 11.sp,
                                 color = Color(0xFF94A3B8),
                                 fontWeight = FontWeight.Medium
                             )
+
+                            val canDecrement = dayValue > 0
+                            val canIncrement = dayValue < target
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1300,9 +1334,10 @@ fun MonthlyHeatmapSection(
                                     onClick = {
                                         HabitRepository.incrementHabitDay(habit.id, sDate, -1)
                                     },
+                                    enabled = canDecrement,
                                     shape = RoundedCornerShape(10.dp),
-                                    color = KairoSurfaceContainerHighest,
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                    color = if (canDecrement) KairoSurfaceContainerHighest else Color.White.copy(alpha = 0.04f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (canDecrement) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.04f)),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Row(
@@ -1310,9 +1345,9 @@ fun MonthlyHeatmapSection(
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.Remove, contentDescription = "-1", tint = Color.White, modifier = Modifier.size(14.dp))
+                                        Icon(Icons.Default.Remove, contentDescription = "-1", tint = if (canDecrement) Color.White else Color.Gray.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
                                         Spacer(modifier = Modifier.width(3.dp))
-                                        Text("-1", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("-1", color = if (canDecrement) Color.White else Color.Gray.copy(alpha = 0.4f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -1321,9 +1356,10 @@ fun MonthlyHeatmapSection(
                                     onClick = {
                                         HabitRepository.incrementHabitDay(habit.id, sDate, 1)
                                     },
+                                    enabled = canIncrement,
                                     shape = RoundedCornerShape(10.dp),
-                                    color = KairoPrimary.copy(alpha = 0.2f),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.4f)),
+                                    color = if (canIncrement) KairoPrimary.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.04f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (canIncrement) KairoPrimary.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.04f)),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Row(
@@ -1331,9 +1367,9 @@ fun MonthlyHeatmapSection(
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.Add, contentDescription = "+1", tint = KairoPrimary, modifier = Modifier.size(14.dp))
+                                        Icon(Icons.Default.Add, contentDescription = "+1", tint = if (canIncrement) KairoPrimary else Color.Gray.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
                                         Spacer(modifier = Modifier.width(3.dp))
-                                        Text("+1", color = KairoPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("+1", color = if (canIncrement) KairoPrimary else Color.Gray.copy(alpha = 0.4f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -1553,76 +1589,78 @@ fun MonthlyHeatmapSection(
                             }
                         }
 
-                        // Day Note Display / Add Note chip
-                        if (!dayRecord.note.isNullOrBlank()) {
-                            Surface(
-                                onClick = {
-                                    onPromptNote(sDate, if (isDateDone) HabitDayState.DONE else HabitDayState.MISSED, dayRecord.note)
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color.White.copy(alpha = 0.04f),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                        // Day Note Display / Add Note chip (only for past and present days)
+                        if (!sDate.isAfter(today)) {
+                            if (!dayRecord.note.isNullOrBlank()) {
+                                Surface(
+                                    onClick = {
+                                        onPromptNote(sDate, if (isDateDone) HabitDayState.DONE else HabitDayState.MISSED, dayRecord.note)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color.White.copy(alpha = 0.04f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        modifier = Modifier.weight(1f)
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.EditNote,
+                                                contentDescription = null,
+                                                tint = if (isDateDone) KairoSecondary else Color(0xFFFFB77D),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = "Note: ${dayRecord.note}",
+                                                fontSize = 12.sp,
+                                                color = Color.White,
+                                                maxLines = 2,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Edit Note",
+                                            tint = Color(0xFFC8C4D9),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            } else if ((isDateDone && habit.type == HabitType.TARGET) || dayState == HabitDayState.MISSED) {
+                                Surface(
+                                    onClick = {
+                                        onPromptNote(sDate, if (isDateDone) HabitDayState.DONE else HabitDayState.MISSED, null)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color.White.copy(alpha = 0.03f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.EditNote,
                                             contentDescription = null,
                                             tint = if (isDateDone) KairoSecondary else Color(0xFFFFB77D),
-                                            modifier = Modifier.size(16.dp)
+                                            modifier = Modifier.size(15.dp)
                                         )
                                         Text(
-                                            text = "Note: ${dayRecord.note}",
-                                            fontSize = 12.sp,
-                                            color = Color.White,
-                                            maxLines = 2,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            text = if (isDateDone) "+ Add completion note" else "+ Add missed reason",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (isDateDone) KairoSecondary else Color(0xFFFFB77D)
                                         )
                                     }
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = "Edit Note",
-                                        tint = Color(0xFFC8C4D9),
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            }
-                        } else if ((isDateDone && habit.type == HabitType.TARGET) || dayState == HabitDayState.MISSED) {
-                            Surface(
-                                onClick = {
-                                    onPromptNote(sDate, if (isDateDone) HabitDayState.DONE else HabitDayState.MISSED, null)
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color.White.copy(alpha = 0.03f),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.EditNote,
-                                        contentDescription = null,
-                                        tint = if (isDateDone) KairoSecondary else Color(0xFFFFB77D),
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Text(
-                                        text = if (isDateDone) "+ Add completion note" else "+ Add missed reason",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = if (isDateDone) KairoSecondary else Color(0xFFFFB77D)
-                                    )
                                 }
                             }
                         }

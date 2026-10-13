@@ -114,10 +114,16 @@ fun HabitsScreen(
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
     var localReorderList by remember { mutableStateOf<List<HabitWithStats>?>(null) }
 
-    // Filter habits according to search query
+    // Filter habits according to search query (completed habits sink to bottom when not dragging)
     val activeList = if (draggingHabitId != null && localReorderList != null) {
         localReorderList!!
-    } else habitsWithStats
+    } else {
+        habitsWithStats.sortedBy { item ->
+            val isDoneToday = item.todayProgressFraction >= 1f ||
+                item.days.find { it.isToday }?.state == HabitDayState.DONE
+            if (isDoneToday) 1 else 0
+        }
+    }
 
     val filteredHabits = remember(activeList, searchQuery) {
         if (searchQuery.isBlank()) {
@@ -396,6 +402,9 @@ fun HabitsScreen(
                                 }
                             },
                             onDayClick = { date ->
+                                if (date.isAfter(LocalDate.now())) {
+                                    return@HabitCard
+                                }
                                 val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
                                 val logs = HabitRepository.getHabitLogs(item.habit.id)
                                 val currentRecord = logs[dateStr] ?: HabitDayRecord()
@@ -438,17 +447,19 @@ fun HabitsScreen(
                                 val today = LocalDate.now()
                                 val isTarget = item.habit.type == HabitType.TARGET
 
-                                HabitRepository.incrementHabitDay(item.habit.id, today, 1)
+                                if (item.todayValue < item.habit.targetValue) {
+                                    HabitRepository.incrementHabitDay(item.habit.id, today, 1)
 
-                                // For target habits: prompt for note on EVERY increment!
-                                if (isTarget) {
-                                    activeNoteDialog = ActiveNoteDialog(
-                                        habit = item.habit,
-                                        date = today,
-                                        state = HabitDayState.DONE,
-                                        initialNote = null,
-                                        isAppend = true
-                                    )
+                                    // For target habits: prompt for note on EVERY increment!
+                                    if (isTarget) {
+                                        activeNoteDialog = ActiveNoteDialog(
+                                            habit = item.habit,
+                                            date = today,
+                                            state = HabitDayState.DONE,
+                                            initialNote = null,
+                                            isAppend = true
+                                        )
+                                    }
                                 }
                             },
                             onDecrement = {
