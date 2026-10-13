@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 import java.time.LocalDate
+import java.time.DayOfWeek
 
 @Composable
 fun HabitCard(
@@ -330,21 +331,52 @@ fun HabitCard(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Bottom Swipable Compact Date Strip
+                // Group days into weeks (Monday to Sunday) for week-to-week light border
+                val weekGroups = remember(habitWithStats.days) {
+                    val groups = mutableListOf<MutableList<HabitDayInfo>>()
+                    var currentGroup = mutableListOf<HabitDayInfo>()
+                    habitWithStats.days.forEachIndexed { index, dayInfo ->
+                        if (index > 0 && dayInfo.date.dayOfWeek == DayOfWeek.MONDAY) {
+                            groups.add(currentGroup)
+                            currentGroup = mutableListOf()
+                        }
+                        currentGroup.add(dayInfo)
+                    }
+                    if (currentGroup.isNotEmpty()) {
+                        groups.add(currentGroup)
+                    }
+                    groups
+                }
+
+                // Bottom Swipable Compact Date Strip (Grouped week to week with light border)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(scrollState),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    habitWithStats.days.forEach { dayInfo ->
-                        DayCheckboxNode(
-                            dayInfo = dayInfo,
-                            isTargetType = habit.type == HabitType.TARGET,
-                            targetValue = habit.targetValue,
-                            onToggle = { onDayClick(dayInfo.date) }
-                        )
+                    weekGroups.forEach { weekDays ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.White.copy(alpha = 0.02f),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                weekDays.forEach { dayInfo ->
+                                    DayCheckboxNode(
+                                        dayInfo = dayInfo,
+                                        isTargetType = habit.type == HabitType.TARGET,
+                                        targetValue = habit.targetValue,
+                                        onToggle = { onDayClick(dayInfo.date) }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -461,7 +493,8 @@ private fun DayCheckboxNode(
 
     val isFuture = dayInfo.date.isAfter(LocalDate.now())
     val isTargetDone = isTargetType && (dayInfo.value >= targetValue || dayInfo.state == HabitDayState.DONE)
-    val isTargetPartial = isTargetType && (dayInfo.value in 1 until targetValue) && dayInfo.state != HabitDayState.MISSED
+    val hasPartialProgress = isTargetType && (dayInfo.value in 1 until targetValue)
+    val isMissed = dayInfo.state == HabitDayState.MISSED
 
     Column(
         modifier = Modifier.padding(horizontal = 2.dp, vertical = 2.dp),
@@ -525,7 +558,7 @@ private fun DayCheckboxNode(
                                     .background(KairoSecondary.copy(alpha = 0.20f))
                                     .border(1.2.dp, KairoSecondary, RoundedCornerShape(6.dp))
                             }
-                            isTargetPartial -> {
+                            hasPartialProgress -> {
                                 Modifier
                                     .background(Color(0xFFFACC15).copy(alpha = 0.18f))
                                     .border(1.2.dp, Color(0xFFFACC15).copy(alpha = 0.8f), RoundedCornerShape(6.dp))
@@ -566,10 +599,11 @@ private fun DayCheckboxNode(
                             modifier = Modifier.size(13.dp)
                         )
                     }
-                    isTargetPartial -> {
+                    hasPartialProgress -> {
+                        // Partial progress: yellow color with count; on missed/past days marked as X
                         Text(
-                            text = "${dayInfo.value}",
-                            fontSize = 9.sp,
+                            text = if (isMissed) "${dayInfo.value}✕" else "${dayInfo.value}",
+                            fontSize = if (isMissed) 8.sp else 9.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFFACC15)
                         )

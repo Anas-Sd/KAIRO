@@ -31,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,10 +40,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import com.kairo.app.data.auth.AuthManager
 import com.kairo.app.data.sync.SyncManager
 import com.kairo.app.feature.habits.data.HabitRepository
@@ -75,6 +80,18 @@ fun AppHeader(
     val coroutineScope = rememberCoroutineScope()
 
     var showMenu by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(isSearchActive) {
+        if (isSearchActive) {
+            delay(100)
+            try {
+                focusRequester.requestFocus()
+                keyboardController?.show()
+            } catch (_: Exception) {}
+        }
+    }
 
     Column(
         modifier = modifier
@@ -275,7 +292,9 @@ fun AppHeader(
                         unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                     ),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
                 )
             }
         }

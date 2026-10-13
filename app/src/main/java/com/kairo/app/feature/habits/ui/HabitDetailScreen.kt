@@ -1140,22 +1140,22 @@ fun MonthlyHeatmapSection(
                                 val isDone = state == HabitDayState.DONE || (habit.type == HabitType.TARGET && recordVal >= target)
                                 val isPast = cellDate.isBefore(today)
                                 val isRestDay = (habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(cellDate.dayOfWeek.value) && !isDone)
-                                val isMissed = state == HabitDayState.MISSED || (isPast && !isDone && !isRestDay)
-                                val isPartial = habit.type == HabitType.TARGET && recordVal in 1 until target && !isMissed
+                                val isPartial = habit.type == HabitType.TARGET && recordVal in 1 until target
+                                val isMissed = (state == HabitDayState.MISSED || (isPast && !isDone && !isRestDay)) && !isPartial
                                 val isSelected = selectedDayDate == cellDate
                                 val isToday = cellDate == today
 
                                 val bgColor = when {
                                     isDone -> KairoSecondary
-                                    isMissed -> Color(0xFFFFB77D)
-                                    isPartial -> Color(0xFFFACC15).copy(alpha = 0.25f)
+                                    isPartial -> Color(0xFFFACC15).copy(alpha = 0.22f)
+                                    isMissed -> Color(0xFFF43F5E).copy(alpha = 0.15f)
                                     isRestDay -> Color.White.copy(alpha = 0.03f)
                                     else -> KairoSurfaceContainerHighest
                                 }
                                 val textColor = when {
                                     isDone -> Color(0xFF003822)
-                                    isMissed -> Color(0xFF4E2600)
                                     isPartial -> Color(0xFFFACC15)
+                                    isMissed -> Color(0xFFFB7185)
                                     isRestDay -> Color(0xFF64748B)
                                     else -> Color(0xFFCBD5E1)
                                 }
@@ -1166,6 +1166,8 @@ fun MonthlyHeatmapSection(
                                     Modifier.border(1.5.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
                                 } else if (isPartial) {
                                     Modifier.border(1.2.dp, Color(0xFFFACC15).copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+                                } else if (isMissed) {
+                                    Modifier.border(1.2.dp, Color(0xFFFB7185).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
                                 } else {
                                     Modifier.border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
                                 }
@@ -1202,19 +1204,19 @@ fun MonthlyHeatmapSection(
                                             )
                                         } else if (isDone) {
                                             // completed day
-                                        } else if (isMissed) {
+                                        } else if (isPartial) {
                                             Text(
-                                                text = if (habit.type == HabitType.TARGET) "${recordVal}✕" else "✕",
+                                                text = if (isPast) "${recordVal}✕" else "$recordVal",
                                                 fontSize = 9.sp,
-                                                color = Color(0xFF4E2600),
+                                                color = Color(0xFFFACC15),
                                                 fontWeight = FontWeight.Bold,
                                                 lineHeight = 9.sp
                                             )
-                                        } else if (isPartial) {
+                                        } else if (isMissed) {
                                             Text(
-                                                text = "$recordVal",
+                                                text = if (habit.type == HabitType.TARGET) "0✕" else "✕",
                                                 fontSize = 9.sp,
-                                                color = Color(0xFFFACC15),
+                                                color = Color(0xFFFB7185),
                                                 fontWeight = FontWeight.Bold,
                                                 lineHeight = 9.sp
                                             )
@@ -1239,8 +1241,8 @@ fun MonthlyHeatmapSection(
                 val isPastSelected = sDate.isBefore(today)
                 val isDateDone = dayState == HabitDayState.DONE || (habit.type == HabitType.TARGET && dayValue >= target)
                 val isDateRest = (habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(sDate.dayOfWeek.value))
-                val isSelectedMissed = dayState == HabitDayState.MISSED || (isPastSelected && !isDateDone && !isDateRest)
-                val isDatePartial = habit.type == HabitType.TARGET && dayValue in 1 until target && !isSelectedMissed
+                val isDatePartial = habit.type == HabitType.TARGET && dayValue in 1 until target
+                val isSelectedMissed = (dayState == HabitDayState.MISSED || (isPastSelected && !isDateDone && !isDateRest)) && !isDatePartial
                 val formattedSelectedDate = sDate.format(DateTimeFormatter.ofPattern("EEEE, MMM d, yyyy"))
 
                 Box(
@@ -1274,22 +1276,22 @@ fun MonthlyHeatmapSection(
                             // Current state badge
                             val badgeBg = when {
                                 isDateDone -> KairoSecondary.copy(alpha = 0.20f)
-                                isSelectedMissed -> Color(0xFFFFB77D).copy(alpha = 0.20f)
                                 isDatePartial -> Color(0xFFFACC15).copy(alpha = 0.20f)
+                                isSelectedMissed -> Color(0xFFF43F5E).copy(alpha = 0.20f)
                                 isDateRest -> Color.White.copy(alpha = 0.08f)
                                 else -> KairoSurfaceContainerHighest
                             }
                             val badgeText = when {
                                 isDateDone -> "Completed"
-                                isSelectedMissed -> if (habit.type == HabitType.TARGET) "Missed (${dayValue}✕/$target ${habit.targetUnit})" else "Missed"
-                                isDatePartial -> "$dayValue / $target ${habit.targetUnit}"
+                                isDatePartial -> if (isPastSelected) "Partial (${dayValue}✕/$target ${habit.targetUnit})" else "$dayValue / $target ${habit.targetUnit}"
+                                isSelectedMissed -> if (habit.type == HabitType.TARGET) "Missed (0✕/$target ${habit.targetUnit})" else "Missed"
                                 isDateRest -> "Rest Day"
                                 else -> "Unmarked"
                             }
                             val badgeTextColor = when {
                                 isDateDone -> KairoSecondary
-                                isSelectedMissed -> Color(0xFFFFB77D)
                                 isDatePartial -> Color(0xFFFACC15)
+                                isSelectedMissed -> Color(0xFFFB7185)
                                 isDateRest -> Color(0xFF94A3B8)
                                 else -> Color(0xFFC8C4D9)
                             }
