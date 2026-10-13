@@ -56,6 +56,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -98,7 +99,8 @@ private data class DetailNoteDialogState(
     val habit: Habit,
     val date: LocalDate,
     val state: HabitDayState,
-    val initialNote: String? = null
+    val initialNote: String? = null,
+    val isAppend: Boolean = false
 )
 
 @Composable
@@ -118,6 +120,10 @@ fun HabitDetailScreen(
 
     val context = LocalContext.current
     val today = remember { LocalDate.now() }
+
+    LaunchedEffect(Unit) {
+        HabitRepository.autoMarkMissedPastDays()
+    }
 
     val streakUnit = when (currentHabit.repeatType) {
         HabitRepeatType.WEEKLY_X -> "Weeks"
@@ -534,6 +540,13 @@ fun HabitDetailScreen(
                                 Surface(
                                     onClick = {
                                         HabitRepository.incrementHabitDay(currentHabit.id, today, 1)
+                                        activeNoteDialog = DetailNoteDialogState(
+                                            habit = currentHabit,
+                                            date = today,
+                                            state = HabitDayState.DONE,
+                                            initialNote = null,
+                                            isAppend = true
+                                        )
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     color = KairoPrimary.copy(alpha = 0.2f),
@@ -836,7 +849,13 @@ fun HabitDetailScreen(
             initialNote = dialogState.initialNote,
             onDismiss = { activeNoteDialog = null },
             onConfirm = { noteText ->
-                HabitRepository.setHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
+                if (dialogState.isAppend) {
+                    if (!noteText.isNullOrBlank()) {
+                        HabitRepository.appendHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
+                    }
+                } else {
+                    HabitRepository.setHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
+                }
                 activeNoteDialog = null
             }
         )

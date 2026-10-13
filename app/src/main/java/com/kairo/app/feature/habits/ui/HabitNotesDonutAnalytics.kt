@@ -107,19 +107,22 @@ fun HabitNotesDonutAnalytics(
     val relevantLogs = remember(habitLogs, selectedTab, habit.type) {
         habitLogs.filter { (_, rec) ->
             if (selectedTab == HabitNoteTab.DONE) {
-                (rec.state == HabitDayState.DONE || (habit.type == HabitType.TARGET && rec.value >= habit.targetValue && habit.targetValue > 0)) &&
-                        !rec.note.isNullOrBlank()
+                (rec.state == HabitDayState.DONE || rec.value > 0) && !rec.note.isNullOrBlank()
             } else {
                 rec.state == HabitDayState.MISSED && !rec.note.isNullOrBlank()
             }
         }
     }
 
-    // Group by trimmed note string and count occurrences
+    // Group by trimmed note string and count occurrences (splitting multi-item notes)
     val noteCounts = remember(relevantLogs) {
         relevantLogs.values
-            .mapNotNull { it.note?.trim() }
-            .filter { it.isNotBlank() }
+            .flatMap { rec ->
+                rec.note?.split(",", "\n", ";")
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotBlank() }
+                    ?: emptyList()
+            }
             .groupingBy { it }
             .eachCount()
             .toList()

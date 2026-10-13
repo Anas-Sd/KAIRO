@@ -156,5 +156,14 @@ class MainActivity : ComponentActivity() {
             requestPermissionsLauncher.launch(permissions.toTypedArray())
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        try {
+            com.kairo.app.feature.habits.data.HabitRepository.autoMarkMissedPastDays()
+        } catch (e: Throwable) {
+            android.util.Log.e("MainActivity", "Error auto-marking missed habit days: ${e.message}", e)
+        }
+    }
 }
 

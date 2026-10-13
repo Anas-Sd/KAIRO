@@ -39,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -76,7 +77,8 @@ private data class ActiveNoteDialog(
     val habit: Habit,
     val date: LocalDate,
     val state: HabitDayState,
-    val initialNote: String? = null
+    val initialNote: String? = null,
+    val isAppend: Boolean = false
 )
 
 @Composable
@@ -86,6 +88,11 @@ fun HabitsScreen(
     val habitsWithStats by HabitRepository.habitsWithStats.collectAsState()
     val disciplineOverview by HabitRepository.disciplineOverview.collectAsState()
     val context = LocalContext.current
+
+    // Automatically check and mark any past scheduled habits that were not completed as missed
+    LaunchedEffect(Unit) {
+        HabitRepository.autoMarkMissedPastDays()
+    }
 
     var selectedHabitForDetail by remember { mutableStateOf<HabitWithStats?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -429,22 +436,18 @@ fun HabitsScreen(
                             },
                             onIncrement = {
                                 val today = LocalDate.now()
-                                val dateStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                                val logs = HabitRepository.getHabitLogs(item.habit.id)
-                                val currentRecord = logs[dateStr] ?: HabitDayRecord()
-                                val currentVal = currentRecord.value
-                                val nextVal = currentVal + 1
-                                val targetVal = item.habit.targetValue.coerceAtLeast(1)
+                                val isTarget = item.habit.type == HabitType.TARGET
 
                                 HabitRepository.incrementHabitDay(item.habit.id, today, 1)
 
-                                // If reaching target today for the first time, prompt for optional Done note
-                                if (nextVal >= targetVal && currentVal < targetVal) {
+                                // For target habits: prompt for note on EVERY increment!
+                                if (isTarget) {
                                     activeNoteDialog = ActiveNoteDialog(
                                         habit = item.habit,
                                         date = today,
                                         state = HabitDayState.DONE,
-                                        initialNote = currentRecord.note
+                                        initialNote = null,
+                                        isAppend = true
                                     )
                                 }
                             },
@@ -744,7 +747,13 @@ fun HabitsScreen(
             initialNote = dialogState.initialNote,
             onDismiss = { activeNoteDialog = null },
             onConfirm = { noteText ->
-                HabitRepository.setHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
+                if (dialogState.isAppend) {
+                    if (!noteText.isNullOrBlank()) {
+                        HabitRepository.appendHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
+                    }
+                } else {
+                    HabitRepository.setHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
+                }
                 activeNoteDialog = null
             }
         )

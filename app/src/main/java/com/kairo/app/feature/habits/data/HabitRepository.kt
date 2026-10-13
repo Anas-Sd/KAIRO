@@ -134,6 +134,7 @@ object HabitRepository {
 
         _habitsList.value = loadedHabits
         _logsMap.value = loadedLogs
+        autoMarkMissedPastDays()
         recomputeAllStats()
     }
 
@@ -237,6 +238,7 @@ object HabitRepository {
             }
 
             persistData()
+            autoMarkMissedPastDays()
             recomputeAllStats()
         }
     }
@@ -661,6 +663,136 @@ object HabitRepository {
         }
     }
 
+    /**
+     * Appends an increment note to the existing note on a given day (comma-separated).
+     */
+    fun appendHabitDayNote(habitId: String, date: LocalDate, note: String?) {
+        val cleanNote = note?.trim()?.takeIf { it.isNotBlank() } ?: return
+        val habit = _habitsList.value.find { it.id == habitId } ?: return
+        val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val currentLogs = _logsMap.value.toMutableMap()
+        val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
+
+        val currentRecord = habitDates[dateStr] ?: HabitDayRecord(state = HabitDayState.UNMARKED, value = 0)
+        val existingNotes = currentRecord.note
+            ?.split(",", "\n", ";")
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+
+        val combinedNote = if (existingNotes.isEmpty()) {
+            cleanNote
+        } else {
+            (existingNotes + cleanNote).joinToString(", ")
+        }
+
+        val updatedRecord = currentRecord.copy(note = combinedNote)
+        habitDates[dateStr] = updatedRecord
+        currentLogs[habitId] = habitDates
+        _logsMap.value = currentLogs
+
+        persistData()
+        recomputeAllStats()
+
+        val userCode = AuthManager.getUserCode() ?: "DEFAULT"
+        scope.launch {
+            val logDto = HabitLogDto(
+                id = "${habitId}_${dateStr}",
+                habitId = habitId,
+                userCode = userCode,
+                date = dateStr,
+                state = updatedRecord.state.name,
+                value = updatedRecord.value,
+                note = combinedNote,
+                createdAt = System.currentTimeMillis()
+            )
+            SupabaseClient.upsertHabitLog(logDto)
+        }
+    }
+
+    /**
+     * Automatically scans past days (up to yesterday). If a habit was scheduled for a past day
+     * and was NOT completed, it is automatically marked MISSED with note "missed".
+     */
+    fun autoMarkMissedPastDays() {
+        val today = LocalDate.now()
+        val dateFormatter = DateTimeFormatter.ISO_LOCAL_DATE
+        var anyChanged = false
+        val currentLogs = _logsMap.value.toMutableMap()
+        val userCode = AuthManager.getUserCode() ?: "DEFAULT"
+        val logsToUpsert = mutableListOf<HabitLogDto>()
+
+        _habitsList.value.forEach { habit ->
+            val habitCreatedDate = runCatching {
+                java.time.Instant.ofEpochMilli(habit.createdAt)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDate()
+            }.getOrDefault(today)
+
+            val startDate = maxOf(today.minusDays(30), habitCreatedDate)
+            if (!startDate.isAfter(today.minusDays(1))) {
+                val habitDates = currentLogs[habit.id]?.toMutableMap() ?: mutableMapOf()
+                var checkDate = startDate
+
+                while (!checkDate.isAfter(today.minusDays(1))) {
+                    val isScheduled = when (habit.repeatType) {
+                        HabitRepeatType.EVERYDAY -> true
+                        HabitRepeatType.SPECIFIC_DAYS -> habit.repeatDays.contains(checkDate.dayOfWeek.value)
+                        HabitRepeatType.WEEKLY_X -> false
+                    }
+
+                    if (isScheduled) {
+                        val dateStr = checkDate.format(dateFormatter)
+                        val currentRec = habitDates[dateStr]
+                        val isDone = currentRec?.state == HabitDayState.DONE ||
+                                (habit.type == HabitType.TARGET && (currentRec?.value ?: 0) >= habit.targetValue && habit.targetValue > 0)
+
+                        if (!isDone && currentRec?.state != HabitDayState.MISSED) {
+                            val missedRec = HabitDayRecord(
+                                state = HabitDayState.MISSED,
+                                value = currentRec?.value ?: 0,
+                                note = currentRec?.note?.takeIf { it.isNotBlank() } ?: "missed"
+                            )
+                            habitDates[dateStr] = missedRec
+                            anyChanged = true
+                            logsToUpsert.add(
+                                HabitLogDto(
+                                    id = "${habit.id}_${dateStr}",
+                                    habitId = habit.id,
+                                    userCode = userCode,
+                                    date = dateStr,
+                                    state = HabitDayState.MISSED.name,
+                                    value = missedRec.value,
+                                    note = missedRec.note,
+                                    createdAt = System.currentTimeMillis()
+                                )
+                            )
+                        }
+                    }
+                    checkDate = checkDate.plusDays(1)
+                }
+
+                if (anyChanged) {
+                    currentLogs[habit.id] = habitDates
+                }
+            }
+        }
+
+        if (anyChanged) {
+            _logsMap.value = currentLogs
+            persistData()
+            recomputeAllStats()
+
+            if (logsToUpsert.isNotEmpty()) {
+                scope.launch {
+                    logsToUpsert.forEach { dto ->
+                        SupabaseClient.upsertHabitLog(dto)
+                    }
+                }
+            }
+        }
+    }
+
     data class NoteOccurrence(
         val habitId: String,
         val habitTitle: String,
@@ -674,10 +806,12 @@ object HabitRepository {
         _logsMap.value.forEach { (hId, dateMap) ->
             val weight = if (habitId != null && hId == habitId) 3 else 1
             dateMap.values.forEach { rec ->
-                val note = rec.note?.trim()
-                if (!note.isNullOrBlank()) {
-                    if (state == null || rec.state == state) {
-                        notesWithFreq[note] = (notesWithFreq[note] ?: 0) + weight
+                if (!rec.note.isNullOrBlank()) {
+                    if (state == null || rec.state == state || (state == HabitDayState.DONE && rec.value > 0)) {
+                        val items = rec.note.split(",", "\n", ";").map { it.trim() }.filter { it.isNotBlank() }
+                        items.forEach { noteItem ->
+                            notesWithFreq[noteItem] = (notesWithFreq[noteItem] ?: 0) + weight
+                        }
                     }
                 }
             }
@@ -693,17 +827,20 @@ object HabitRepository {
         _logsMap.value.forEach { (hId, dateMap) ->
             val habitTitle = habitsMap[hId]?.title ?: "Habit"
             dateMap.forEach { (dateStr, rec) ->
-                if (rec.note.equals(noteText.trim(), ignoreCase = true)) {
-                    if (stateFilter == null || rec.state == stateFilter) {
-                        result.add(
-                            NoteOccurrence(
-                                habitId = hId,
-                                habitTitle = habitTitle,
-                                date = dateStr,
-                                state = rec.state,
-                                value = rec.value
+                if (!rec.note.isNullOrBlank()) {
+                    val items = rec.note.split(",", "\n", ";").map { it.trim() }.filter { it.isNotBlank() }
+                    if (items.any { it.equals(noteText.trim(), ignoreCase = true) }) {
+                        if (stateFilter == null || rec.state == stateFilter || (stateFilter == HabitDayState.DONE && rec.value > 0)) {
+                            result.add(
+                                NoteOccurrence(
+                                    habitId = hId,
+                                    habitTitle = habitTitle,
+                                    date = dateStr,
+                                    state = rec.state,
+                                    value = rec.value
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
