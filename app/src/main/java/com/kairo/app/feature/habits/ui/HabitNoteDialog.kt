@@ -69,9 +69,9 @@ fun HabitNoteDialog(
     var noteText by remember { mutableStateOf(initialNote ?: "") }
     var isDropdownOpen by remember { mutableStateOf(false) }
 
-    // Fetch recent suggestions for this habit and state
-    val recentNotes = remember(habitId, state) {
-        HabitRepository.getRecentNotes(habitId, state)
+    // Fetch all recent suggestions for this habit
+    val recentNotes = remember(habitId) {
+        HabitRepository.getRecentNotes(habitId)
     }
 
     val filteredSuggestions = remember(noteText, recentNotes) {

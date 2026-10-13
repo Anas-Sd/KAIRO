@@ -1,5 +1,8 @@
 package com.kairo.app.ui
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -45,7 +48,11 @@ fun MainScreen() {
             startDestination = Screen.Tasks.route,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(innerPadding),
+            enterTransition = { fadeIn(animationSpec = tween(220)) },
+            exitTransition = { fadeOut(animationSpec = tween(220)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(220)) },
+            popExitTransition = { fadeOut(animationSpec = tween(220)) }
         ) {
             composable(Screen.Tasks.route) {
                 TasksScreen()
@@ -56,7 +63,11 @@ fun MainScreen() {
             composable(Screen.Habits.route) {
                 HabitsScreen()
             }
-            composable(Screen.Calendar.route) {
+            composable(
+                route = Screen.Calendar.route,
+                enterTransition = { fadeIn(animationSpec = tween(260)) },
+                exitTransition = { fadeOut(animationSpec = tween(220)) }
+            ) {
                 CalendarScreen()
             }
             composable(Screen.Analytics.route) {

@@ -66,9 +66,11 @@ object HabitNoteHelper {
     fun extractAllNotes(rawNote: String?): List<String> {
         if (rawNote.isNullOrBlank()) return emptyList()
         val trimmed = rawNote.trim()
-        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-            return parseIncrementNotes(trimmed).values.toList()
+        val notes = if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            parseIncrementNotes(trimmed).values.toList()
+        } else {
+            trimmed.split(",", "\n", ";").map { it.trim() }.filter { it.isNotBlank() }
         }
-        return trimmed.split(",", "\n", ";").map { it.trim() }.filter { it.isNotBlank() }
+        return notes.filter { !it.equals("missed", ignoreCase = true) }
     }
 }

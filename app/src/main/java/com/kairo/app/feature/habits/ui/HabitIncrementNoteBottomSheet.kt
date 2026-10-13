@@ -85,8 +85,8 @@ fun HabitIncrementNoteBottomSheet(
     var noteText by remember { mutableStateOf(initialNote ?: "") }
     var showSuggestions by remember { mutableStateOf(false) }
 
-    val recentNotes = remember(habitId, isMissed) {
-        HabitRepository.getRecentNotes(habitId, if (isMissed) HabitDayState.MISSED else HabitDayState.DONE)
+    val recentNotes = remember(habitId) {
+        HabitRepository.getRecentNotes(habitId)
     }
 
     val filteredSuggestions = remember(noteText, recentNotes) {

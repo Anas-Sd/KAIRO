@@ -136,10 +136,10 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(CalendarViewFilter.ALL) }
 
-    // Collapsible states
-    var tasksExpanded by remember { mutableStateOf(true) }
-    var listsExpanded by remember { mutableStateOf(true) }
-    var habitsExpanded by remember { mutableStateOf(true) }
+    // Collapsible states (default collapsed as requested)
+    var tasksExpanded by remember { mutableStateOf(false) }
+    var listsExpanded by remember { mutableStateOf(false) }
+    var habitsExpanded by remember { mutableStateOf(false) }
 
     // Live Data Sources
     val allTasks by TaskRepository.tasks.collectAsState(initial = emptyList())

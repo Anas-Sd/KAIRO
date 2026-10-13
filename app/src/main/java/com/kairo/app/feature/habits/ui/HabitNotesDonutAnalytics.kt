@@ -107,10 +107,13 @@ fun HabitNotesDonutAnalytics(
     val targetState = if (selectedTab == HabitNoteTab.DONE) HabitDayState.DONE else HabitDayState.MISSED
     val relevantLogs = remember(habitLogs, selectedTab, habit.type) {
         habitLogs.filter { (_, rec) ->
+            val rawNote = rec.note
+            if (rawNote.isNullOrBlank()) return@filter false
+            val isIncrementNote = rawNote.trim().startsWith("{")
             if (selectedTab == HabitNoteTab.DONE) {
-                (rec.state == HabitDayState.DONE || rec.value > 0) && !rec.note.isNullOrBlank()
+                rec.state == HabitDayState.DONE || rec.value > 0 || isIncrementNote
             } else {
-                rec.state == HabitDayState.MISSED && !rec.note.isNullOrBlank()
+                rec.state == HabitDayState.MISSED && !isIncrementNote
             }
         }
     }

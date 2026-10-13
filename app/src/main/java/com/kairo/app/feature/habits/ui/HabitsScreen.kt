@@ -59,6 +59,7 @@ import com.kairo.app.feature.habits.data.HabitRepository
 import com.kairo.app.feature.habits.model.Habit
 import com.kairo.app.feature.habits.model.HabitDayRecord
 import com.kairo.app.feature.habits.model.HabitDayState
+import com.kairo.app.feature.habits.model.HabitNoteHelper
 import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.feature.habits.model.HabitWithStats
 import com.kairo.app.ui.components.AppHeader
@@ -399,6 +400,7 @@ fun HabitsScreen(
                     ) { item ->
                         val isBeingDragged = (item.habit.id == draggingHabitId)
                         HabitCard(
+                            modifier = Modifier.animateItem(),
                             habitWithStats = item,
                             onTitleClick = {
                                 if (isSelectionMode) {
@@ -455,12 +457,17 @@ fun HabitsScreen(
 
                                     // For target habits: prompt for note on EVERY increment!
                                     if (isTarget) {
+                                        val todayDateStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                                        val existingLogs = HabitRepository.getHabitLogs(item.habit.id)
+                                        val existingNotesMap = HabitNoteHelper.parseIncrementNotes(existingLogs[todayDateStr]?.note)
+                                        val noteForCount = existingNotesMap[nextVal]
+
                                         activeIncrementNote = ActiveIncrementNote(
                                             habit = item.habit,
                                             date = today,
                                             countIndex = nextVal,
                                             isMissed = false,
-                                            initialNote = null
+                                            initialNote = noteForCount
                                         )
                                     }
                                 }

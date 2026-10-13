@@ -57,6 +57,12 @@ import com.kairo.app.feature.habits.model.HabitWithStats
 import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoSecondary
 import com.kairo.app.ui.theme.KairoSurfaceContainer
+import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.zIndex
+import kotlin.math.roundToInt
 import java.time.LocalDate
 
 @Composable
@@ -85,8 +91,18 @@ fun HabitCard(
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .then(
+                if (isBeingDragged) {
+                    Modifier
+                        .zIndex(2f)
+                        .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+                        .shadow(12.dp, RoundedCornerShape(16.dp))
+                } else {
+                    Modifier
+                }
+            )
             .clip(RoundedCornerShape(16.dp))
-            .background(KairoSurfaceContainer)
+            .background(if (isBeingDragged) KairoSurfaceContainerHigh else KairoSurfaceContainer)
             .border(
                 1.dp,
                 if (isBeingDragged) KairoPrimary else Color.White.copy(alpha = 0.08f),

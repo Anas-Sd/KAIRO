@@ -891,21 +891,32 @@ object HabitRepository {
     )
 
     fun getRecentNotes(habitId: String? = null, state: HabitDayState? = null): List<String> {
-        val notesWithFreq = mutableMapOf<String, Int>()
+        val notesWithScore = mutableMapOf<String, Int>()
         _logsMap.value.forEach { (hId, dateMap) ->
-            val weight = if (habitId != null && hId == habitId) 3 else 1
-            dateMap.values.forEach { rec ->
-                if (!rec.note.isNullOrBlank()) {
-                    if (state == null || rec.state == state || (state == HabitDayState.DONE && rec.value > 0)) {
-                        val items = HabitNoteHelper.extractAllNotes(rec.note)
+            val isCurrentHabit = habitId != null && hId == habitId
+            val baseWeight = if (isCurrentHabit) 10 else 1
+            dateMap.toSortedMap(compareByDescending { it }).forEach { (_, rec) ->
+                val rawNote = rec.note
+                if (!rawNote.isNullOrBlank()) {
+                    val isIncrementNote = rawNote.trim().startsWith("{")
+                    val isDone = rec.state == HabitDayState.DONE || rec.value > 0 || isIncrementNote
+                    val matchesState = state == null ||
+                            (state == HabitDayState.DONE && isDone) ||
+                            (state == HabitDayState.MISSED && rec.state == HabitDayState.MISSED && !isIncrementNote)
+
+                    if (matchesState) {
+                        val items = HabitNoteHelper.extractAllNotes(rawNote)
                         items.forEach { noteItem ->
-                            notesWithFreq[noteItem] = (notesWithFreq[noteItem] ?: 0) + weight
+                            val clean = noteItem.trim()
+                            if (clean.isNotBlank() && !clean.equals("missed", ignoreCase = true)) {
+                                notesWithScore[clean] = (notesWithScore[clean] ?: 0) + baseWeight
+                            }
                         }
                     }
                 }
             }
         }
-        return notesWithFreq.entries
+        return notesWithScore.entries
             .sortedByDescending { it.value }
             .map { it.key }
     }
@@ -919,13 +930,19 @@ object HabitRepository {
                 if (!rec.note.isNullOrBlank()) {
                     val items = HabitNoteHelper.extractAllNotes(rec.note)
                     if (items.any { it.equals(noteText.trim(), ignoreCase = true) }) {
-                        if (stateFilter == null || rec.state == stateFilter || (stateFilter == HabitDayState.DONE && rec.value > 0)) {
+                        val isIncrementNote = rec.note.trim().startsWith("{")
+                        val effectiveState = if (isIncrementNote || rec.value > 0) HabitDayState.DONE else rec.state
+                        val matchesState = stateFilter == null ||
+                                (stateFilter == HabitDayState.DONE && effectiveState == HabitDayState.DONE) ||
+                                (stateFilter == HabitDayState.MISSED && rec.state == HabitDayState.MISSED && !isIncrementNote)
+
+                        if (matchesState) {
                             result.add(
                                 NoteOccurrence(
                                     habitId = hId,
                                     habitTitle = habitTitle,
                                     date = dateStr,
-                                    state = rec.state,
+                                    state = effectiveState,
                                     value = rec.value
                                 )
                             )
