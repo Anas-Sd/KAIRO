@@ -73,12 +73,12 @@ import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-private data class ActiveNoteDialog(
+private data class ActiveIncrementNote(
     val habit: Habit,
     val date: LocalDate,
-    val state: HabitDayState,
-    val initialNote: String? = null,
-    val isAppend: Boolean = false
+    val countIndex: Int? = null,
+    val isMissed: Boolean = false,
+    val initialNote: String? = null
 )
 
 private data class ActiveTargetDayPicker(
@@ -103,7 +103,7 @@ fun HabitsScreen(
     var selectedHabitForDetail by remember { mutableStateOf<HabitWithStats?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
-    var activeNoteDialog by remember { mutableStateOf<ActiveNoteDialog?>(null) }
+    var activeIncrementNote by remember { mutableStateOf<ActiveIncrementNote?>(null) }
     var activeTargetPicker by remember { mutableStateOf<ActiveTargetDayPicker?>(null) }
 
     // Search query state for Habits tab
@@ -431,10 +431,11 @@ fun HabitsScreen(
                                         }
                                         HabitDayState.DONE -> {
                                             HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.MISSED)
-                                            activeNoteDialog = ActiveNoteDialog(
+                                            activeIncrementNote = ActiveIncrementNote(
                                                 habit = item.habit,
                                                 date = date,
-                                                state = HabitDayState.MISSED,
+                                                countIndex = null,
+                                                isMissed = true,
                                                 initialNote = currentRecord.note
                                             )
                                         }
@@ -449,16 +450,17 @@ fun HabitsScreen(
                                 val isTarget = item.habit.type == HabitType.TARGET
 
                                 if (item.todayValue < item.habit.targetValue) {
+                                    val nextVal = item.todayValue + 1
                                     HabitRepository.incrementHabitDay(item.habit.id, today, 1)
 
                                     // For target habits: prompt for note on EVERY increment!
                                     if (isTarget) {
-                                        activeNoteDialog = ActiveNoteDialog(
+                                        activeIncrementNote = ActiveIncrementNote(
                                             habit = item.habit,
                                             date = today,
-                                            state = HabitDayState.DONE,
-                                            initialNote = null,
-                                            isAppend = true
+                                            countIndex = nextVal,
+                                            isMissed = false,
+                                            initialNote = null
                                         )
                                     }
                                 }
@@ -750,23 +752,24 @@ fun HabitsScreen(
         SettingsDialog(onDismissRequest = { showSettingsDialog = false })
     }
 
-    // Habit Note Dialog (Prompt for Done note or Missed reason)
-    activeNoteDialog?.let { dialogState ->
-        HabitNoteDialog(
-            habitTitle = dialogState.habit.title,
-            habitId = dialogState.habit.id,
-            state = dialogState.state,
-            initialNote = dialogState.initialNote,
-            onDismiss = { activeNoteDialog = null },
-            onConfirm = { noteText ->
-                if (dialogState.isAppend) {
-                    if (!noteText.isNullOrBlank()) {
-                        HabitRepository.appendHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
-                    }
+    // Habit Note BottomSheet (Prompt for Increment Note, Done note or Missed reason)
+    activeIncrementNote?.let { noteState ->
+        HabitIncrementNoteBottomSheet(
+            habitTitle = noteState.habit.title,
+            habitId = noteState.habit.id,
+            countIndex = noteState.countIndex,
+            targetValue = noteState.habit.targetValue,
+            targetUnit = noteState.habit.targetUnit,
+            isMissed = noteState.isMissed,
+            initialNote = noteState.initialNote,
+            onDismiss = { activeIncrementNote = null },
+            onSaveNote = { noteText ->
+                if (noteState.countIndex != null) {
+                    HabitRepository.setIncrementNote(noteState.habit.id, noteState.date, noteState.countIndex, noteText)
                 } else {
-                    HabitRepository.setHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
+                    HabitRepository.setHabitDayNote(noteState.habit.id, noteState.date, noteText)
                 }
-                activeNoteDialog = null
+                activeIncrementNote = null
             }
         )
     }

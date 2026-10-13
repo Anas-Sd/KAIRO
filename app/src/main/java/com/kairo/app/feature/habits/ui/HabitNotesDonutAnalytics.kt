@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import com.kairo.app.feature.habits.data.HabitRepository
 import com.kairo.app.feature.habits.model.Habit
 import com.kairo.app.feature.habits.model.HabitDayState
+import com.kairo.app.feature.habits.model.HabitNoteHelper
 import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoSecondary
@@ -118,10 +119,7 @@ fun HabitNotesDonutAnalytics(
     val noteCounts = remember(relevantLogs) {
         relevantLogs.values
             .flatMap { rec ->
-                rec.note?.split(",", "\n", ";")
-                    ?.map { it.trim() }
-                    ?.filter { it.isNotBlank() }
-                    ?: emptyList()
+                HabitNoteHelper.extractAllNotes(rec.note)
             }
             .groupingBy { it }
             .eachCount()

@@ -443,7 +443,7 @@ private fun DayCheckboxNode(
 
     val isFuture = dayInfo.date.isAfter(LocalDate.now())
     val isTargetDone = isTargetType && (dayInfo.value >= targetValue || dayInfo.state == HabitDayState.DONE)
-    val isTargetPartial = isTargetType && (dayInfo.value in 1 until targetValue)
+    val isTargetPartial = isTargetType && (dayInfo.value in 1 until targetValue) && dayInfo.state != HabitDayState.MISSED
 
     Column(
         modifier = Modifier.padding(horizontal = 2.dp, vertical = 2.dp),
@@ -557,12 +557,21 @@ private fun DayCheckboxNode(
                         )
                     }
                     dayInfo.state == HabitDayState.MISSED -> {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Missed",
-                            tint = Color(0xFFFB7185),
-                            modifier = Modifier.size(12.dp)
-                        )
+                        if (dayInfo.value > 0) {
+                            Text(
+                                text = "✕${dayInfo.value}",
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFB7185)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Missed",
+                                tint = Color(0xFFFB7185),
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
                     }
                     else -> {}
                 }

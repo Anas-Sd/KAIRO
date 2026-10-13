@@ -10,6 +10,7 @@ import com.kairo.app.feature.habits.model.Habit
 import com.kairo.app.feature.habits.model.HabitDayInfo
 import com.kairo.app.feature.habits.model.HabitDayRecord
 import com.kairo.app.feature.habits.model.HabitDayState
+import com.kairo.app.feature.habits.model.HabitNoteHelper
 import com.kairo.app.feature.habits.model.HabitRepeatType
 import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.feature.habits.model.HabitWithStats
@@ -478,6 +479,7 @@ object HabitRepository {
 
     /**
      * Increments or decrements today's (or given date's) progress value for a Target habit.
+     * Notes are stored in a 1-indexed hashmap per count so removing count N only removes note N.
      */
     fun incrementHabitDay(habitId: String, date: LocalDate, delta: Int = 1, note: String? = null) {
         if (date.isAfter(LocalDate.now())) return
@@ -489,27 +491,35 @@ object HabitRepository {
         val currentRecord = habitDates[dateStr] ?: HabitDayRecord()
         val target = habit.targetValue.coerceAtLeast(1)
         val newValue = (currentRecord.value + delta).coerceIn(0, target)
+        val isPastDate = date.isBefore(LocalDate.now())
 
         val newState = when {
-            newValue == 0 -> HabitDayState.UNMARKED
             newValue >= target -> HabitDayState.DONE
+            isPastDate -> HabitDayState.MISSED
+            newValue == 0 -> HabitDayState.UNMARKED
             else -> HabitDayState.UNMARKED
         }
 
         val finalNote = when {
-            note != null -> note.trim().takeIf { it.isNotBlank() }
+            note != null -> {
+                val clean = note.trim()
+                if (clean.isBlank()) {
+                    currentRecord.note
+                } else {
+                    val map = HabitNoteHelper.parseIncrementNotes(currentRecord.note).toMutableMap()
+                    map[newValue] = clean
+                    HabitNoteHelper.serializeIncrementNotes(map)
+                }
+            }
             delta < 0 -> {
                 if (newValue == 0) {
                     null
-                } else if (!currentRecord.note.isNullOrBlank()) {
-                    val segments = currentRecord.note
-                        .split(",", "\n", ";")
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() }
-                    val trimmed = if (segments.isNotEmpty()) segments.dropLast(1) else emptyList()
-                    if (trimmed.isEmpty()) null else trimmed.joinToString(", ")
                 } else {
-                    null
+                    // Exact hashmap removal: remove the decremented count index (currentRecord.value)
+                    val map = HabitNoteHelper.parseIncrementNotes(currentRecord.note).toMutableMap()
+                    map.remove(currentRecord.value)
+                    val trimmed = map.filterKeys { it <= newValue }
+                    HabitNoteHelper.serializeIncrementNotes(trimmed)
                 }
             }
             else -> currentRecord.note
@@ -559,9 +569,12 @@ object HabitRepository {
         val currentRecord = habitDates[dateStr] ?: HabitDayRecord()
         val target = habit.targetValue.coerceAtLeast(1)
         val cleanVal = value.coerceIn(0, target)
+        val isPastDate = date.isBefore(LocalDate.now())
+
         val newState = when {
-            cleanVal == 0 -> HabitDayState.UNMARKED
             cleanVal >= target -> HabitDayState.DONE
+            isPastDate -> HabitDayState.MISSED
+            cleanVal == 0 -> HabitDayState.UNMARKED
             else -> HabitDayState.UNMARKED
         }
 
@@ -569,12 +582,8 @@ object HabitRepository {
             note != null -> note.trim().takeIf { it.isNotBlank() }
             cleanVal == 0 -> null
             cleanVal < currentRecord.value && !currentRecord.note.isNullOrBlank() -> {
-                val segments = currentRecord.note
-                    .split(",", "\n", ";")
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                val trimmed = segments.take(cleanVal)
-                if (trimmed.isEmpty()) null else trimmed.joinToString(", ")
+                val map = HabitNoteHelper.parseIncrementNotes(currentRecord.note).filterKeys { it <= cleanVal }
+                HabitNoteHelper.serializeIncrementNotes(map)
             }
             else -> currentRecord.note
         }
@@ -607,6 +616,51 @@ object HabitRepository {
                 )
                 SupabaseClient.upsertHabitLog(logDto)
             }
+        }
+    }
+
+    /**
+     * Sets or updates note for a specific count index (1-indexed) in the habit day's hashmap.
+     */
+    fun setIncrementNote(habitId: String, date: LocalDate, countIndex: Int, note: String?) {
+        if (date.isAfter(LocalDate.now())) return
+        val habit = _habitsList.value.find { it.id == habitId } ?: return
+        val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val currentLogs = _logsMap.value.toMutableMap()
+        val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
+
+        val currentRecord = habitDates[dateStr] ?: HabitDayRecord(state = HabitDayState.UNMARKED, value = countIndex)
+        val map = HabitNoteHelper.parseIncrementNotes(currentRecord.note).toMutableMap()
+        val cleanNote = note?.trim()?.takeIf { it.isNotBlank() }
+
+        if (cleanNote == null) {
+            map.remove(countIndex)
+        } else {
+            map[countIndex] = cleanNote
+        }
+
+        val finalNote = HabitNoteHelper.serializeIncrementNotes(map)
+        val updatedRecord = currentRecord.copy(note = finalNote)
+        habitDates[dateStr] = updatedRecord
+        currentLogs[habitId] = habitDates
+        _logsMap.value = currentLogs
+
+        persistData()
+        recomputeAllStats()
+
+        val userCode = AuthManager.getUserCode() ?: "DEFAULT"
+        scope.launch {
+            val logDto = HabitLogDto(
+                id = "${habitId}_${dateStr}",
+                habitId = habitId,
+                userCode = userCode,
+                date = dateStr,
+                state = updatedRecord.state.name,
+                value = updatedRecord.value,
+                note = finalNote,
+                createdAt = System.currentTimeMillis()
+            )
+            SupabaseClient.upsertHabitLog(logDto)
         }
     }
 
@@ -843,7 +897,7 @@ object HabitRepository {
             dateMap.values.forEach { rec ->
                 if (!rec.note.isNullOrBlank()) {
                     if (state == null || rec.state == state || (state == HabitDayState.DONE && rec.value > 0)) {
-                        val items = rec.note.split(",", "\n", ";").map { it.trim() }.filter { it.isNotBlank() }
+                        val items = HabitNoteHelper.extractAllNotes(rec.note)
                         items.forEach { noteItem ->
                             notesWithFreq[noteItem] = (notesWithFreq[noteItem] ?: 0) + weight
                         }
@@ -863,7 +917,7 @@ object HabitRepository {
             val habitTitle = habitsMap[hId]?.title ?: "Habit"
             dateMap.forEach { (dateStr, rec) ->
                 if (!rec.note.isNullOrBlank()) {
-                    val items = rec.note.split(",", "\n", ";").map { it.trim() }.filter { it.isNotBlank() }
+                    val items = HabitNoteHelper.extractAllNotes(rec.note)
                     if (items.any { it.equals(noteText.trim(), ignoreCase = true) }) {
                         if (stateFilter == null || rec.state == stateFilter || (stateFilter == HabitDayState.DONE && rec.value > 0)) {
                             result.add(

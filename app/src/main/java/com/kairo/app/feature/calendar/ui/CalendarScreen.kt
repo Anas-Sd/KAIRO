@@ -82,9 +82,10 @@ import com.kairo.app.feature.habits.data.HabitRepository
 import com.kairo.app.feature.habits.model.Habit
 import com.kairo.app.feature.habits.model.HabitDayRecord
 import com.kairo.app.feature.habits.model.HabitDayState
+import com.kairo.app.feature.habits.model.HabitNoteHelper
 import com.kairo.app.feature.habits.model.HabitRepeatType
 import com.kairo.app.feature.habits.model.HabitType
-import com.kairo.app.feature.habits.ui.HabitNoteDialog
+import com.kairo.app.feature.habits.ui.HabitIncrementNoteBottomSheet
 import com.kairo.app.ui.components.AppHeader
 import com.kairo.app.ui.components.SettingsDialog
 import com.kairo.app.ui.theme.KairoBackground
@@ -116,7 +117,8 @@ private data class CalendarActiveNoteDialog(
     val date: LocalDate,
     val state: HabitDayState,
     val initialNote: String? = null,
-    val isAppend: Boolean = false
+    val isAppend: Boolean = false,
+    val countIndex: Int? = null
 )
 
 @Composable
@@ -382,6 +384,7 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
                                         onIncrement = {
                                             val targetVal = habit.targetValue.coerceAtLeast(1)
                                             if (log.value < targetVal) {
+                                                val nextVal = log.value + 1
                                                 HabitRepository.incrementHabitDay(habit.id, selectedDate, 1)
                                                 if (habit.type == HabitType.TARGET) {
                                                     activeHabitNoteDialog = CalendarActiveNoteDialog(
@@ -389,7 +392,7 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
                                                         date = selectedDate,
                                                         state = HabitDayState.DONE,
                                                         initialNote = null,
-                                                        isAppend = true
+                                                        countIndex = nextVal
                                                     )
                                                 }
                                             }
@@ -474,19 +477,20 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
         SettingsDialog(onDismissRequest = { showSettingsDialog = false })
     }
 
-    // Habit Note Dialog for selected date
+    // Habit Note BottomSheet for selected date
     activeHabitNoteDialog?.let { dialogState ->
-        HabitNoteDialog(
+        HabitIncrementNoteBottomSheet(
             habitTitle = dialogState.habit.title,
             habitId = dialogState.habit.id,
-            state = dialogState.state,
+            countIndex = dialogState.countIndex,
+            targetValue = dialogState.habit.targetValue,
+            targetUnit = dialogState.habit.targetUnit,
+            isMissed = dialogState.state == HabitDayState.MISSED,
             initialNote = dialogState.initialNote,
             onDismiss = { activeHabitNoteDialog = null },
-            onConfirm = { noteText ->
-                if (dialogState.isAppend) {
-                    if (!noteText.isNullOrBlank()) {
-                        HabitRepository.appendHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
-                    }
+            onSaveNote = { noteText ->
+                if (dialogState.countIndex != null) {
+                    HabitRepository.setIncrementNote(dialogState.habit.id, dialogState.date, dialogState.countIndex, noteText)
                 } else {
                     HabitRepository.setHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
                 }
@@ -1280,7 +1284,7 @@ private fun CalendarHabitItemRow(
 
                 if (!record.note.isNullOrBlank()) {
                     Text(
-                        text = "Note: ${record.note}",
+                        text = "Note: ${HabitNoteHelper.formatDisplayNote(record.note)}",
                         fontSize = 10.sp,
                         color = Color(0xFF94A3B8),
                         maxLines = 1,

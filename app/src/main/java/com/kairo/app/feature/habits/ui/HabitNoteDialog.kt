@@ -190,40 +190,42 @@ fun HabitNoteDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // Autocomplete Dropdown
+                    // Inline Suggestions (No focus-stealing popup window)
                     if (isDropdownOpen && filteredSuggestions.isNotEmpty()) {
-                        DropdownMenu(
-                            expanded = isDropdownOpen,
-                            onDismissRequest = { isDropdownOpen = false },
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = KairoSurfaceContainerHigh,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                             modifier = Modifier
-                                .fillMaxWidth(0.85f)
-                                .background(KairoSurfaceContainerHigh)
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
                         ) {
-                            filteredSuggestions.take(5).forEach { suggestion ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.History,
-                                                contentDescription = null,
-                                                tint = Color(0xFF94A3B8),
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Text(
-                                                text = suggestion,
-                                                fontSize = 13.sp,
-                                                color = Color.White
-                                            )
-                                        }
-                                    },
-                                    onClick = {
-                                        noteText = suggestion
-                                        isDropdownOpen = false
+                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                filteredSuggestions.take(5).forEach { suggestion ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                noteText = suggestion
+                                                isDropdownOpen = false
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.History,
+                                            contentDescription = null,
+                                            tint = Color(0xFF94A3B8),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = suggestion,
+                                            fontSize = 13.sp,
+                                            color = Color.White
+                                        )
                                     }
-                                )
+                                }
                             }
                         }
                     }
