@@ -560,7 +560,13 @@ object HabitRepository {
     /**
      * Sets specific value for a target habit on a given date.
      */
-    fun setHabitDayValue(habitId: String, date: LocalDate, value: Int, note: String? = null) {
+    fun setHabitDayValue(
+        habitId: String,
+        date: LocalDate,
+        value: Int,
+        note: String? = null,
+        state: HabitDayState? = null
+    ) {
         if (date.isAfter(LocalDate.now())) return
         val habit = _habitsList.value.find { it.id == habitId } ?: return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
@@ -575,13 +581,15 @@ object HabitRepository {
         val newState = when {
             cleanVal >= target -> HabitDayState.DONE
             isPastDate -> HabitDayState.MISSED
+            state != null -> state
             cleanVal == 0 -> HabitDayState.UNMARKED
             else -> HabitDayState.UNMARKED
         }
 
         val finalNote = when {
             note != null -> note.trim().takeIf { it.isNotBlank() }
-            cleanVal == 0 -> null
+            isPastDate && cleanVal == 0 && currentRecord.note.isNullOrBlank() -> "missed"
+            cleanVal == 0 && !isPastDate -> null
             cleanVal < currentRecord.value && !currentRecord.note.isNullOrBlank() -> {
                 val map = HabitNoteHelper.parseIncrementNotes(currentRecord.note).filterKeys { it <= cleanVal }
                 HabitNoteHelper.serializeIncrementNotes(map)

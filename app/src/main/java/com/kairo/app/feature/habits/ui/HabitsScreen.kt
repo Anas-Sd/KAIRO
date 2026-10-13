@@ -806,11 +806,13 @@ fun HabitsScreen(
             initialRecord = pickerState.initialRecord,
             onDismiss = { activeTargetPicker = null },
             onSave = { value, state, note ->
-                if (state == HabitDayState.MISSED) {
-                    HabitRepository.setHabitDayState(pickerState.habit.id, pickerState.date, HabitDayState.MISSED, note = note)
-                } else {
-                    HabitRepository.setHabitDayValue(pickerState.habit.id, pickerState.date, value, note = note)
-                }
+                HabitRepository.setHabitDayValue(
+                    habitId = pickerState.habit.id,
+                    date = pickerState.date,
+                    value = value,
+                    note = note,
+                    state = state
+                )
                 activeTargetPicker = null
             }
         )
