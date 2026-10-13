@@ -84,6 +84,7 @@ import com.kairo.app.feature.habits.model.HabitDayRecord
 import com.kairo.app.feature.habits.model.HabitDayState
 import com.kairo.app.feature.habits.model.HabitRepeatType
 import com.kairo.app.feature.habits.model.HabitType
+import com.kairo.app.feature.habits.ui.HabitNoteDialog
 import com.kairo.app.ui.components.AppHeader
 import com.kairo.app.ui.components.SettingsDialog
 import com.kairo.app.ui.theme.KairoBackground
@@ -110,6 +111,14 @@ private enum class CalendarViewFilter {
     ALL, TASKS, LISTS, HABITS
 }
 
+private data class CalendarActiveNoteDialog(
+    val habit: Habit,
+    val date: LocalDate,
+    val state: HabitDayState,
+    val initialNote: String? = null,
+    val isAppend: Boolean = false
+)
+
 @Composable
 fun CalendarScreen(modifier: Modifier = Modifier) {
     // Current displayed YearMonth and active selected Date
@@ -120,6 +129,7 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
     var showYearMonthPicker by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showQuickAddTaskDialog by remember { mutableStateOf(false) }
+    var activeHabitNoteDialog by remember { mutableStateOf<CalendarActiveNoteDialog?>(null) }
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(CalendarViewFilter.ALL) }
@@ -369,13 +379,49 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
                                         habit = habit,
                                         date = selectedDate,
                                         record = log,
-                                        onIncrement = { HabitRepository.incrementHabitDay(habit.id, selectedDate, 1) },
-                                        onDecrement = { HabitRepository.incrementHabitDay(habit.id, selectedDate, -1) },
+                                        onIncrement = {
+                                            val targetVal = habit.targetValue.coerceAtLeast(1)
+                                            if (log.value < targetVal) {
+                                                HabitRepository.incrementHabitDay(habit.id, selectedDate, 1)
+                                                if (habit.type == HabitType.TARGET) {
+                                                    activeHabitNoteDialog = CalendarActiveNoteDialog(
+                                                        habit = habit,
+                                                        date = selectedDate,
+                                                        state = HabitDayState.DONE,
+                                                        initialNote = null,
+                                                        isAppend = true
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onDecrement = {
+                                            HabitRepository.incrementHabitDay(habit.id, selectedDate, -1)
+                                        },
                                         onToggleDone = {
                                             if (log.state == HabitDayState.DONE) {
+                                                HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.MISSED)
+                                                activeHabitNoteDialog = CalendarActiveNoteDialog(
+                                                    habit = habit,
+                                                    date = selectedDate,
+                                                    state = HabitDayState.MISSED,
+                                                    initialNote = log.note,
+                                                    isAppend = false
+                                                )
+                                            } else if (log.state == HabitDayState.MISSED) {
                                                 HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.UNMARKED, clearNote = true)
                                             } else {
                                                 HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.DONE)
+                                            }
+                                        },
+                                        onNoteClick = {
+                                            if (!selectedDate.isAfter(LocalDate.now())) {
+                                                activeHabitNoteDialog = CalendarActiveNoteDialog(
+                                                    habit = habit,
+                                                    date = selectedDate,
+                                                    state = if (log.state == HabitDayState.MISSED) HabitDayState.MISSED else HabitDayState.DONE,
+                                                    initialNote = log.note,
+                                                    isAppend = false
+                                                )
                                             }
                                         }
                                     )
@@ -426,6 +472,27 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
     // Settings Dialog
     if (showSettingsDialog) {
         SettingsDialog(onDismissRequest = { showSettingsDialog = false })
+    }
+
+    // Habit Note Dialog for selected date
+    activeHabitNoteDialog?.let { dialogState ->
+        HabitNoteDialog(
+            habitTitle = dialogState.habit.title,
+            habitId = dialogState.habit.id,
+            state = dialogState.state,
+            initialNote = dialogState.initialNote,
+            onDismiss = { activeHabitNoteDialog = null },
+            onConfirm = { noteText ->
+                if (dialogState.isAppend) {
+                    if (!noteText.isNullOrBlank()) {
+                        HabitRepository.appendHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
+                    }
+                } else {
+                    HabitRepository.setHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
+                }
+                activeHabitNoteDialog = null
+            }
+        )
     }
 }
 
@@ -1175,7 +1242,8 @@ private fun CalendarHabitItemRow(
     record: HabitDayRecord,
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
-    onToggleDone: () -> Unit
+    onToggleDone: () -> Unit,
+    onNoteClick: () -> Unit = {}
 ) {
     val isFuture = date.isAfter(LocalDate.now())
     val isTarget = habit.type == HabitType.TARGET
@@ -1195,8 +1263,12 @@ private fun CalendarHabitItemRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Habit Title & Note Info
-            Column(modifier = Modifier.weight(1f)) {
+            // Habit Title & Note Info (tap to view or edit notes)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(enabled = !isFuture) { onNoteClick() }
+            ) {
                 Text(
                     text = habit.title,
                     fontSize = 13.sp,

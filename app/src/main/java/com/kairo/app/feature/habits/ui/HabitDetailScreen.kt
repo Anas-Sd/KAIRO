@@ -760,12 +760,13 @@ fun HabitDetailScreen(
             // 4. Monthly Heatmap Card
             MonthlyHeatmapSection(
                 habit = currentHabit,
-                onPromptNote = { date, state, note ->
+                onPromptNote = { date, state, note, isAppend ->
                     activeNoteDialog = DetailNoteDialogState(
                         habit = currentHabit,
                         date = date,
                         state = state,
-                        initialNote = note
+                        initialNote = note,
+                        isAppend = isAppend
                     )
                 }
             )
@@ -871,7 +872,7 @@ fun HabitDetailScreen(
 @Composable
 fun MonthlyHeatmapSection(
     habit: Habit,
-    onPromptNote: (LocalDate, HabitDayState, String?) -> Unit = { _, _, _ -> },
+    onPromptNote: (LocalDate, HabitDayState, String?, Boolean) -> Unit = { _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val allLogsMap: Map<String, Map<String, HabitDayRecord>> by HabitRepository.logsMap.collectAsState()
@@ -1355,6 +1356,7 @@ fun MonthlyHeatmapSection(
                                 Surface(
                                     onClick = {
                                         HabitRepository.incrementHabitDay(habit.id, sDate, 1)
+                                        onPromptNote(sDate, HabitDayState.DONE, null, true)
                                     },
                                     enabled = canIncrement,
                                     shape = RoundedCornerShape(10.dp),
@@ -1377,7 +1379,7 @@ fun MonthlyHeatmapSection(
                                 Surface(
                                     onClick = {
                                         HabitRepository.setHabitDayValue(habit.id, sDate, target)
-                                        onPromptNote(sDate, HabitDayState.DONE, dayRecord.note)
+                                        onPromptNote(sDate, HabitDayState.DONE, dayRecord.note, false)
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (isDateDone) KairoSecondary else KairoSecondary.copy(alpha = 0.15f),
@@ -1410,7 +1412,7 @@ fun MonthlyHeatmapSection(
                                 Surface(
                                     onClick = {
                                         HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.MISSED)
-                                        onPromptNote(sDate, HabitDayState.MISSED, dayRecord.note)
+                                        onPromptNote(sDate, HabitDayState.MISSED, dayRecord.note, false)
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (isTargetMissed) Color(0xFFFFB77D) else KairoSurfaceContainerHighest,
@@ -1526,7 +1528,7 @@ fun MonthlyHeatmapSection(
                                         )
                                         .clickable {
                                             HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.MISSED)
-                                            onPromptNote(sDate, HabitDayState.MISSED, dayRecord.note)
+                                            onPromptNote(sDate, HabitDayState.MISSED, dayRecord.note, false)
                                         }
                                         .padding(vertical = 8.dp),
                                     contentAlignment = Alignment.Center
@@ -1594,7 +1596,7 @@ fun MonthlyHeatmapSection(
                             if (!dayRecord.note.isNullOrBlank()) {
                                 Surface(
                                     onClick = {
-                                        onPromptNote(sDate, if (isDateDone) HabitDayState.DONE else HabitDayState.MISSED, dayRecord.note)
+                                        onPromptNote(sDate, if (isDateDone) HabitDayState.DONE else HabitDayState.MISSED, dayRecord.note, false)
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     color = Color.White.copy(alpha = 0.04f),
@@ -1636,7 +1638,7 @@ fun MonthlyHeatmapSection(
                             } else if ((isDateDone && habit.type == HabitType.TARGET) || dayState == HabitDayState.MISSED) {
                                 Surface(
                                     onClick = {
-                                        onPromptNote(sDate, if (isDateDone) HabitDayState.DONE else HabitDayState.MISSED, null)
+                                        onPromptNote(sDate, if (isDateDone) HabitDayState.DONE else HabitDayState.MISSED, null, false)
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     color = Color.White.copy(alpha = 0.03f),

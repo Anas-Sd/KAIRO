@@ -81,6 +81,12 @@ private data class ActiveNoteDialog(
     val isAppend: Boolean = false
 )
 
+private data class ActiveTargetDayPicker(
+    val habit: Habit,
+    val date: LocalDate,
+    val initialRecord: HabitDayRecord
+)
+
 @Composable
 fun HabitsScreen(
     modifier: Modifier = Modifier
@@ -98,6 +104,7 @@ fun HabitsScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var activeNoteDialog by remember { mutableStateOf<ActiveNoteDialog?>(null) }
+    var activeTargetPicker by remember { mutableStateOf<ActiveTargetDayPicker?>(null) }
 
     // Search query state for Habits tab
     var searchQuery by remember { mutableStateOf("") }
@@ -408,38 +415,32 @@ fun HabitsScreen(
                                 val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
                                 val logs = HabitRepository.getHabitLogs(item.habit.id)
                                 val currentRecord = logs[dateStr] ?: HabitDayRecord()
-                                val isTarget = item.habit.type == HabitType.TARGET
-                                val targetVal = item.habit.targetValue.coerceAtLeast(1)
 
-                                when (currentRecord.state) {
-                                    HabitDayState.UNMARKED -> {
-                                        if (isTarget) {
-                                            // Target habit: complete and prompt for optional Done note
-                                            HabitRepository.setHabitDayValue(item.habit.id, date, targetVal)
+                                if (item.habit.type == HabitType.TARGET) {
+                                    // Target habit: open Micro Value Picker BottomSheet
+                                    activeTargetPicker = ActiveTargetDayPicker(
+                                        habit = item.habit,
+                                        date = date,
+                                        initialRecord = currentRecord
+                                    )
+                                } else {
+                                    // Yes/No habit: toggle UNMARKED -> DONE -> MISSED -> UNMARKED
+                                    when (currentRecord.state) {
+                                        HabitDayState.UNMARKED -> {
+                                            HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.DONE)
+                                        }
+                                        HabitDayState.DONE -> {
+                                            HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.MISSED)
                                             activeNoteDialog = ActiveNoteDialog(
                                                 habit = item.habit,
                                                 date = date,
-                                                state = HabitDayState.DONE,
+                                                state = HabitDayState.MISSED,
                                                 initialNote = currentRecord.note
                                             )
-                                        } else {
-                                            // Yes/No habit: instant DONE without note prompt
-                                            HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.DONE)
                                         }
-                                    }
-                                    HabitDayState.DONE -> {
-                                        // Transitioning to MISSED: prompt for reason on both Target and Yes/No
-                                        HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.MISSED)
-                                        activeNoteDialog = ActiveNoteDialog(
-                                            habit = item.habit,
-                                            date = date,
-                                            state = HabitDayState.MISSED,
-                                            initialNote = currentRecord.note
-                                        )
-                                    }
-                                    HabitDayState.MISSED -> {
-                                        // Reset to UNMARKED
-                                        HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.UNMARKED, clearNote = true)
+                                        HabitDayState.MISSED -> {
+                                            HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.UNMARKED, clearNote = true)
+                                        }
                                     }
                                 }
                             },
@@ -766,6 +767,24 @@ fun HabitsScreen(
                     HabitRepository.setHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
                 }
                 activeNoteDialog = null
+            }
+        )
+    }
+
+    // Target Day Picker Bottom Sheet (Pattern 2 for past & target days)
+    activeTargetPicker?.let { pickerState ->
+        TargetDayPickerBottomSheet(
+            habit = pickerState.habit,
+            date = pickerState.date,
+            initialRecord = pickerState.initialRecord,
+            onDismiss = { activeTargetPicker = null },
+            onSave = { value, state, note ->
+                if (state == HabitDayState.MISSED) {
+                    HabitRepository.setHabitDayState(pickerState.habit.id, pickerState.date, HabitDayState.MISSED, note = note)
+                } else {
+                    HabitRepository.setHabitDayValue(pickerState.habit.id, pickerState.date, value, note = note)
+                }
+                activeTargetPicker = null
             }
         )
     }

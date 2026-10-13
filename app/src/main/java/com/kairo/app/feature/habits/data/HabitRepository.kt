@@ -496,7 +496,24 @@ object HabitRepository {
             else -> HabitDayState.UNMARKED
         }
 
-        val finalNote = note?.trim()?.takeIf { it.isNotBlank() } ?: currentRecord.note
+        val finalNote = when {
+            note != null -> note.trim().takeIf { it.isNotBlank() }
+            delta < 0 -> {
+                if (newValue == 0) {
+                    null
+                } else if (!currentRecord.note.isNullOrBlank()) {
+                    val segments = currentRecord.note
+                        .split(",", "\n", ";")
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                    val trimmed = if (segments.isNotEmpty()) segments.dropLast(1) else emptyList()
+                    if (trimmed.isEmpty()) null else trimmed.joinToString(", ")
+                } else {
+                    null
+                }
+            }
+            else -> currentRecord.note
+        }
 
         if (newValue == 0 && newState == HabitDayState.UNMARKED && finalNote == null) {
             habitDates.remove(dateStr)
@@ -548,7 +565,19 @@ object HabitRepository {
             else -> HabitDayState.UNMARKED
         }
 
-        val finalNote = note?.trim()?.takeIf { it.isNotBlank() } ?: currentRecord.note
+        val finalNote = when {
+            note != null -> note.trim().takeIf { it.isNotBlank() }
+            cleanVal == 0 -> null
+            cleanVal < currentRecord.value && !currentRecord.note.isNullOrBlank() -> {
+                val segments = currentRecord.note
+                    .split(",", "\n", ";")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                val trimmed = segments.take(cleanVal)
+                if (trimmed.isEmpty()) null else trimmed.joinToString(", ")
+            }
+            else -> currentRecord.note
+        }
 
         if (cleanVal == 0 && newState == HabitDayState.UNMARKED && finalNote == null) {
             habitDates.remove(dateStr)
