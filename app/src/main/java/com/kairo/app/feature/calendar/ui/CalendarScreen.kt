@@ -416,6 +416,13 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
                                                     )
                                                 } else {
                                                     HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.DONE)
+                                                    activeHabitNoteDialog = CalendarActiveNoteDialog(
+                                                        habit = habit,
+                                                        date = selectedDate,
+                                                        state = HabitDayState.DONE,
+                                                        initialNote = log.note,
+                                                        isAppend = false
+                                                    )
                                                 }
                                             } else {
                                                 if (log.state == HabitDayState.DONE) {
@@ -431,6 +438,13 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
                                                     HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.UNMARKED, clearNote = true)
                                                 } else {
                                                     HabitRepository.setHabitDayState(habit.id, selectedDate, HabitDayState.DONE)
+                                                    activeHabitNoteDialog = CalendarActiveNoteDialog(
+                                                        habit = habit,
+                                                        date = selectedDate,
+                                                        state = HabitDayState.DONE,
+                                                        initialNote = log.note,
+                                                        isAppend = false
+                                                    )
                                                 }
                                             }
                                         },

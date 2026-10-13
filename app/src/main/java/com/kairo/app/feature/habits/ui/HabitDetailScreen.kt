@@ -1148,14 +1148,14 @@ fun MonthlyHeatmapSection(
                                 val bgColor = when {
                                     isDone -> KairoSecondary
                                     isMissed -> Color(0xFFFFB77D)
-                                    isPartial -> KairoSecondary.copy(alpha = 0.35f)
+                                    isPartial -> Color(0xFFFACC15).copy(alpha = 0.25f)
                                     isRestDay -> Color.White.copy(alpha = 0.03f)
                                     else -> KairoSurfaceContainerHighest
                                 }
                                 val textColor = when {
                                     isDone -> Color(0xFF003822)
                                     isMissed -> Color(0xFF4E2600)
-                                    isPartial -> Color.White
+                                    isPartial -> Color(0xFFFACC15)
                                     isRestDay -> Color(0xFF64748B)
                                     else -> Color(0xFFCBD5E1)
                                 }
@@ -1165,7 +1165,7 @@ fun MonthlyHeatmapSection(
                                 } else if (isToday) {
                                     Modifier.border(1.5.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
                                 } else if (isPartial) {
-                                    Modifier.border(1.dp, KairoSecondary.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                                    Modifier.border(1.2.dp, Color(0xFFFACC15).copy(alpha = 0.8f), RoundedCornerShape(8.dp))
                                 } else {
                                     Modifier.border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
                                 }
@@ -1214,7 +1214,7 @@ fun MonthlyHeatmapSection(
                                             Text(
                                                 text = "$recordVal",
                                                 fontSize = 9.sp,
-                                                color = KairoSecondary,
+                                                color = Color(0xFFFACC15),
                                                 fontWeight = FontWeight.Bold,
                                                 lineHeight = 9.sp
                                             )
@@ -1275,7 +1275,7 @@ fun MonthlyHeatmapSection(
                             val badgeBg = when {
                                 isDateDone -> KairoSecondary.copy(alpha = 0.20f)
                                 isSelectedMissed -> Color(0xFFFFB77D).copy(alpha = 0.20f)
-                                isDatePartial -> KairoSecondary.copy(alpha = 0.15f)
+                                isDatePartial -> Color(0xFFFACC15).copy(alpha = 0.20f)
                                 isDateRest -> Color.White.copy(alpha = 0.08f)
                                 else -> KairoSurfaceContainerHighest
                             }
@@ -1289,7 +1289,7 @@ fun MonthlyHeatmapSection(
                             val badgeTextColor = when {
                                 isDateDone -> KairoSecondary
                                 isSelectedMissed -> Color(0xFFFFB77D)
-                                isDatePartial -> KairoSecondary
+                                isDatePartial -> Color(0xFFFACC15)
                                 isDateRest -> Color(0xFF94A3B8)
                                 else -> Color(0xFFC8C4D9)
                             }
@@ -1515,6 +1515,7 @@ fun MonthlyHeatmapSection(
                                         )
                                         .clickable {
                                             HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.DONE)
+                                            onPromptNote(sDate, HabitDayState.DONE, dayRecord.note, false, null)
                                         }
                                         .padding(vertical = 8.dp),
                                     contentAlignment = Alignment.Center

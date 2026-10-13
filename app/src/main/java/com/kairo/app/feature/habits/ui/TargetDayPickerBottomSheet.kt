@@ -186,6 +186,7 @@ fun TargetDayPickerBottomSheet(
                     val badgeColor = when {
                         isDone -> KairoSecondary
                         isMissed -> Color(0xFFFFB77D)
+                        currentValue > 0 -> Color(0xFFFACC15)
                         else -> Color(0xFF94A3B8)
                     }
                     val badgeText = when {
@@ -222,7 +223,7 @@ fun TargetDayPickerBottomSheet(
                             .fillMaxWidth(fraction = progressFraction)
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            .background(if (isDone) KairoSecondary else if (isMissed) Color(0xFFFFB77D) else KairoPrimary)
+                            .background(if (isDone) KairoSecondary else if (isMissed) Color(0xFFFFB77D) else if (currentValue > 0) Color(0xFFFACC15) else KairoPrimary)
                     )
                 }
             }
@@ -351,6 +352,7 @@ fun TargetDayPickerBottomSheet(
                     onClick = {
                         currentValue = targetVal
                         currentState = HabitDayState.DONE
+                        activeNoteCount = targetVal
                     },
                     shape = RoundedCornerShape(10.dp),
                     color = if (isDone) KairoSecondary else KairoSurfaceContainerHigh,

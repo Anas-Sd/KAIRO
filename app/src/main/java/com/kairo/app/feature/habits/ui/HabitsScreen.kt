@@ -440,12 +440,26 @@ fun HabitsScreen(
                                             )
                                         } else {
                                             HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.DONE)
+                                            activeIncrementNote = ActiveIncrementNote(
+                                                habit = item.habit,
+                                                date = date,
+                                                countIndex = null,
+                                                isMissed = false,
+                                                initialNote = currentRecord.note
+                                            )
                                         }
                                     } else {
                                         // Today: toggle UNMARKED -> DONE -> MISSED -> UNMARKED
                                         when (currentRecord.state) {
                                             HabitDayState.UNMARKED -> {
                                                 HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.DONE)
+                                                activeIncrementNote = ActiveIncrementNote(
+                                                    habit = item.habit,
+                                                    date = date,
+                                                    countIndex = null,
+                                                    isMissed = false,
+                                                    initialNote = currentRecord.note
+                                                )
                                             }
                                             HabitDayState.DONE -> {
                                                 HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.MISSED)
@@ -491,6 +505,39 @@ fun HabitsScreen(
                             },
                             onDecrement = {
                                 HabitRepository.incrementHabitDay(item.habit.id, LocalDate.now(), -1)
+                            },
+                            onDoneBoxClick = {
+                                val today = LocalDate.now()
+                                val todayStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                                val logs = HabitRepository.getHabitLogs(item.habit.id)
+                                val currentRec = logs[todayStr] ?: HabitDayRecord()
+
+                                if (item.habit.type == HabitType.TARGET) {
+                                    val targetVal = item.habit.targetValue.coerceAtLeast(1)
+                                    HabitRepository.setHabitDayValue(
+                                        habitId = item.habit.id,
+                                        date = today,
+                                        value = targetVal,
+                                        note = currentRec.note,
+                                        state = HabitDayState.DONE
+                                    )
+                                    activeIncrementNote = ActiveIncrementNote(
+                                        habit = item.habit,
+                                        date = today,
+                                        countIndex = targetVal,
+                                        isMissed = false,
+                                        initialNote = currentRec.note
+                                    )
+                                } else {
+                                    HabitRepository.setHabitDayState(item.habit.id, today, HabitDayState.DONE)
+                                    activeIncrementNote = ActiveIncrementNote(
+                                        habit = item.habit,
+                                        date = today,
+                                        countIndex = null,
+                                        isMissed = false,
+                                        initialNote = currentRec.note
+                                    )
+                                }
                             },
                             dragHandleModifier = buildDragHandleModifier(item, filteredHabits),
                             isBeingDragged = isBeingDragged,

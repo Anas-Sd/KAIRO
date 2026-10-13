@@ -72,6 +72,7 @@ fun HabitCard(
     onDayClick: (LocalDate) -> Unit,
     onIncrement: () -> Unit = {},
     onDecrement: () -> Unit = {},
+    onDoneBoxClick: () -> Unit = {},
     dragHandleModifier: Modifier = Modifier,
     isBeingDragged: Boolean = false,
     dragOffsetY: Float = 0f,
@@ -311,7 +312,7 @@ fun HabitCard(
                                         .fillMaxHeight()
                                         .fillMaxWidth(habitWithStats.todayProgressFraction)
                                         .clip(RoundedCornerShape(3.dp))
-                                        .background(if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else KairoPrimary)
+                                        .background(if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else Color(0xFFFACC15))
                                 )
                             }
                         }
@@ -382,13 +383,14 @@ fun HabitCard(
                     }
                 }
 
-                // 2. Completed / Done Button
+                // 2. Completed / Done Button (Clickable to complete & add note)
                 Box(
                     modifier = Modifier
                         .size(24.dp)
                         .clip(RoundedCornerShape(6.dp))
                         .background(KairoSecondary.copy(alpha = 0.16f))
-                        .border(1.dp, KairoSecondary.copy(alpha = 0.40f), RoundedCornerShape(6.dp)),
+                        .border(1.dp, KairoSecondary.copy(alpha = 0.40f), RoundedCornerShape(6.dp))
+                        .clickable { onDoneBoxClick() },
                     contentAlignment = Alignment.Center
                 ) {
                     Row(
@@ -525,8 +527,8 @@ private fun DayCheckboxNode(
                             }
                             isTargetPartial -> {
                                 Modifier
-                                    .background(KairoSecondary.copy(alpha = 0.10f))
-                                    .border(1.dp, KairoSecondary.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFFACC15).copy(alpha = 0.18f))
+                                    .border(1.2.dp, Color(0xFFFACC15).copy(alpha = 0.8f), RoundedCornerShape(6.dp))
                             }
                             dayInfo.state == HabitDayState.MISSED -> {
                                 Modifier
@@ -569,7 +571,7 @@ private fun DayCheckboxNode(
                             text = "${dayInfo.value}",
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
-                            color = KairoSecondary
+                            color = Color(0xFFFACC15)
                         )
                     }
                     dayInfo.state == HabitDayState.MISSED -> {

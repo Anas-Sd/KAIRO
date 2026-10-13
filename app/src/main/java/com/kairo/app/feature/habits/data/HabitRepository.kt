@@ -826,10 +826,15 @@ object HabitRepository {
         val currentLogs = _logsMap.value.toMutableMap()
         val userCode = AuthManager.getUserCode() ?: "DEFAULT"
         val logsToUpsert = mutableListOf<HabitLogDto>()
-
         _habitsList.value.forEach { habit ->
-            // Mark all past scheduled days up to 60 days back as not done (missed) by default
-            val startDate = today.minusDays(60)
+            val habitCreatedDate = runCatching {
+                java.time.Instant.ofEpochMilli(habit.createdAt)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDate()
+            }.getOrDefault(today)
+
+            // Only auto-mark missed from the day the habit was created up to yesterday
+            val startDate = maxOf(today.minusDays(60), habitCreatedDate)
             if (!startDate.isAfter(today.minusDays(1))) {
                 val habitDates = currentLogs[habit.id]?.toMutableMap() ?: mutableMapOf()
                 var checkDate = startDate
@@ -1138,11 +1143,19 @@ object HabitRepository {
     private fun calculateAdherence(habit: Habit, logs: Map<String, HabitDayRecord>, today: LocalDate): Float {
         if (logs.isEmpty()) return 100f
         val dateFormatter = DateTimeFormatter.ISO_LOCAL_DATE
+        val habitCreatedDate = runCatching {
+            java.time.Instant.ofEpochMilli(habit.createdAt)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDate()
+        }.getOrDefault(today)
 
         when (habit.repeatType) {
             HabitRepeatType.EVERYDAY -> {
                 val totalDone = logs.values.count { isDayComplete(habit, it) }
-                val totalMissed = logs.values.count { it.state == HabitDayState.MISSED }
+                val totalMissed = logs.entries.count { (dateStr, record) ->
+                    val d = runCatching { LocalDate.parse(dateStr, dateFormatter) }.getOrNull()
+                    record.state == HabitDayState.MISSED && (d == null || !d.isBefore(habitCreatedDate))
+                }
                 val totalLogged = totalDone + totalMissed
                 return if (totalLogged > 0) (totalDone.toFloat() / totalLogged * 100f) else 100f
             }
@@ -1153,7 +1166,7 @@ object HabitRepository {
                     val d = runCatching { LocalDate.parse(dateStr, dateFormatter) }.getOrNull()
                     if (d != null && habit.repeatDays.contains(d.dayOfWeek.value)) {
                         if (isDayComplete(habit, record)) totalScheduledDone++
-                        else if (record.state == HabitDayState.MISSED) totalScheduledMissed++
+                        else if (record.state == HabitDayState.MISSED && !d.isBefore(habitCreatedDate)) totalScheduledMissed++
                     }
                 }
                 val total = totalScheduledDone + totalScheduledMissed
@@ -1161,7 +1174,10 @@ object HabitRepository {
             }
             HabitRepeatType.WEEKLY_X -> {
                 val totalDone = logs.values.count { isDayComplete(habit, it) }
-                val totalMissed = logs.values.count { it.state == HabitDayState.MISSED }
+                val totalMissed = logs.entries.count { (dateStr, record) ->
+                    val d = runCatching { LocalDate.parse(dateStr, dateFormatter) }.getOrNull()
+                    record.state == HabitDayState.MISSED && (d == null || !d.isBefore(habitCreatedDate))
+                }
                 val totalLogged = totalDone + totalMissed
                 return if (totalLogged > 0) (totalDone.toFloat() / totalLogged * 100f) else 100f
             }
@@ -1268,8 +1284,17 @@ object HabitRepository {
             val bestStreak = calculateBestStreak(habit, logsForHabit, currentStreak)
             val adherence = calculateAdherence(habit, logsForHabit, today)
 
+            val habitCreatedDate = runCatching {
+                java.time.Instant.ofEpochMilli(habit.createdAt)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDate()
+            }.getOrDefault(today)
+
             val totalDone = logsForHabit.values.count { isDayComplete(habit, it) }
-            val totalMissed = logsForHabit.values.count { it.state == HabitDayState.MISSED }
+            val totalMissed = logsForHabit.entries.count { (dateStr, record) ->
+                val d = runCatching { LocalDate.parse(dateStr, dateFormatter) }.getOrNull()
+                record.state == HabitDayState.MISSED && (d == null || !d.isBefore(habitCreatedDate))
+            }
 
             HabitWithStats(
                 habit = habit,
