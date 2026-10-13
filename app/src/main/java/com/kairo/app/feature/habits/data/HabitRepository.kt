@@ -42,6 +42,7 @@ object HabitRepository {
     }
 
     private val _habitsList = MutableStateFlow<List<Habit>>(emptyList())
+    val habitsList: StateFlow<List<Habit>> = _habitsList.asStateFlow()
     // Map of habitId -> Map of "YYYY-MM-DD" -> HabitDayRecord
     private val _logsMap = MutableStateFlow<Map<String, Map<String, HabitDayRecord>>>(emptyMap())
     val logsMap: StateFlow<Map<String, Map<String, HabitDayRecord>>> = _logsMap.asStateFlow()

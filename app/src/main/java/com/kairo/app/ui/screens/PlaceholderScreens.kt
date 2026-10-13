@@ -61,43 +61,6 @@ fun ListsScreen(modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-fun CalendarScreen(modifier: Modifier = Modifier) {
-    var searchQuery by remember { mutableStateOf("") }
-    var isSearchActive by remember { mutableStateOf(false) }
-    var showSettingsDialog by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(KairoBackground)
-    ) {
-        AppHeader(
-            searchQuery = searchQuery,
-            isSearchActive = isSearchActive,
-            onSearchQueryChange = { searchQuery = it },
-            onToggleSearch = {
-                isSearchActive = !isSearchActive
-                if (!isSearchActive) searchQuery = ""
-            },
-            onCloseSearch = {
-                isSearchActive = false
-                searchQuery = ""
-            },
-            searchPlaceholder = "Search events...",
-            onSettingsClick = { showSettingsDialog = true }
-        )
-
-        PlaceholderContent(
-            title = "Calendar",
-            subtitle = if (searchQuery.isNotBlank()) "Searching calendar events for \"$searchQuery\"..." else "Unified monthly & weekly timeline view of all scheduled tasks."
-        )
-    }
-
-    if (showSettingsDialog) {
-        SettingsDialog(onDismissRequest = { showSettingsDialog = false })
-    }
-}
 
 @Composable
 fun AnalyticsScreen(modifier: Modifier = Modifier) {

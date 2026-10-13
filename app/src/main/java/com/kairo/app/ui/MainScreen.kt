@@ -13,7 +13,7 @@ import androidx.navigation.compose.rememberNavController
 import com.kairo.app.ui.navigation.BottomNavBar
 import com.kairo.app.ui.navigation.Screen
 import com.kairo.app.ui.screens.AnalyticsScreen
-import com.kairo.app.ui.screens.CalendarScreen
+import com.kairo.app.feature.calendar.ui.CalendarScreen
 import com.kairo.app.feature.habits.ui.HabitsScreen
 import com.kairo.app.ui.screens.ListsScreen
 import com.kairo.app.ui.screens.TasksScreen
