@@ -1,14 +1,19 @@
 package com.kairo.app.feature.habits.ui
 
 import android.app.TimePickerDialog
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -17,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -46,10 +52,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -142,6 +150,7 @@ fun CreateHabitDialog(
                     placeholder = { Text("e.g. Read Book, Drink Water", fontSize = 13.sp, color = Color.Gray) },
                     textStyle = TextStyle(fontSize = 14.sp, color = Color.White),
                     singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = KairoPrimary,
                         unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
@@ -197,95 +206,191 @@ fun CreateHabitDialog(
 
                 // If Target: show target value & unit inputs
                 if (habitType == HabitType.TARGET) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(IntrinsicSize.Min),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Stepper + Text input for Target Number
-                        Row(
-                            modifier = Modifier.weight(0.48f),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        // Left: Target Stepper & Direct Editable Input Card
+                        Surface(
+                            modifier = Modifier
+                                .weight(1.15f)
+                                .fillMaxHeight(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = KairoSurfaceContainerHigh,
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
                         ) {
-                            IconButton(
-                                onClick = {
-                                    val current = targetValueText.toIntOrNull() ?: 1
-                                    if (current > 1) {
-                                        targetValueText = (current - 1).toString()
-                                    }
-                                },
+                            Row(
                                 modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(KairoSurfaceContainerHigh)
+                                    .fillMaxSize()
+                                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Remove,
-                                    contentDescription = "Decrease target",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
+                                // Decrease target button
+                                IconButton(
+                                    onClick = {
+                                        val current = targetValueText.toIntOrNull() ?: 1
+                                        if (current > 1) {
+                                            targetValueText = (current - 1).toString()
+                                        }
+                                    },
+                                    enabled = (targetValueText.toIntOrNull() ?: 1) > 1,
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if ((targetValueText.toIntOrNull() ?: 1) > 1) Color.White.copy(alpha = 0.08f)
+                                            else Color.White.copy(alpha = 0.03f)
+                                        )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Remove,
+                                        contentDescription = "Decrease target",
+                                        tint = if ((targetValueText.toIntOrNull() ?: 1) > 1) Color.White else Color.White.copy(alpha = 0.25f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
 
-                            OutlinedTextField(
-                                value = targetValueText,
-                                onValueChange = { newStr ->
-                                    // Allow numbers only, up to 5 digits, and allow empty string so user can delete and type
-                                    if (newStr.all { it.isDigit() } && newStr.length <= 5) {
-                                        targetValueText = newStr
+                                // Centered Target Label + Editable Text
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 2.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = "TARGET",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF94A3B8),
+                                        letterSpacing = 0.5.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        if (targetValueText.isEmpty()) {
+                                            Text(
+                                                text = "1",
+                                                fontSize = 17.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White.copy(alpha = 0.3f),
+                                                textAlign = TextAlign.Center
+                                            )
+                                        }
+                                        BasicTextField(
+                                            value = targetValueText,
+                                            onValueChange = { newStr ->
+                                                if (newStr.all { it.isDigit() } && newStr.length <= 5) {
+                                                    targetValueText = newStr
+                                                }
+                                            },
+                                            textStyle = TextStyle(
+                                                fontSize = 17.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                textAlign = TextAlign.Center
+                                            ),
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            singleLine = true,
+                                            cursorBrush = SolidColor(KairoPrimary),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
                                     }
-                                },
-                                label = { Text("Target", fontSize = 11.sp) },
-                                placeholder = { Text("1", fontSize = 12.sp, color = Color.Gray) },
-                                textStyle = TextStyle(fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.Bold),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = KairoPrimary,
-                                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White
-                                ),
-                                modifier = Modifier.weight(1f)
-                            )
+                                }
 
-                            IconButton(
-                                onClick = {
-                                    val current = targetValueText.toIntOrNull() ?: 0
-                                    targetValueText = (current + 1).toString()
-                                },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(KairoSurfaceContainerHigh)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Increase target",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
+                                // Increase target button
+                                IconButton(
+                                    onClick = {
+                                        val current = targetValueText.toIntOrNull() ?: 0
+                                        targetValueText = (current + 1).toString()
+                                    },
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.08f))
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Increase target",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                         }
 
-                        // Unit input (e.g. glasses, pages, km)
+                        // Right: Unit input (e.g. glasses, pages, km)
                         OutlinedTextField(
                             value = targetUnit,
                             onValueChange = { targetUnit = it },
                             label = { Text("Unit", fontSize = 11.sp) },
-                            placeholder = { Text("e.g. glasses", fontSize = 12.sp, color = Color.Gray) },
+                            placeholder = { Text("e.g. glasses, reps", fontSize = 12.sp, color = Color.Gray) },
                             textStyle = TextStyle(fontSize = 13.sp, color = Color.White),
                             singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = KairoPrimary,
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                                focusedContainerColor = KairoSurfaceContainerHigh,
+                                unfocusedContainerColor = KairoSurfaceContainerHigh,
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White
                             ),
-                            modifier = Modifier.weight(0.52f)
+                            modifier = Modifier.weight(1f)
                         )
+                    }
+
+                    // Quick unit suggestion chips
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Quick:",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF94A3B8)
+                        )
+                        val quickUnits = listOf("glasses", "pages", "km", "mins", "reps", "namaz")
+                        quickUnits.forEach { unit ->
+                            val isSelected = targetUnit.equals(unit, ignoreCase = true)
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isSelected) KairoPrimary.copy(alpha = 0.22f)
+                                        else Color.White.copy(alpha = 0.05f)
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) KairoPrimary else Color.White.copy(alpha = 0.08f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable {
+                                        targetUnit = if (isSelected) "" else unit
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = unit,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected) KairoPrimary else Color(0xFFCBD5E1)
+                                )
+                            }
+                        }
                     }
                 }
 
