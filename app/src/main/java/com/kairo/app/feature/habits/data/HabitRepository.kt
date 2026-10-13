@@ -118,7 +118,8 @@ object HabitRepository {
                         if (raw is JSONObject) {
                             val state = HabitDayState.valueOf(raw.optString("state", HabitDayState.DONE.name))
                             val value = raw.optInt("value", if (state == HabitDayState.DONE) 1 else 0)
-                            dateMap[d] = HabitDayRecord(state = state, value = value)
+                            val note = raw.optString("note", "").takeIf { it.isNotBlank() }
+                            dateMap[d] = HabitDayRecord(state = state, value = value, note = note)
                         } else {
                             val state = HabitDayState.valueOf(raw.toString())
                             dateMap[d] = HabitDayRecord(state = state, value = if (state == HabitDayState.DONE) 1 else 0)
@@ -168,6 +169,9 @@ object HabitRepository {
                     val recObj = JSONObject().apply {
                         put("state", record.state.name)
                         put("value", record.value)
+                        if (!record.note.isNullOrBlank()) {
+                            put("note", record.note)
+                        }
                     }
                     dObj.put(dateStr, recObj)
                 }
@@ -224,7 +228,8 @@ object HabitRepository {
                     val habitMap = logs.getOrPut(dto.habitId) { mutableMapOf() }
                     val state = runCatching { HabitDayState.valueOf(dto.state) }.getOrDefault(HabitDayState.DONE)
                     val value = dto.value ?: if (state == HabitDayState.DONE) 1 else 0
-                    habitMap[dto.date] = HabitDayRecord(state = state, value = value)
+                    val note = dto.note?.takeIf { it.isNotBlank() }
+                    habitMap[dto.date] = HabitDayRecord(state = state, value = value, note = note)
                 }
                 _logsMap.value = logs
             } else {
@@ -471,7 +476,7 @@ object HabitRepository {
     /**
      * Increments or decrements today's (or given date's) progress value for a Target habit.
      */
-    fun incrementHabitDay(habitId: String, date: LocalDate, delta: Int = 1) {
+    fun incrementHabitDay(habitId: String, date: LocalDate, delta: Int = 1, note: String? = null) {
         val habit = _habitsList.value.find { it.id == habitId } ?: return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
@@ -487,10 +492,12 @@ object HabitRepository {
             else -> HabitDayState.UNMARKED
         }
 
-        if (newValue == 0 && newState == HabitDayState.UNMARKED) {
+        val finalNote = note?.trim()?.takeIf { it.isNotBlank() } ?: currentRecord.note
+
+        if (newValue == 0 && newState == HabitDayState.UNMARKED && finalNote == null) {
             habitDates.remove(dateStr)
         } else {
-            habitDates[dateStr] = HabitDayRecord(state = newState, value = newValue)
+            habitDates[dateStr] = HabitDayRecord(state = newState, value = newValue, note = finalNote)
         }
         currentLogs[habitId] = habitDates
         _logsMap.value = currentLogs
@@ -500,7 +507,7 @@ object HabitRepository {
 
         val userCode = AuthManager.getUserCode() ?: "DEFAULT"
         scope.launch {
-            if (newValue == 0 && newState == HabitDayState.UNMARKED) {
+            if (newValue == 0 && newState == HabitDayState.UNMARKED && finalNote == null) {
                 SupabaseClient.deleteHabitLog(habitId, dateStr)
             } else {
                 val logDto = HabitLogDto(
@@ -510,6 +517,7 @@ object HabitRepository {
                     date = dateStr,
                     state = newState.name,
                     value = newValue,
+                    note = finalNote,
                     createdAt = System.currentTimeMillis()
                 )
                 SupabaseClient.upsertHabitLog(logDto)
@@ -520,12 +528,13 @@ object HabitRepository {
     /**
      * Sets specific value for a target habit on a given date.
      */
-    fun setHabitDayValue(habitId: String, date: LocalDate, value: Int) {
+    fun setHabitDayValue(habitId: String, date: LocalDate, value: Int, note: String? = null) {
         val habit = _habitsList.value.find { it.id == habitId } ?: return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
         val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
 
+        val currentRecord = habitDates[dateStr] ?: HabitDayRecord()
         val target = habit.targetValue.coerceAtLeast(1)
         val cleanVal = value.coerceAtLeast(0)
         val newState = when {
@@ -534,10 +543,12 @@ object HabitRepository {
             else -> HabitDayState.UNMARKED
         }
 
-        if (cleanVal == 0 && newState == HabitDayState.UNMARKED) {
+        val finalNote = note?.trim()?.takeIf { it.isNotBlank() } ?: currentRecord.note
+
+        if (cleanVal == 0 && newState == HabitDayState.UNMARKED && finalNote == null) {
             habitDates.remove(dateStr)
         } else {
-            habitDates[dateStr] = HabitDayRecord(state = newState, value = cleanVal)
+            habitDates[dateStr] = HabitDayRecord(state = newState, value = cleanVal, note = finalNote)
         }
         currentLogs[habitId] = habitDates
         _logsMap.value = currentLogs
@@ -547,7 +558,7 @@ object HabitRepository {
 
         val userCode = AuthManager.getUserCode() ?: "DEFAULT"
         scope.launch {
-            if (cleanVal == 0 && newState == HabitDayState.UNMARKED) {
+            if (cleanVal == 0 && newState == HabitDayState.UNMARKED && finalNote == null) {
                 SupabaseClient.deleteHabitLog(habitId, dateStr)
             } else {
                 val logDto = HabitLogDto(
@@ -557,6 +568,7 @@ object HabitRepository {
                     date = dateStr,
                     state = newState.name,
                     value = cleanVal,
+                    note = finalNote,
                     createdAt = System.currentTimeMillis()
                 )
                 SupabaseClient.upsertHabitLog(logDto)
@@ -564,11 +576,20 @@ object HabitRepository {
         }
     }
 
-    fun setHabitDayState(habitId: String, date: LocalDate, state: HabitDayState) {
+    fun setHabitDayState(
+        habitId: String,
+        date: LocalDate,
+        state: HabitDayState,
+        note: String? = null,
+        clearNote: Boolean = false
+    ) {
         val habit = _habitsList.value.find { it.id == habitId }
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
         val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
+
+        val currentRecord = habitDates[dateStr]
+        val finalNote = if (clearNote) null else (note?.trim()?.takeIf { it.isNotBlank() } ?: currentRecord?.note)
 
         val targetVal = habit?.targetValue ?: 1
         val assignedValue = when (state) {
@@ -577,10 +598,10 @@ object HabitRepository {
             HabitDayState.UNMARKED -> 0
         }
 
-        if (state == HabitDayState.UNMARKED) {
+        if (state == HabitDayState.UNMARKED && finalNote == null) {
             habitDates.remove(dateStr)
         } else {
-            habitDates[dateStr] = HabitDayRecord(state = state, value = assignedValue)
+            habitDates[dateStr] = HabitDayRecord(state = state, value = assignedValue, note = finalNote)
         }
         currentLogs[habitId] = habitDates
         _logsMap.value = currentLogs
@@ -590,7 +611,7 @@ object HabitRepository {
 
         val userCode = AuthManager.getUserCode() ?: "DEFAULT"
         scope.launch {
-            if (state == HabitDayState.UNMARKED) {
+            if (state == HabitDayState.UNMARKED && finalNote == null) {
                 SupabaseClient.deleteHabitLog(habitId, dateStr)
             } else {
                 val logDto = HabitLogDto(
@@ -600,11 +621,94 @@ object HabitRepository {
                     date = dateStr,
                     state = state.name,
                     value = assignedValue,
+                    note = finalNote,
                     createdAt = System.currentTimeMillis()
                 )
                 SupabaseClient.upsertHabitLog(logDto)
             }
         }
+    }
+
+    fun setHabitDayNote(habitId: String, date: LocalDate, note: String?) {
+        val habit = _habitsList.value.find { it.id == habitId } ?: return
+        val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val currentLogs = _logsMap.value.toMutableMap()
+        val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
+
+        val currentRecord = habitDates[dateStr] ?: HabitDayRecord(state = HabitDayState.DONE, value = habit.targetValue)
+        val cleanNote = note?.trim()?.takeIf { it.isNotBlank() }
+        val updatedRecord = currentRecord.copy(note = cleanNote)
+        habitDates[dateStr] = updatedRecord
+        currentLogs[habitId] = habitDates
+        _logsMap.value = currentLogs
+
+        persistData()
+        recomputeAllStats()
+
+        val userCode = AuthManager.getUserCode() ?: "DEFAULT"
+        scope.launch {
+            val logDto = HabitLogDto(
+                id = "${habitId}_${dateStr}",
+                habitId = habitId,
+                userCode = userCode,
+                date = dateStr,
+                state = updatedRecord.state.name,
+                value = updatedRecord.value,
+                note = cleanNote,
+                createdAt = System.currentTimeMillis()
+            )
+            SupabaseClient.upsertHabitLog(logDto)
+        }
+    }
+
+    data class NoteOccurrence(
+        val habitId: String,
+        val habitTitle: String,
+        val date: String,
+        val state: HabitDayState,
+        val value: Int
+    )
+
+    fun getRecentNotes(habitId: String? = null, state: HabitDayState? = null): List<String> {
+        val notesWithFreq = mutableMapOf<String, Int>()
+        _logsMap.value.forEach { (hId, dateMap) ->
+            val weight = if (habitId != null && hId == habitId) 3 else 1
+            dateMap.values.forEach { rec ->
+                val note = rec.note?.trim()
+                if (!note.isNullOrBlank()) {
+                    if (state == null || rec.state == state) {
+                        notesWithFreq[note] = (notesWithFreq[note] ?: 0) + weight
+                    }
+                }
+            }
+        }
+        return notesWithFreq.entries
+            .sortedByDescending { it.value }
+            .map { it.key }
+    }
+
+    fun getOccurrencesForNote(noteText: String, stateFilter: HabitDayState? = null): List<NoteOccurrence> {
+        val result = mutableListOf<NoteOccurrence>()
+        val habitsMap = _habitsList.value.associateBy { it.id }
+        _logsMap.value.forEach { (hId, dateMap) ->
+            val habitTitle = habitsMap[hId]?.title ?: "Habit"
+            dateMap.forEach { (dateStr, rec) ->
+                if (rec.note.equals(noteText.trim(), ignoreCase = true)) {
+                    if (stateFilter == null || rec.state == stateFilter) {
+                        result.add(
+                            NoteOccurrence(
+                                habitId = hId,
+                                habitTitle = habitTitle,
+                                date = dateStr,
+                                state = rec.state,
+                                value = rec.value
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        return result.sortedByDescending { it.date }
     }
 
     /**
@@ -866,7 +970,8 @@ object HabitRepository {
                     isToday = d == today,
                     state = record.state,
                     value = record.value,
-                    isRestDay = isRest
+                    isRestDay = isRest,
+                    note = record.note
                 )
             }
 

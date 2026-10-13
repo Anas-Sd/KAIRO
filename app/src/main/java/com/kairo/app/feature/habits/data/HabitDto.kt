@@ -31,5 +31,6 @@ data class HabitLogDto(
     @SerialName("date") val date: String, // "YYYY-MM-DD"
     @SerialName("state") val state: String = "DONE", // "DONE" or "MISSED"
     @SerialName("value") val value: Int? = null,
+    @SerialName("note") val note: String? = null,
     @SerialName("created_at") val createdAt: Long = System.currentTimeMillis()
 )

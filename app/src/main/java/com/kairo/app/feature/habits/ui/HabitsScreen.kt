@@ -55,6 +55,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kairo.app.feature.habits.data.HabitRepository
+import com.kairo.app.feature.habits.model.Habit
+import com.kairo.app.feature.habits.model.HabitDayRecord
+import com.kairo.app.feature.habits.model.HabitDayState
+import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.feature.habits.model.HabitWithStats
 import com.kairo.app.ui.components.AppHeader
 import com.kairo.app.ui.components.SettingsDialog
@@ -66,6 +70,14 @@ import com.kairo.app.ui.theme.KairoSecondary
 import com.kairo.app.ui.theme.KairoSurfaceContainer
 import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+
+private data class ActiveNoteDialog(
+    val habit: Habit,
+    val date: LocalDate,
+    val state: HabitDayState,
+    val initialNote: String? = null
+)
 
 @Composable
 fun HabitsScreen(
@@ -78,6 +90,7 @@ fun HabitsScreen(
     var selectedHabitForDetail by remember { mutableStateOf<HabitWithStats?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var activeNoteDialog by remember { mutableStateOf<ActiveNoteDialog?>(null) }
 
     // Search query state for Habits tab
     var searchQuery by remember { mutableStateOf("") }
@@ -376,10 +389,64 @@ fun HabitsScreen(
                                 }
                             },
                             onDayClick = { date ->
-                                HabitRepository.toggleHabitDay(item.habit.id, date)
+                                val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                                val logs = HabitRepository.getHabitLogs(item.habit.id)
+                                val currentRecord = logs[dateStr] ?: HabitDayRecord()
+                                val isTarget = item.habit.type == HabitType.TARGET
+                                val targetVal = item.habit.targetValue.coerceAtLeast(1)
+
+                                when (currentRecord.state) {
+                                    HabitDayState.UNMARKED -> {
+                                        if (isTarget) {
+                                            // Target habit: complete and prompt for optional Done note
+                                            HabitRepository.setHabitDayValue(item.habit.id, date, targetVal)
+                                            activeNoteDialog = ActiveNoteDialog(
+                                                habit = item.habit,
+                                                date = date,
+                                                state = HabitDayState.DONE,
+                                                initialNote = currentRecord.note
+                                            )
+                                        } else {
+                                            // Yes/No habit: instant DONE without note prompt
+                                            HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.DONE)
+                                        }
+                                    }
+                                    HabitDayState.DONE -> {
+                                        // Transitioning to MISSED: prompt for reason on both Target and Yes/No
+                                        HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.MISSED)
+                                        activeNoteDialog = ActiveNoteDialog(
+                                            habit = item.habit,
+                                            date = date,
+                                            state = HabitDayState.MISSED,
+                                            initialNote = currentRecord.note
+                                        )
+                                    }
+                                    HabitDayState.MISSED -> {
+                                        // Reset to UNMARKED
+                                        HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.UNMARKED, clearNote = true)
+                                    }
+                                }
                             },
                             onIncrement = {
-                                HabitRepository.incrementHabitDay(item.habit.id, LocalDate.now(), 1)
+                                val today = LocalDate.now()
+                                val dateStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                                val logs = HabitRepository.getHabitLogs(item.habit.id)
+                                val currentRecord = logs[dateStr] ?: HabitDayRecord()
+                                val currentVal = currentRecord.value
+                                val nextVal = currentVal + 1
+                                val targetVal = item.habit.targetValue.coerceAtLeast(1)
+
+                                HabitRepository.incrementHabitDay(item.habit.id, today, 1)
+
+                                // If reaching target today for the first time, prompt for optional Done note
+                                if (nextVal >= targetVal && currentVal < targetVal) {
+                                    activeNoteDialog = ActiveNoteDialog(
+                                        habit = item.habit,
+                                        date = today,
+                                        state = HabitDayState.DONE,
+                                        initialNote = currentRecord.note
+                                    )
+                                }
                             },
                             onDecrement = {
                                 HabitRepository.incrementHabitDay(item.habit.id, LocalDate.now(), -1)
@@ -666,5 +733,20 @@ fun HabitsScreen(
     // Common Settings Dialog
     if (showSettingsDialog) {
         SettingsDialog(onDismissRequest = { showSettingsDialog = false })
+    }
+
+    // Habit Note Dialog (Prompt for Done note or Missed reason)
+    activeNoteDialog?.let { dialogState ->
+        HabitNoteDialog(
+            habitTitle = dialogState.habit.title,
+            habitId = dialogState.habit.id,
+            state = dialogState.state,
+            initialNote = dialogState.initialNote,
+            onDismiss = { activeNoteDialog = null },
+            onConfirm = { noteText ->
+                HabitRepository.setHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
+                activeNoteDialog = null
+            }
+        )
     }
 }

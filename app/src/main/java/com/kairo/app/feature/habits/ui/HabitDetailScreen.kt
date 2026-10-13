@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
@@ -93,6 +94,13 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 
+private data class DetailNoteDialogState(
+    val habit: Habit,
+    val date: LocalDate,
+    val state: HabitDayState,
+    val initialNote: String? = null
+)
+
 @Composable
 fun HabitDetailScreen(
     habitWithStats: HabitWithStats,
@@ -106,6 +114,7 @@ fun HabitDetailScreen(
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var activeNoteDialog by remember { mutableStateOf<DetailNoteDialogState?>(null) }
 
     val context = LocalContext.current
     val today = remember { LocalDate.now() }
@@ -545,7 +554,18 @@ fun HabitDetailScreen(
                                 // Complete Goal Button
                                 Surface(
                                     onClick = {
-                                        HabitRepository.setHabitDayValue(currentHabit.id, today, currentHabit.targetValue)
+                                        val isAlreadyDone = habitWithStats.todayProgressFraction >= 1f
+                                        if (!isAlreadyDone) {
+                                            HabitRepository.setHabitDayValue(currentHabit.id, today, currentHabit.targetValue)
+                                        }
+                                        val todayStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                                        val existingNote = HabitRepository.getHabitLogs(currentHabit.id)[todayStr]?.note
+                                        activeNoteDialog = DetailNoteDialogState(
+                                            habit = currentHabit,
+                                            date = today,
+                                            state = HabitDayState.DONE,
+                                            initialNote = existingNote
+                                        )
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else KairoSecondary.copy(alpha = 0.15f),
@@ -569,6 +589,58 @@ fun HabitDetailScreen(
                                             color = if (habitWithStats.todayProgressFraction >= 1f) Color(0xFF003822) else KairoSecondary,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Show Today's Note if recorded
+                            val todayStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                            val todayRecord = HabitRepository.getHabitLogs(currentHabit.id)[todayStr]
+                            if (!todayRecord?.note.isNullOrBlank()) {
+                                Surface(
+                                    onClick = {
+                                        activeNoteDialog = DetailNoteDialogState(
+                                            habit = currentHabit,
+                                            date = today,
+                                            state = todayRecord!!.state,
+                                            initialNote = todayRecord.note
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color.White.copy(alpha = 0.04f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.EditNote,
+                                                contentDescription = null,
+                                                tint = KairoSecondary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = "Today's Note: ${todayRecord.note}",
+                                                fontSize = 12.sp,
+                                                color = Color.White,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Edit Note",
+                                            tint = Color(0xFFC8C4D9),
+                                            modifier = Modifier.size(14.dp)
                                         )
                                     }
                                 }
@@ -668,6 +740,19 @@ fun HabitDetailScreen(
 
             // 4. Monthly Heatmap Card
             MonthlyHeatmapSection(
+                habit = currentHabit,
+                onPromptNote = { date, state, note ->
+                    activeNoteDialog = DetailNoteDialogState(
+                        habit = currentHabit,
+                        date = date,
+                        state = state,
+                        initialNote = note
+                    )
+                }
+            )
+
+            // 5. Notes & Reasons Analytics (Donut)
+            HabitNotesDonutAnalytics(
                 habit = currentHabit
             )
 
@@ -741,11 +826,27 @@ fun HabitDetailScreen(
             shape = RoundedCornerShape(20.dp)
         )
     }
+
+    // Habit Note Dialog (Prompt for Done note or Missed reason)
+    activeNoteDialog?.let { dialogState ->
+        HabitNoteDialog(
+            habitTitle = dialogState.habit.title,
+            habitId = dialogState.habit.id,
+            state = dialogState.state,
+            initialNote = dialogState.initialNote,
+            onDismiss = { activeNoteDialog = null },
+            onConfirm = { noteText ->
+                HabitRepository.setHabitDayNote(dialogState.habit.id, dialogState.date, noteText)
+                activeNoteDialog = null
+            }
+        )
+    }
 }
 
 @Composable
 fun MonthlyHeatmapSection(
     habit: Habit,
+    onPromptNote: (LocalDate, HabitDayState, String?) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val allLogsMap: Map<String, Map<String, HabitDayRecord>> by HabitRepository.logsMap.collectAsState()
@@ -1221,6 +1322,7 @@ fun MonthlyHeatmapSection(
                                 Surface(
                                     onClick = {
                                         HabitRepository.setHabitDayValue(habit.id, sDate, target)
+                                        onPromptNote(sDate, HabitDayState.DONE, dayRecord.note)
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (isDateDone) KairoSecondary else KairoSecondary.copy(alpha = 0.15f),
@@ -1248,10 +1350,46 @@ fun MonthlyHeatmapSection(
                                     }
                                 }
 
+                                // Missed Button for Target habit
+                                val isTargetMissed = dayState == HabitDayState.MISSED
+                                Surface(
+                                    onClick = {
+                                        HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.MISSED)
+                                        onPromptNote(sDate, HabitDayState.MISSED, dayRecord.note)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isTargetMissed) Color(0xFFFFB77D) else KairoSurfaceContainerHighest,
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (isTargetMissed) Color(0xFFFFB77D) else Color.White.copy(alpha = 0.08f)
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = null,
+                                            tint = if (isTargetMissed) Color(0xFF4E2600) else Color(0xFFCBD5E1),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "Missed",
+                                            color = if (isTargetMissed) Color(0xFF4E2600) else Color(0xFFCBD5E1),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
                                 // Clear
                                 Surface(
                                     onClick = {
-                                        HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.UNMARKED)
+                                        HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.UNMARKED, clearNote = true)
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     color = KairoSurfaceContainerHighest,
@@ -1282,7 +1420,7 @@ fun MonthlyHeatmapSection(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                // Completed Button
+                                // Completed Button (Instant, no note dialog for Yes/No)
                                 val isDone = dayState == HabitDayState.DONE
                                 Box(
                                     modifier = Modifier
@@ -1319,7 +1457,7 @@ fun MonthlyHeatmapSection(
                                     }
                                 }
 
-                                // Missed Button
+                                // Missed Button (Prompts for Missed reason)
                                 val isMissed = dayState == HabitDayState.MISSED
                                 Box(
                                     modifier = Modifier
@@ -1333,6 +1471,7 @@ fun MonthlyHeatmapSection(
                                         )
                                         .clickable {
                                             HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.MISSED)
+                                            onPromptNote(sDate, HabitDayState.MISSED, dayRecord.note)
                                         }
                                         .padding(vertical = 8.dp),
                                     contentAlignment = Alignment.Center
@@ -1369,7 +1508,7 @@ fun MonthlyHeatmapSection(
                                             RoundedCornerShape(10.dp)
                                         )
                                         .clickable {
-                                            HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.UNMARKED)
+                                            HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.UNMARKED, clearNote = true)
                                         }
                                         .padding(vertical = 8.dp),
                                     contentAlignment = Alignment.Center
@@ -1391,6 +1530,80 @@ fun MonthlyHeatmapSection(
                                             color = Color(0xFFCBD5E1)
                                         )
                                     }
+                                }
+                            }
+                        }
+
+                        // Day Note Display / Add Note chip
+                        if (!dayRecord.note.isNullOrBlank()) {
+                            Surface(
+                                onClick = {
+                                    onPromptNote(sDate, if (isDateDone) HabitDayState.DONE else HabitDayState.MISSED, dayRecord.note)
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color.White.copy(alpha = 0.04f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.EditNote,
+                                            contentDescription = null,
+                                            tint = if (isDateDone) KairoSecondary else Color(0xFFFFB77D),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "Note: ${dayRecord.note}",
+                                            fontSize = 12.sp,
+                                            color = Color.White,
+                                            maxLines = 2,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit Note",
+                                        tint = Color(0xFFC8C4D9),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        } else if ((isDateDone && habit.type == HabitType.TARGET) || dayState == HabitDayState.MISSED) {
+                            Surface(
+                                onClick = {
+                                    onPromptNote(sDate, if (isDateDone) HabitDayState.DONE else HabitDayState.MISSED, null)
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color.White.copy(alpha = 0.03f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.EditNote,
+                                        contentDescription = null,
+                                        tint = if (isDateDone) KairoSecondary else Color(0xFFFFB77D),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = if (isDateDone) "+ Add completion note" else "+ Add missed reason",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (isDateDone) KairoSecondary else Color(0xFFFFB77D)
+                                    )
                                 }
                             }
                         }

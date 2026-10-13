@@ -477,6 +477,20 @@ object SupabaseClient {
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
                 val err = response.body?.string().orEmpty()
+                // If column 'note' does not exist in schema cache yet, retry without note so sync does not break
+                if (err.contains("note") && logDto.note != null) {
+                    val fallbackDto = logDto.copy(note = null)
+                    val fallbackJson = json.encodeToString(fallbackDto)
+                    val retryReq = Request.Builder()
+                        .url("$SUPABASE_URL/rest/v1/habit_logs")
+                        .header("apikey", SUPABASE_KEY)
+                        .header("Authorization", "Bearer $SUPABASE_KEY")
+                        .header("Prefer", "resolution=merge-duplicates,return=minimal")
+                        .post(fallbackJson.toRequestBody(JSON_MEDIA_TYPE))
+                        .build()
+                    val retryResp = client.newCall(retryReq).execute()
+                    if (retryResp.isSuccessful) return@runCatching
+                }
                 error("Failed to upsert habit log: HTTP ${response.code} $err")
             }
         }

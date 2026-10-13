@@ -21,7 +21,8 @@ enum class HabitDayState {
 
 data class HabitDayRecord(
     val state: HabitDayState = HabitDayState.UNMARKED,
-    val value: Int = 0
+    val value: Int = 0,
+    val note: String? = null
 )
 
 data class Habit(
@@ -50,7 +51,8 @@ data class HabitDayInfo(
     val isToday: Boolean,
     val state: HabitDayState,
     val value: Int = 0,
-    val isRestDay: Boolean = false
+    val isRestDay: Boolean = false,
+    val note: String? = null
 )
 
 data class HabitWithStats(
