@@ -110,7 +110,7 @@ private data class DetailNoteDialogState(
 fun HabitDetailScreen(
     habitWithStats: HabitWithStats,
     onBack: () -> Unit,
-    onCheckInToday: () -> Unit,
+    onCheckInToday: () -> Unit = {},
     onEditHabit: (Habit) -> Unit,
     onDeleteHabit: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -739,31 +739,108 @@ fun HabitDetailScreen(
                             else -> Color.White
                         }
 
-                        Surface(
-                            onClick = onCheckInToday,
-                            shape = RoundedCornerShape(12.dp),
-                            color = btnBg,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, btnBorder),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(
+                                onClick = {
+                                    when (todayState) {
+                                        HabitDayState.UNMARKED -> {
+                                            HabitRepository.setHabitDayState(currentHabit.id, today, HabitDayState.DONE)
+                                            activeNoteDialog = DetailNoteDialogState(
+                                                habit = currentHabit,
+                                                date = today,
+                                                state = HabitDayState.DONE,
+                                                initialNote = todayRecord.note
+                                            )
+                                        }
+                                        HabitDayState.DONE -> {
+                                            HabitRepository.setHabitDayState(currentHabit.id, today, HabitDayState.MISSED)
+                                            activeNoteDialog = DetailNoteDialogState(
+                                                habit = currentHabit,
+                                                date = today,
+                                                state = HabitDayState.MISSED,
+                                                initialNote = todayRecord.note
+                                            )
+                                        }
+                                        HabitDayState.MISSED -> {
+                                            HabitRepository.setHabitDayState(currentHabit.id, today, HabitDayState.UNMARKED, clearNote = true)
+                                        }
+                                    }
+                                    onCheckInToday()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = btnBg,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, btnBorder),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Icon(
-                                    imageVector = btnIcon,
-                                    contentDescription = null,
-                                    tint = btnIconTint,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = btnText,
-                                    color = btnTextColor,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Row(
+                                    modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = btnIcon,
+                                        contentDescription = null,
+                                        tint = btnIconTint,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = btnText,
+                                        color = btnTextColor,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            // Show Today's Note if recorded for Yes/No
+                            if (!todayRecord.note.isNullOrBlank()) {
+                                Surface(
+                                    onClick = {
+                                        activeNoteDialog = DetailNoteDialogState(
+                                            habit = currentHabit,
+                                            date = today,
+                                            state = todayRecord.state,
+                                            initialNote = todayRecord.note
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color.White.copy(alpha = 0.04f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.EditNote,
+                                                contentDescription = null,
+                                                tint = KairoSecondary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = "Today's Note: ${HabitNoteHelper.formatDisplayNote(todayRecord.note)}",
+                                                fontSize = 12.sp,
+                                                color = Color.White,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Edit Note",
+                                            tint = Color(0xFFC8C4D9),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

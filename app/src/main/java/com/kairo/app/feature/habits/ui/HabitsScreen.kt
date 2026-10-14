@@ -225,36 +225,7 @@ fun HabitsScreen(
             habitWithStats = currentSelected,
             onBack = { selectedHabitForDetail = null },
             onCheckInToday = {
-                if (!currentSelected.isTodayScheduled) return@HabitDetailScreen
-                val today = LocalDate.now()
-                val todayStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                val logs = HabitRepository.getHabitLogs(currentSelected.habit.id)
-                val currentRecord = logs[todayStr] ?: HabitDayRecord()
-                when (currentRecord.state) {
-                    HabitDayState.UNMARKED -> {
-                        HabitRepository.setHabitDayState(currentSelected.habit.id, today, HabitDayState.DONE)
-                        activeIncrementNote = ActiveIncrementNote(
-                            habit = currentSelected.habit,
-                            date = today,
-                            countIndex = null,
-                            isMissed = false,
-                            initialNote = currentRecord.note
-                        )
-                    }
-                    HabitDayState.DONE -> {
-                        HabitRepository.setHabitDayState(currentSelected.habit.id, today, HabitDayState.MISSED)
-                        activeIncrementNote = ActiveIncrementNote(
-                            habit = currentSelected.habit,
-                            date = today,
-                            countIndex = null,
-                            isMissed = true,
-                            initialNote = currentRecord.note
-                        )
-                    }
-                    HabitDayState.MISSED -> {
-                        HabitRepository.setHabitDayState(currentSelected.habit.id, today, HabitDayState.UNMARKED, clearNote = true)
-                    }
-                }
+                // Check-in and note bottom sheet handled directly within HabitDetailScreen
             },
             onEditHabit = {
                 // Edit mode
