@@ -123,6 +123,8 @@ fun HabitDetailScreen(
 
     val context = LocalContext.current
     val today = remember { LocalDate.now() }
+    val allLogsMap by HabitRepository.logsMap.collectAsState()
+    val habitLogs = allLogsMap[currentHabit.id] ?: emptyMap()
 
     LaunchedEffect(Unit) {
         HabitRepository.autoMarkMissedPastDays()
@@ -461,7 +463,7 @@ fun HabitDetailScreen(
                             }
                         }
 
-                        if (habitWithStats.todayProgressFraction >= 1f) {
+                        if (habitWithStats.isTodayScheduled && habitWithStats.todayProgressFraction >= 1f) {
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(100.dp))
@@ -478,7 +480,34 @@ fun HabitDetailScreen(
                         }
                     }
 
-                    if (currentHabit.type == HabitType.TARGET) {
+                    if (!habitWithStats.isTodayScheduled) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.White.copy(alpha = 0.04f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.EventBusy,
+                                    contentDescription = null,
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Today is a scheduled Rest Day (Actions paused)",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    } else if (currentHabit.type == HabitType.TARGET) {
                         // Interactive Target Stepper
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(
@@ -674,16 +703,47 @@ fun HabitDetailScreen(
                             }
                         }
                     } else {
-                        // Yes/No Quick Check-in
-                        val isDone = habitWithStats.todayProgressFraction >= 1f
+                        // Yes/No Quick Check-in with 3-state transition: UNMARKED -> DONE -> MISSED -> UNMARKED
+                        val todayStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                        val todayRecord = habitLogs[todayStr] ?: HabitDayRecord()
+                        val todayState = todayRecord.state
+
+                        val btnBg = when (todayState) {
+                            HabitDayState.DONE -> KairoSecondary
+                            HabitDayState.MISSED -> Color(0xFFF43F5E).copy(alpha = 0.15f)
+                            else -> KairoPrimary.copy(alpha = 0.15f)
+                        }
+                        val btnBorder = when (todayState) {
+                            HabitDayState.DONE -> KairoSecondary
+                            HabitDayState.MISSED -> Color(0xFFFB7185).copy(alpha = 0.6f)
+                            else -> KairoPrimary.copy(alpha = 0.4f)
+                        }
+                        val btnIcon = when (todayState) {
+                            HabitDayState.DONE -> Icons.Default.Check
+                            HabitDayState.MISSED -> Icons.Default.Close
+                            else -> Icons.Default.TaskAlt
+                        }
+                        val btnIconTint = when (todayState) {
+                            HabitDayState.DONE -> Color(0xFF003822)
+                            HabitDayState.MISSED -> Color(0xFFFB7185)
+                            else -> KairoPrimary
+                        }
+                        val btnText = when (todayState) {
+                            HabitDayState.DONE -> "Completed Today (Tap to mark not done)"
+                            HabitDayState.MISSED -> "Not Done Today (Tap to unmark)"
+                            else -> "Mark Complete for Today"
+                        }
+                        val btnTextColor = when (todayState) {
+                            HabitDayState.DONE -> Color(0xFF003822)
+                            HabitDayState.MISSED -> Color(0xFFFB7185)
+                            else -> Color.White
+                        }
+
                         Surface(
                             onClick = onCheckInToday,
                             shape = RoundedCornerShape(12.dp),
-                            color = if (isDone) KairoSecondary else KairoPrimary.copy(alpha = 0.15f),
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                if (isDone) KairoSecondary else KairoPrimary.copy(alpha = 0.4f)
-                            ),
+                            color = btnBg,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, btnBorder),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -692,15 +752,15 @@ fun HabitDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = if (isDone) Icons.Default.Check else Icons.Default.TaskAlt,
+                                    imageVector = btnIcon,
                                     contentDescription = null,
-                                    tint = if (isDone) Color(0xFF003822) else KairoPrimary,
+                                    tint = btnIconTint,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = if (isDone) "Completed Today (Tap to unmark)" else "Mark Complete for Today",
-                                    color = if (isDone) Color(0xFF003822) else Color.White,
+                                    text = btnText,
+                                    color = btnTextColor,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
                                 )
