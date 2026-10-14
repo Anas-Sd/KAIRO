@@ -39,12 +39,15 @@ outbox = []
 DEFAULT_FCM_TOKEN = os.getenv("DEFAULT_FCM_TOKEN", "")
 current_user = {
     "user_code": os.getenv("DEFAULT_USER_CODE", ""),
-    "fcm_token": DEFAULT_FCM_TOKEN or None
+    "fcm_token": DEFAULT_FCM_TOKEN or None,
+    "chat_id": None
 }
 
-def set_context(user_code: str, fcm_token: str = None):
+def set_context(user_code: str, fcm_token: str = None, chat_id: int = None):
     current_user["user_code"] = user_code
     current_user["fcm_token"] = fcm_token or DEFAULT_FCM_TOKEN or None
+    if chat_id is not None:
+        current_user["chat_id"] = chat_id
 
 def supabase_headers() -> dict:
     return {
@@ -1663,7 +1666,13 @@ def calculate_habit_adherence(habit: dict, logs_by_date: dict, today) -> float:
         total = total_done + total_missed
         return (total_done / total * 100.0) if total > 0 else 100.0
 
-def format_habit_action_reply(habit: dict, status: str, notes: str = None, current_val: int = None) -> str:
+def format_habit_action_reply(
+    habit: dict,
+    status: str,
+    notes: str = None,
+    current_val: int = None,
+    header: str = None
+) -> str:
     """Formats exact reply for every habit action strictly matching requested card format."""
     title = habit.get("title", "")
     h_type = (habit.get("type") or "YES_NO").upper()
@@ -1679,15 +1688,23 @@ def format_habit_action_reply(habit: dict, status: str, notes: str = None, curre
         type_str = "yes/no"
 
     repeat_str = format_repeat_schedule(habit)
+    creation_date = habit.get("start_date") or datetime.now(DEFAULT_TIMEZONE).strftime("%Y-%m-%d")
+    notes_format = habit.get("note_prompt") or "BOTH"
     notes_display = format_display_note(notes) if notes else "None"
 
-    return (
-        f"task name - {title}\n"
-        f"task type - {type_str}\n"
-        f"repeat - {repeat_str}\n"
-        f"notes - {notes_display}\n"
-        f"status - {status}"
-    )
+    lines = []
+    if header:
+        lines.append(header)
+        lines.append("")
+    lines.append(f"task name - {title}")
+    lines.append(f"task type - {type_str}")
+    lines.append(f"repeat - {repeat_str}")
+    lines.append(f"creation date - {creation_date}")
+    lines.append(f"notes format - {notes_format}")
+    lines.append(f"notes - {notes_display}")
+    lines.append(f"status - {status}")
+
+    return "\n".join(lines)
 
 # ==========================================
 # HABIT LLM TOOLS
@@ -1799,7 +1816,19 @@ def add_habit(
     saved_habit = payload
     dispatch_alarm_wakeup()
 
-    return format_habit_action_reply(saved_habit, status="Created", notes=f"Prompt: {clean_note_prompt} | Starts: {s_date}")
+    today = datetime.now(DEFAULT_TIMEZONE).date()
+    if is_rest_day(saved_habit, today):
+        today_status = "Rest Day"
+    else:
+        today_status = "Not Done"
+
+    return format_habit_action_reply(
+        saved_habit,
+        status=today_status,
+        notes=None,
+        current_val=0,
+        header="✅ Successfully added habit!"
+    )
 
 def edit_habit(
     habit_query: str,
@@ -1903,7 +1932,11 @@ def edit_habit(
     updated_habit.update(updates)
     dispatch_alarm_wakeup()
 
-    return format_habit_action_reply(updated_habit, status=f"Updated ({', '.join(changes_desc)})")
+    return format_habit_action_reply(
+        updated_habit,
+        status=f"Updated ({', '.join(changes_desc)})",
+        header="✏️ Successfully updated habit!"
+    )
 
 def delete_habit(habit_query: str) -> str:
     """
@@ -2307,6 +2340,197 @@ def list_habits() -> str:
     """Lists all habits with today's status, progress, streaks, and schedules."""
     return get_habit_analytics(habit_query="all")
 
+# ==========================================
+# USER CUSTOM RULES MANAGEMENT & TOOLS
+# ==========================================
+RULES_FILE_PATH = BASE_DIR / "user_rules.json"
+SUPABASE_RULES_CONFIG_ID = "00000000-0000-0000-0000-000000000001"
+
+def _load_cloud_rules() -> dict:
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{SUPABASE_RULES_CONFIG_ID}&select=notes"
+        res = requests.get(url, headers=supabase_headers(), timeout=5)
+        if res.status_code == 200:
+            rows = res.json()
+            if rows and rows[0].get("notes"):
+                return json.loads(rows[0]["notes"])
+    except Exception as e:
+        logger.error(f"Error loading cloud rules: {e}")
+    return {}
+
+def _save_cloud_rules(data: dict):
+    try:
+        headers = supabase_headers()
+        headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
+        row = {
+            "id": SUPABASE_RULES_CONFIG_ID,
+            "title": "__BOT_RULES_DATA__",
+            "notes": json.dumps(data),
+            "due_date": "2099-01-01",
+            "due_time": "12:00 PM",
+            "is_completed": False,
+            "section": "TODAY",
+            "user_code": "__BOT_INTERNAL__"
+        }
+        requests.post(f"{SUPABASE_URL}/rest/v1/tasks", headers=headers, json=row, timeout=5)
+    except Exception as e:
+        logger.error(f"Error saving cloud rules: {e}")
+
+def load_rules() -> dict:
+    if RULES_FILE_PATH.exists():
+        try:
+            content = RULES_FILE_PATH.read_text(encoding="utf-8").strip()
+            if content:
+                data = json.loads(content)
+                if data:
+                    return data
+        except Exception as e:
+            logger.error(f"Error loading rules file: {e}")
+    cloud_data = _load_cloud_rules()
+    if cloud_data:
+        try:
+            RULES_FILE_PATH.write_text(json.dumps(cloud_data, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        return cloud_data
+    return {}
+
+def save_rules(data: dict):
+    try:
+        RULES_FILE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.error(f"Error saving rules file: {e}")
+    _save_cloud_rules(data)
+
+_on_rules_changed_cb = None
+
+def set_rules_changed_callback(cb):
+    global _on_rules_changed_cb
+    _on_rules_changed_cb = cb
+
+def _notify_rules_changed(chat_id: int = None):
+    c_id = chat_id or current_user.get("chat_id")
+    if _on_rules_changed_cb and c_id:
+        try:
+            _on_rules_changed_cb(int(c_id))
+        except Exception as e:
+            logger.error(f"Error in rules changed callback: {e}")
+
+def get_user_rules(chat_id: int = None) -> list:
+    c_id = chat_id or current_user.get("chat_id")
+    if not c_id:
+        return []
+    all_rules = load_rules()
+    return all_rules.get(str(c_id), [])
+
+def add_user_rule(rule_text: str, chat_id: int = None) -> list:
+    c_id = chat_id or current_user.get("chat_id")
+    if not c_id:
+        return []
+    all_rules = load_rules()
+    key = str(c_id)
+    rules_list = all_rules.get(key, [])
+    cleaned = rule_text.strip()
+    if cleaned and cleaned not in rules_list:
+        rules_list.append(cleaned)
+        all_rules[key] = rules_list
+        save_rules(all_rules)
+        _notify_rules_changed(c_id)
+    return rules_list
+
+def delete_user_rule(rule_query: str, chat_id: int = None) -> tuple[bool, str, list]:
+    """
+    Deletes a specific user custom rule by index number (e.g. '1', 'rule 2') or by matching text.
+    Returns (success, deleted_rule_text, remaining_rules).
+    """
+    c_id = chat_id or current_user.get("chat_id")
+    if not c_id:
+        return False, "No active chat session.", []
+
+    all_rules = load_rules()
+    key = str(c_id)
+    rules_list = all_rules.get(key, [])
+    if not rules_list:
+        return False, "You have no active custom rules to delete.", []
+
+    q = rule_query.strip().lower()
+    deleted_text = None
+
+    # Check for index number (e.g. "1", "rule 1", "#2", "2")
+    match_num = re.search(r'\b(\d+)\b', q)
+    if match_num:
+        idx = int(match_num.group(1))
+        if 1 <= idx <= len(rules_list):
+            deleted_text = rules_list.pop(idx - 1)
+
+    if not deleted_text:
+        best_match = None
+        best_score = 0.0
+        best_idx = -1
+        for i, r in enumerate(rules_list):
+            r_lower = r.lower()
+            if q in r_lower or r_lower in q:
+                score = 0.95
+            else:
+                score = score_match(q, r_lower)
+            if score > best_score:
+                best_score = score
+                best_match = r
+                best_idx = i
+
+        if best_match and best_score >= 0.5:
+            deleted_text = rules_list.pop(best_idx)
+
+    if deleted_text:
+        all_rules[key] = rules_list
+        save_rules(all_rules)
+        _notify_rules_changed(c_id)
+        return True, deleted_text, rules_list
+    else:
+        return False, f"Could not find any rule matching '{rule_query}'.", rules_list
+
+def clear_user_rules(chat_id: int = None) -> bool:
+    c_id = chat_id or current_user.get("chat_id")
+    if not c_id:
+        return False
+    all_rules = load_rules()
+    key = str(c_id)
+    if key in all_rules:
+        del all_rules[key]
+        save_rules(all_rules)
+        _notify_rules_changed(c_id)
+    return True
+
+# LLM Tools for Rules
+def delete_rule(rule_query: str) -> str:
+    """
+    Deletes a specific user custom rule.
+    - rule_query: rule number (e.g. '1', 'rule 2') or partial text of the rule to delete.
+    """
+    success, text, remaining = delete_user_rule(rule_query)
+    if not success:
+        rules_str = "\n".join([f"{i}. _{r}_" for i, r in enumerate(remaining, 1)]) if remaining else "None"
+        return f"{text}\n\nYour active rules:\n{rules_str}"
+
+    if remaining:
+        rules_str = "\n".join([f"{i}. _{r}_" for i, r in enumerate(remaining, 1)])
+        return f"🗑️ Rule Deleted successfully: \"{text}\"\n\n📋 Remaining Active Rules:\n{rules_str}"
+    else:
+        return f"🗑️ Rule Deleted successfully: \"{text}\"\n\nYou now have no custom rules active."
+
+def clear_all_rules() -> str:
+    """Clears and deletes all custom rules for the user."""
+    clear_user_rules()
+    return "🗑️ All custom rules have been cleared successfully. Standard default formatting will be used."
+
+def list_user_rules() -> str:
+    """Lists all active custom rules for the user."""
+    rules = get_user_rules()
+    if not rules:
+        return "You have no custom rules set yet. Set one anytime by saying: 'rule - <your rule>'."
+    rules_str = "\n".join([f"{i}. _{r}_" for i, r in enumerate(rules, 1)])
+    return f"📋 Active Custom Rules:\n\n{rules_str}\n\nTo delete a rule, say: 'delete rule <number or text>'."
+
 # Export tool list for Gemini API
 TOOLS = [
     # Task Tools
@@ -2334,6 +2558,11 @@ TOOLS = [
     delete_habit,
     mark_habit,
     get_habit_analytics,
-    list_habits
+    list_habits,
+    # Rule Tools
+    delete_rule,
+    clear_all_rules,
+    list_user_rules
 ]
+
 
