@@ -86,6 +86,7 @@ import com.kairo.app.ui.components.SectionType
 import com.kairo.app.ui.components.SortBottomSheet
 import com.kairo.app.ui.components.TaskCard
 import com.kairo.app.ui.components.TaskDetailsBottomSheet
+import com.kairo.app.ui.components.TaskExportBottomSheet
 import com.kairo.app.ui.components.UndoDoneBar
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoOutlineVariant
@@ -113,6 +114,7 @@ fun TasksScreen(
     val pendingSyncCount by SyncManager.pendingSyncCount.collectAsState()
     val displayName = session?.name ?: "Tasks"
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showExportSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val currentDateStr = SimpleDateFormat("EEEE, MMM d", Locale.getDefault()).format(Date())
 
@@ -302,7 +304,7 @@ fun TasksScreen(
                             onOpenFilter = { viewModel.openFilterSheet() },
                             onOpenSort = { viewModel.openSortSheet() },
                             onExportClicked = {
-                                Toast.makeText(context, "Exporting tasks...", Toast.LENGTH_SHORT).show()
+                                showExportSheet = true
                             },
                             onResetFilter = {
                                 viewModel.resetFilters()
@@ -707,6 +709,28 @@ fun TasksScreen(
                         Toast.makeText(context, "Sorted by ${sort.displayName}", Toast.LENGTH_SHORT).show()
                     },
                     onDismiss = { viewModel.closeSortSheet() }
+                )
+            }
+
+            // Export Modal Bottom Sheet
+            if (showExportSheet) {
+                val isFiltered = uiState.filterCriteria.selectedStatuses.isNotEmpty() ||
+                    uiState.filterCriteria.selectedPriorities.isNotEmpty() ||
+                    uiState.filterCriteria.selectedDate != null ||
+                    uiState.searchQuery.isNotBlank() ||
+                    uiState.breadcrumbStack.isNotEmpty()
+
+                val tasksToExport = if (isFiltered) {
+                    (uiState.snoozedTasks + uiState.overdueTasks + uiState.todayTasks + uiState.upcomingTasks + uiState.completedTasks).distinctBy { it.id }
+                } else {
+                    uiState.allTasks
+                }
+
+                TaskExportBottomSheet(
+                    tasksToExport = tasksToExport,
+                    allTasks = uiState.allTasks,
+                    isFiltered = isFiltered,
+                    onDismissRequest = { showExportSheet = false }
                 )
             }
 
