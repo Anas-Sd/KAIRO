@@ -1274,8 +1274,1042 @@ def export_tasks_data(format_type: str = "csv", filter_status: str = "all", filt
     outbox.append(str(file_path))
     return f"Tasks exported successfully ({len(filtered)} tasks). The file '{filename}' has been prepared and is being sent to your Telegram."
 
+# ==========================================
+# HABIT DATA ACCESS & PROTOCOLS
+# ==========================================
+DAY_NAME_TO_INT = {
+    "mon": 1, "monday": 1,
+    "tue": 2, "tues": 2, "tuesday": 2,
+    "wed": 3, "wednesday": 3,
+    "thu": 4, "thur": 4, "thurs": 4, "thursday": 4,
+    "fri": 5, "friday": 5,
+    "sat": 6, "saturday": 6,
+    "sun": 7, "sunday": 7,
+}
+INT_TO_DAY_NAME = {
+    1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 7: "Sun"
+}
+
+def parse_repeat_days(days_input) -> str:
+    """Parses various day representations into a sorted comma-separated string like '1,3,5'."""
+    if not days_input:
+        return "1,2,3,4,5,6,7"
+    if isinstance(days_input, list):
+        days_str = ",".join(str(x) for x in days_input)
+    else:
+        days_str = str(days_input)
+
+    days_str_lower = days_str.lower().strip()
+    if "everyday" in days_str_lower or "daily" in days_str_lower:
+        return "1,2,3,4,5,6,7"
+    if "weekday" in days_str_lower:
+        return "1,2,3,4,5"
+    if "weekend" in days_str_lower:
+        return "6,7"
+
+    parts = re.split(r"[,;\s]+", days_str_lower)
+    result_ints = set()
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if p.isdigit():
+            val = int(p)
+            if 1 <= val <= 7:
+                result_ints.add(val)
+        elif p in DAY_NAME_TO_INT:
+            result_ints.add(DAY_NAME_TO_INT[p])
+
+    if not result_ints:
+        return "1,2,3,4,5,6,7"
+    return ",".join(str(x) for x in sorted(result_ints))
+
+def format_repeat_schedule(habit: dict) -> str:
+    """Formats repeat schedule into user-friendly text."""
+    repeat_type = (habit.get("repeat_type") or "EVERYDAY").upper()
+    if repeat_type == "EVERYDAY":
+        return "everyday"
+    elif repeat_type == "WEEKLY_X":
+        count = habit.get("weekly_target_count") or 3
+        return f"weekly {count} times"
+    elif repeat_type == "SPECIFIC_DAYS":
+        raw_days = str(habit.get("repeat_days") or "1,2,3,4,5,6,7")
+        day_nums = [int(x.strip()) for x in raw_days.split(",") if x.strip().isdigit()]
+        day_names = [INT_TO_DAY_NAME.get(d, str(d)) for d in sorted(day_nums)]
+        return f"specific days ({', '.join(day_names)})"
+    return "everyday"
+
+def parse_increment_notes(raw_note: str | None) -> dict[int, str]:
+    """Parses 1-indexed target count notes stored as JSON: '{\"1\":\"Fajr\", \"3\":\"Asr\"}'."""
+    if not raw_note:
+        return {}
+    trimmed = raw_note.strip()
+    if trimmed.startswith("{") and trimmed.endswith("}"):
+        try:
+            data = json.loads(trimmed)
+            res = {}
+            for k, v in data.items():
+                if str(k).isdigit() and int(k) > 0 and str(v).strip():
+                    res[int(k)] = str(v).strip()
+            return dict(sorted(res.items()))
+        except Exception:
+            pass
+    parts = [p.strip() for p in re.split(r"[,;\n]+", trimmed) if p.strip()]
+    res = {}
+    for idx, p in enumerate(parts, 1):
+        res[idx] = p
+    return res
+
+def serialize_increment_notes(notes_dict: dict[int, str]) -> str | None:
+    """Serializes 1-indexed count notes to compact JSON."""
+    filtered = {k: str(v).strip() for k, v in sorted(notes_dict.items()) if k > 0 and str(v).strip()}
+    if not filtered:
+        return None
+    return json.dumps({str(k): v for k, v in filtered.items()})
+
+def format_display_note(raw_note: str | None) -> str:
+    """Formats raw notes (JSON or text) for clean user display."""
+    if not raw_note:
+        return "None"
+    trimmed = raw_note.strip()
+    if trimmed.startswith("{") and trimmed.endswith("}"):
+        m = parse_increment_notes(trimmed)
+        if not m:
+            return "None"
+        return ", ".join(f"#{k}: {v}" for k, v in m.items())
+    return trimmed
+
+def is_rest_day(habit: dict, target_date) -> bool:
+    """Determines if target_date is a rest day for a SPECIFIC_DAYS habit."""
+    repeat_type = (habit.get("repeat_type") or "EVERYDAY").upper()
+    if repeat_type != "SPECIFIC_DAYS":
+        return False
+    raw_days = str(habit.get("repeat_days") or "1,2,3,4,5,6,7")
+    allowed_days = [int(x.strip()) for x in raw_days.split(",") if x.strip().isdigit()]
+    day_num = target_date.weekday() + 1
+    return day_num not in allowed_days
+
+def resolve_habit_date(date_str: str = "today"):
+    """
+    Resolves date_str relative to Asia/Kolkata timezone.
+    Returns (date_obj, date_iso_string 'YYYY-MM-DD', day_name 'Wednesday').
+    """
+    now = datetime.now(DEFAULT_TIMEZONE)
+    today = now.date()
+
+    if not date_str:
+        return today, today.strftime("%Y-%m-%d"), today.strftime("%A")
+
+    s = date_str.strip().lower()
+    if s in ("today", "todays"):
+        d = today
+    elif s in ("yesterday", "yesterdays"):
+        d = today - timedelta(days=1)
+    elif s in ("tomorrow", "tomorrows"):
+        d = today + timedelta(days=1)
+    elif s in DAY_NAME_TO_INT:
+        target_dow = DAY_NAME_TO_INT[s]
+        today_dow = today.weekday() + 1
+        diff = (today_dow - target_dow) % 7
+        d = today - timedelta(days=diff)
+    else:
+        d = None
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d", "%b %d, %Y", "%b %d %Y", "%d %b %Y", "%d %B %Y", "%B %d, %Y", "%b %d", "%d %b", "%B %d", "%d %B"):
+            try:
+                parsed = datetime.strptime(s, fmt)
+                if "%Y" not in fmt and "%y" not in fmt:
+                    parsed = parsed.replace(year=today.year)
+                d = parsed.date()
+                break
+            except Exception:
+                pass
+        
+        if d is None:
+            clean_s = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', s)
+            for fmt in ("%d %b", "%d %B", "%b %d", "%B %d", "%d %b %Y", "%d %B %Y", "%b %d %Y", "%B %d %Y", "%d %b, %Y", "%b %d, %Y"):
+                try:
+                    parsed = datetime.strptime(clean_s, fmt)
+                    if "%Y" not in fmt and "%y" not in fmt:
+                        parsed = parsed.replace(year=today.year)
+                    d = parsed.date()
+                    break
+                except Exception:
+                    pass
+
+        if d is None:
+            d = today
+
+    return d, d.strftime("%Y-%m-%d"), d.strftime("%A")
+
+def fetch_all_habits_for_user() -> list:
+    """Fetches all habits for the active user from Supabase."""
+    user_code = current_user.get("user_code", "")
+    if not user_code:
+        return []
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/habits?user_code=eq.{user_code}&select=*&order=position.asc,created_at.desc"
+        res = requests.get(url, headers=supabase_headers(), timeout=10)
+        if res.status_code == 200:
+            return res.json()
+    except Exception as e:
+        logger.error(f"Error fetching habits: {e}")
+    return []
+
+def fetch_all_habit_logs_for_user(habit_id: str = None) -> list:
+    """Fetches all habit logs for the active user from Supabase."""
+    user_code = current_user.get("user_code", "")
+    if not user_code:
+        return []
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/habit_logs?user_code=eq.{user_code}&select=*"
+        if habit_id:
+            url += f"&habit_id=eq.{habit_id}"
+        res = requests.get(url, headers=supabase_headers(), timeout=10)
+        if res.status_code == 200:
+            return res.json()
+    except Exception as e:
+        logger.error(f"Error fetching habit logs: {e}")
+    return []
+
+def resolve_habit_by_query(query: str, habits: list = None) -> tuple[dict | None, list]:
+    """Resolves habit name using exact match and fuzzy stem scoring."""
+    if habits is None:
+        habits = fetch_all_habits_for_user()
+    if not habits:
+        return None, []
+
+    clean_query = query.strip()
+    for h in habits:
+        if h.get("id") == clean_query:
+            return h, [h]
+
+    scored = []
+    for h in habits:
+        title = h.get("title", "")
+        s_title = score_match(clean_query, title)
+        scored.append((s_title, h))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    high_matches = [h for s, h in scored if s >= 0.55]
+
+    if scored and scored[0][0] >= 0.55:
+        return scored[0][1], high_matches
+    return None, [h for s, h in scored[:3]]
+
+def is_day_complete(habit: dict, record: dict | None) -> bool:
+    """Returns True if record represents a completed day."""
+    if not record:
+        return False
+    state = record.get("state")
+    if state == "DONE":
+        return True
+    h_type = (habit.get("type") or "YES_NO").upper()
+    tgt_val = habit.get("target_value") or 1
+    val = record.get("value") or 0
+    if h_type == "TARGET" and val >= tgt_val and tgt_val > 0:
+        return True
+    return False
+
+def count_weekly_completions(habit: dict, logs_by_date: dict, target_date) -> int:
+    """Counts completed days in the Monday-Sunday week containing target_date."""
+    monday = target_date - timedelta(days=target_date.weekday())
+    count = 0
+    for offset in range(7):
+        d = monday + timedelta(days=offset)
+        d_str = d.strftime("%Y-%m-%d")
+        if is_day_complete(habit, logs_by_date.get(d_str)):
+            count += 1
+    return count
+
+def get_habit_start_date(habit: dict):
+    """Retrieves effective start date of habit."""
+    raw = habit.get("start_date") or ""
+    if raw.strip():
+        try:
+            return datetime.strptime(raw.strip(), "%Y-%m-%d").date()
+        except Exception:
+            pass
+    created_at = habit.get("created_at")
+    if created_at:
+        try:
+            return datetime.fromtimestamp(created_at / 1000.0, DEFAULT_TIMEZONE).date()
+        except Exception:
+            pass
+    return datetime.now(DEFAULT_TIMEZONE).date()
+
+def calculate_habit_streak(habit: dict, logs_by_date: dict, today) -> int:
+    """Calculates habit streak matching Android HabitRepository logic."""
+    repeat_type = (habit.get("repeat_type") or "EVERYDAY").upper()
+
+    if repeat_type == "EVERYDAY":
+        today_done = is_day_complete(habit, logs_by_date.get(today.strftime("%Y-%m-%d")))
+        streak = 0
+        check_date = today if today_done else today - timedelta(days=1)
+        while True:
+            done = is_day_complete(habit, logs_by_date.get(check_date.strftime("%Y-%m-%d")))
+            if done:
+                streak += 1
+                check_date -= timedelta(days=1)
+            else:
+                break
+        return streak
+
+    elif repeat_type == "SPECIFIC_DAYS":
+        raw_days = str(habit.get("repeat_days") or "1,2,3,4,5,6,7")
+        repeat_days = [int(x.strip()) for x in raw_days.split(",") if x.strip().isdigit()]
+        is_today_scheduled = (today.weekday() + 1) in repeat_days
+        today_done = is_day_complete(habit, logs_by_date.get(today.strftime("%Y-%m-%d")))
+
+        if is_today_scheduled and today_done:
+            check_date = today
+        else:
+            prev = today - timedelta(days=1)
+            safety = 0
+            while (prev.weekday() + 1) not in repeat_days and safety < 14:
+                prev -= timedelta(days=1)
+                safety += 1
+            check_date = prev
+
+        streak = 0
+        safety = 0
+        while safety < 365:
+            safety += 1
+            if (check_date.weekday() + 1) in repeat_days:
+                done = is_day_complete(habit, logs_by_date.get(check_date.strftime("%Y-%m-%d")))
+                if done:
+                    streak += 1
+                    check_date -= timedelta(days=1)
+                else:
+                    break
+            else:
+                # Rest day -> skip without breaking streak!
+                check_date -= timedelta(days=1)
+        return streak
+
+    elif repeat_type == "WEEKLY_X":
+        weekly_target = max(1, min(7, habit.get("weekly_target_count") or 3))
+        start_of_current_week = today - timedelta(days=today.weekday())
+        current_week_done = 0
+        d = start_of_current_week
+        while d <= today:
+            if is_day_complete(habit, logs_by_date.get(d.strftime("%Y-%m-%d"))):
+                current_week_done += 1
+            d += timedelta(days=1)
+
+        current_week_target_reached = current_week_done >= weekly_target
+        days_remaining_in_week = 7 - (today.weekday() + 1)
+        current_week_possible = (current_week_done + days_remaining_in_week) >= weekly_target
+
+        if not current_week_target_reached and not current_week_possible:
+            return 0
+
+        streak = 1 if current_week_target_reached else 0
+        check_week_start = start_of_current_week - timedelta(weeks=1)
+        week_safety = 0
+
+        while week_safety < 52:
+            week_safety += 1
+            week_done_count = 0
+            for offset in range(7):
+                day_in_week = check_week_start + timedelta(days=offset)
+                if is_day_complete(habit, logs_by_date.get(day_in_week.strftime("%Y-%m-%d"))):
+                    week_done_count += 1
+            if week_done_count >= weekly_target:
+                streak += 1
+                check_week_start -= timedelta(weeks=1)
+            else:
+                break
+        return streak
+
+    return 0
+
+def calculate_habit_adherence(habit: dict, logs_by_date: dict, today) -> float:
+    """Calculates adherence rate taking start_date into account."""
+    if not logs_by_date:
+        return 100.0
+    start_date = get_habit_start_date(habit)
+    repeat_type = (habit.get("repeat_type") or "EVERYDAY").upper()
+
+    if repeat_type == "SPECIFIC_DAYS":
+        raw_days = str(habit.get("repeat_days") or "1,2,3,4,5,6,7")
+        repeat_days = [int(x.strip()) for x in raw_days.split(",") if x.strip().isdigit()]
+        total_scheduled_done = 0
+        total_scheduled_missed = 0
+        for date_str, record in logs_by_date.items():
+            try:
+                d = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except Exception:
+                continue
+            if (d.weekday() + 1) in repeat_days and d >= start_date:
+                if is_day_complete(habit, record):
+                    total_scheduled_done += 1
+                elif record.get("state") == "MISSED":
+                    total_scheduled_missed += 1
+        total = total_scheduled_done + total_scheduled_missed
+        return (total_scheduled_done / total * 100.0) if total > 0 else 100.0
+    else:
+        total_done = 0
+        total_missed = 0
+        for date_str, record in logs_by_date.items():
+            try:
+                d = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except Exception:
+                continue
+            if d >= start_date:
+                if is_day_complete(habit, record):
+                    total_done += 1
+                elif record.get("state") == "MISSED":
+                    total_missed += 1
+        total = total_done + total_missed
+        return (total_done / total * 100.0) if total > 0 else 100.0
+
+def format_habit_action_reply(habit: dict, status: str, notes: str = None, current_val: int = None) -> str:
+    """Formats exact reply for every habit action strictly matching requested card format."""
+    title = habit.get("title", "")
+    h_type = (habit.get("type") or "YES_NO").upper()
+    if h_type == "TARGET":
+        tgt_val = habit.get("target_value") or 1
+        unit = habit.get("target_unit") or ""
+        unit_str = f" {unit}" if unit else ""
+        if current_val is not None:
+            type_str = f"target ({current_val}/{tgt_val}{unit_str})"
+        else:
+            type_str = f"target ({tgt_val}{unit_str})"
+    else:
+        type_str = "yes/no"
+
+    repeat_str = format_repeat_schedule(habit)
+    notes_display = format_display_note(notes) if notes else "None"
+
+    return (
+        f"task name - {title}\n"
+        f"task type - {type_str}\n"
+        f"repeat - {repeat_str}\n"
+        f"notes - {notes_display}\n"
+        f"status - {status}"
+    )
+
+# ==========================================
+# HABIT LLM TOOLS
+# ==========================================
+def add_habit(
+    title: str,
+    type: str,
+    repeat_type: str,
+    repeat_days: str = None,
+    weekly_target_count: int = None,
+    target_value: int = None,
+    target_unit: str = None,
+    reminder_time: str = None,
+    reminder_enabled: bool = False,
+    start_date: str = None,
+    note_prompt: str = "BOTH"
+) -> str:
+    """
+    Creates a new habit in KAIRO.
+    Mandatory fields:
+    - title: name of habit
+    - type: 'YES_NO' or 'TARGET'
+    - repeat_type: 'EVERYDAY', 'SPECIFIC_DAYS', or 'WEEKLY_X'
+    (If TARGET: target_value and target_unit are required)
+    (If SPECIFIC_DAYS: repeat_days is required, e.g. 'Mon, Wed, Fri' or '1,3,5')
+    (If WEEKLY_X: weekly_target_count is required, e.g. 3)
+
+    Optional fields:
+    - reminder_time: e.g. '08:00 AM'
+    - reminder_enabled: True or False (default False)
+    - start_date: 'YYYY-MM-DD' (defaults to today)
+    - note_prompt: 'BOTH', 'DONE_ONLY', 'MISSED_ONLY', 'NONE' (defaults to 'BOTH')
+    """
+    user_code = current_user.get("user_code", "")
+    if not user_code:
+        return "ERROR: No active user session."
+
+    clean_title = title.strip()
+    clean_type = type.upper().strip()
+    clean_repeat = repeat_type.upper().strip()
+
+    if clean_type not in ("YES_NO", "TARGET"):
+        return f"ERROR: Invalid habit type '{type}'. Must be 'YES_NO' or 'TARGET'."
+    if clean_repeat not in ("EVERYDAY", "SPECIFIC_DAYS", "WEEKLY_X"):
+        return f"ERROR: Invalid repeat_type '{repeat_type}'. Must be 'EVERYDAY', 'SPECIFIC_DAYS', or 'WEEKLY_X'."
+
+    if clean_type == "TARGET":
+        if target_value is None or target_value < 1:
+            return "ERROR: For a TARGET habit, target_value (integer >= 1) is mandatory."
+        if not target_unit or not str(target_unit).strip():
+            return "ERROR: For a TARGET habit, target_unit (e.g. glasses, lt, pages, mins) is mandatory."
+
+    if clean_repeat == "SPECIFIC_DAYS" and not repeat_days:
+        return "ERROR: For SPECIFIC_DAYS repeat, repeat_days (e.g. 'Mon, Wed, Fri' or '1,3,5') is mandatory."
+
+    if clean_repeat == "WEEKLY_X" and (weekly_target_count is None or weekly_target_count < 1):
+        return "ERROR: For WEEKLY_X repeat, weekly_target_count (1..7) is mandatory."
+
+    parsed_days = parse_repeat_days(repeat_days) if clean_repeat == "SPECIFIC_DAYS" else "1,2,3,4,5,6,7"
+    w_count = weekly_target_count if clean_repeat == "WEEKLY_X" else 3
+    t_val = target_value if clean_type == "TARGET" else 1
+    t_unit = str(target_unit).strip() if clean_type == "TARGET" and target_unit else ""
+
+    today_iso = datetime.now(DEFAULT_TIMEZONE).strftime("%Y-%m-%d")
+    s_date = start_date.strip() if start_date and start_date.strip() else today_iso
+
+    clean_note_prompt = note_prompt.upper().strip() if note_prompt else "BOTH"
+    if clean_note_prompt not in ("BOTH", "DONE_ONLY", "MISSED_ONLY", "NONE"):
+        clean_note_prompt = "BOTH"
+
+    r_enabled = bool(reminder_enabled or reminder_time)
+    r_time = reminder_time.strip() if reminder_time and reminder_time.strip() else None
+
+    existing = fetch_all_habits_for_user()
+    next_pos = max([h.get("position", 0) for h in existing], default=-1) + 1
+
+    habit_id = str(uuid.uuid4())
+    now_ms = int(time.time() * 1000)
+
+    payload = {
+        "id": habit_id,
+        "user_code": user_code,
+        "title": clean_title,
+        "type": clean_type,
+        "target_value": t_val,
+        "target_unit": t_unit,
+        "repeat_type": clean_repeat,
+        "repeat_days": parsed_days,
+        "weekly_target_count": w_count,
+        "reminder_enabled": r_enabled,
+        "reminder_time": r_time,
+        "reminder_tone_uri": None,
+        "reminder_tone_title": None,
+        "position": next_pos,
+        "note_prompt": clean_note_prompt,
+        "start_date": s_date,
+        "created_at": now_ms,
+        "updated_at": now_ms
+    }
+
+    url = f"{SUPABASE_URL}/rest/v1/habits"
+    headers = supabase_headers()
+    headers["Prefer"] = "return=representation"
+    res = requests.post(url, headers=headers, json=payload, timeout=10)
+
+    if res.status_code not in (200, 201):
+        return f"ERROR: Failed to save habit to database ({res.status_code}): {res.text}"
+
+    saved_habit = payload
+    dispatch_alarm_wakeup()
+
+    return format_habit_action_reply(saved_habit, status="Created", notes=f"Prompt: {clean_note_prompt} | Starts: {s_date}")
+
+def edit_habit(
+    habit_query: str,
+    new_title: str = None,
+    new_type: str = None,
+    new_target_value: int = None,
+    new_target_unit: str = None,
+    new_repeat_type: str = None,
+    new_repeat_days: str = None,
+    new_weekly_target_count: int = None,
+    new_reminder_time: str = None,
+    new_reminder_enabled: bool = None,
+    new_note_prompt: str = None,
+    new_start_date: str = None
+) -> str:
+    """
+    Edits an existing habit. No mandatory fields — only the fields provided will be updated, keeping everything else unchanged.
+    - habit_query: name or approximate search query for the habit to edit
+    - new_title: new title (optional)
+    - new_type: 'YES_NO' or 'TARGET' (optional)
+    - new_target_value: new integer target value (optional)
+    - new_target_unit: new target unit like 'glasses', 'lt', 'pages' (optional)
+    - new_repeat_type: 'EVERYDAY', 'SPECIFIC_DAYS', or 'WEEKLY_X' (optional)
+    - new_repeat_days: e.g. 'Mon, Wed, Fri' or '1,3,5' (optional)
+    - new_weekly_target_count: integer 1..7 (optional)
+    - new_reminder_time: e.g. '08:00 AM' (optional)
+    - new_reminder_enabled: bool (optional)
+    - new_note_prompt: 'BOTH', 'DONE_ONLY', 'MISSED_ONLY', 'NONE' (optional)
+    - new_start_date: 'YYYY-MM-DD' (optional)
+    """
+    user_code = current_user.get("user_code", "")
+    if not user_code:
+        return "ERROR: No active user session."
+
+    habit, candidates = resolve_habit_by_query(habit_query)
+    if not habit:
+        cand_str = "\n".join(f"- {c.get('title')}" for c in candidates) if candidates else "No habits found."
+        return f"Could not find habit matching '{habit_query}'. Available habits:\n{cand_str}"
+
+    habit_id = habit["id"]
+    updates = {}
+    changes_desc = []
+
+    if new_title and new_title.strip():
+        updates["title"] = new_title.strip()
+        changes_desc.append(f"Title: {updates['title']}")
+
+    if new_type and new_type.upper().strip() in ("YES_NO", "TARGET"):
+        updates["type"] = new_type.upper().strip()
+        changes_desc.append(f"Type: {updates['type']}")
+
+    if new_target_value is not None and new_target_value >= 1:
+        updates["target_value"] = new_target_value
+        changes_desc.append(f"Target: {new_target_value}")
+
+    if new_target_unit is not None:
+        updates["target_unit"] = new_target_unit.strip()
+        changes_desc.append(f"Unit: {updates['target_unit']}")
+
+    if new_repeat_type and new_repeat_type.upper().strip() in ("EVERYDAY", "SPECIFIC_DAYS", "WEEKLY_X"):
+        updates["repeat_type"] = new_repeat_type.upper().strip()
+        changes_desc.append(f"Repeat: {updates['repeat_type']}")
+
+    if new_repeat_days is not None:
+        updates["repeat_days"] = parse_repeat_days(new_repeat_days)
+        changes_desc.append(f"Days: {updates['repeat_days']}")
+
+    if new_weekly_target_count is not None and new_weekly_target_count >= 1:
+        updates["weekly_target_count"] = new_weekly_target_count
+        changes_desc.append(f"Weekly Target: {new_weekly_target_count}")
+
+    if new_reminder_time is not None:
+        updates["reminder_time"] = new_reminder_time.strip() if new_reminder_time.strip() else None
+        if updates["reminder_time"]:
+            updates["reminder_enabled"] = True
+        changes_desc.append(f"Reminder: {updates['reminder_time']}")
+
+    if new_reminder_enabled is not None:
+        updates["reminder_enabled"] = bool(new_reminder_enabled)
+        changes_desc.append(f"Reminder Enabled: {updates['reminder_enabled']}")
+
+    if new_note_prompt and new_note_prompt.upper().strip() in ("BOTH", "DONE_ONLY", "MISSED_ONLY", "NONE"):
+        updates["note_prompt"] = new_note_prompt.upper().strip()
+        changes_desc.append(f"Note Prompt: {updates['note_prompt']}")
+
+    if new_start_date and new_start_date.strip():
+        updates["start_date"] = new_start_date.strip()
+        changes_desc.append(f"Start Date: {updates['start_date']}")
+
+    if not updates:
+        return f"No valid changes provided for habit '{habit.get('title')}'. Habit remains unchanged."
+
+    updates["updated_at"] = int(time.time() * 1000)
+
+    url = f"{SUPABASE_URL}/rest/v1/habits?id=eq.{habit_id}"
+    res = requests.patch(url, headers=supabase_headers(), json=updates, timeout=10)
+    if res.status_code not in (200, 204):
+        return f"ERROR: Failed to update habit in database ({res.status_code}): {res.text}"
+
+    updated_habit = dict(habit)
+    updated_habit.update(updates)
+    dispatch_alarm_wakeup()
+
+    return format_habit_action_reply(updated_habit, status=f"Updated ({', '.join(changes_desc)})")
+
+def delete_habit(habit_query: str) -> str:
+    """
+    Deletes a habit and all its historical logs from KAIRO.
+    - habit_query: name or approximate search query for the habit to delete
+    """
+    user_code = current_user.get("user_code", "")
+    if not user_code:
+        return "ERROR: No active user session."
+
+    habit, candidates = resolve_habit_by_query(habit_query)
+    if not habit:
+        cand_str = "\n".join(f"- {c.get('title')}" for c in candidates) if candidates else "No habits found."
+        return f"Could not find habit matching '{habit_query}'. Available habits:\n{cand_str}"
+
+    habit_id = habit["id"]
+    habit_title = habit.get("title", "")
+
+    # 1. Delete logs
+    url_logs = f"{SUPABASE_URL}/rest/v1/habit_logs?habit_id=eq.{habit_id}"
+    requests.delete(url_logs, headers=supabase_headers(), timeout=10)
+
+    # 2. Delete habit
+    url_habit = f"{SUPABASE_URL}/rest/v1/habits?id=eq.{habit_id}"
+    res = requests.delete(url_habit, headers=supabase_headers(), timeout=10)
+
+    if res.status_code not in (200, 204):
+        return f"ERROR: Failed to delete habit ({res.status_code}): {res.text}"
+
+    dispatch_alarm_wakeup()
+    return f"Habit '{habit_title}' and all its logs have been deleted successfully."
+
+def mark_habit(
+    habit_query: str,
+    action: str,
+    date_str: str = "today",
+    delta: int = None,
+    target_value: int = None,
+    note: str = None
+) -> str:
+    """
+    Marks, unmarks, increments, decrements, or clears a habit.
+    - habit_query: name or approximate search query for the habit
+    - action: 'done' | 'not_done' | 'empty' | 'increment' | 'decrement' | 'set_value' | 'toggle'
+    - date_str: 'today', 'yesterday', or specific date like '2026-10-14' (default 'today')
+    - delta: optional step for increment/decrement (default 1)
+    - target_value: optional value for 'set_value'
+    - note: optional note text. ONLY provided if the user explicitly provided/mentioned a note!
+    """
+    user_code = current_user.get("user_code", "")
+    if not user_code:
+        return "ERROR: No active user session."
+
+    habit, candidates = resolve_habit_by_query(habit_query)
+    if not habit:
+        cand_str = "\n".join(f"- {c.get('title')}" for c in candidates) if candidates else "No habits found."
+        return f"Could not find habit matching '{habit_query}'. Available habits:\n{cand_str}"
+
+    target_date, date_iso, day_name = resolve_habit_date(date_str)
+    today = datetime.now(DEFAULT_TIMEZONE).date()
+
+    if target_date > today:
+        return f"Cannot mark or modify habits for future dates ({date_iso})."
+
+    # Rest Day Check for SPECIFIC_DAYS (Cases 3 & 4)
+    if is_rest_day(habit, target_date):
+        habit_title = habit.get("title", "")
+        return f"Today / changes for requested day ({date_iso}, {day_name}) is a rest day for '{habit_title}'. Nothing can be modified or added."
+
+    habit_id = habit["id"]
+    h_type = (habit.get("type") or "YES_NO").upper()
+    h_repeat = (habit.get("repeat_type") or "EVERYDAY").upper()
+    habit_tgt_val = habit.get("target_value") or 1
+
+    # Fetch existing logs for this habit
+    existing_logs = fetch_all_habit_logs_for_user(habit_id=habit_id)
+    logs_by_date = {log["date"]: log for log in existing_logs}
+    current_record = logs_by_date.get(date_iso) or {}
+    current_val = current_record.get("value") or 0
+    current_state = current_record.get("state") or "UNMARKED"
+    current_note = current_record.get("note")
+
+    action_clean = action.lower().strip()
+
+    # Support cycle / toggle
+    if action_clean in ("toggle", "cycle"):
+        if current_state == "DONE":
+            action_clean = "not_done"
+        elif current_state == "MISSED":
+            action_clean = "empty" if target_date == today else "done"
+        else:
+            action_clean = "done"
+
+    # Rule: Empty / Clear is ONLY allowed for TODAY!
+    if action_clean in ("empty", "clear", "unmark", "reset"):
+        if target_date < today:
+            return f"Cannot clear or set to empty for past days ({date_iso}). Past days can only be marked as Done or Missed (Not Done)."
+        
+        # Delete from Supabase
+        url = f"{SUPABASE_URL}/rest/v1/habit_logs?habit_id=eq.{habit_id}&date=eq.{date_iso}"
+        requests.delete(url, headers=supabase_headers(), timeout=10)
+        dispatch_alarm_wakeup()
+        return format_habit_action_reply(habit, status="Empty", notes=None, current_val=0)
+
+    # Note handling: only if explicitly provided by user
+    clean_user_note = note.strip() if note and note.strip() else None
+
+    if h_type == "YES_NO":
+        if action_clean in ("done", "complete", "yes", "mark"):
+            new_state = "DONE"
+            new_val = 1
+            if clean_user_note:
+                final_note = clean_user_note
+            elif current_note and current_note.strip().lower() != "missed":
+                final_note = current_note
+            else:
+                final_note = None
+
+            logs_by_date[date_iso] = {"state": new_state, "value": new_val}
+            weekly_count = count_weekly_completions(habit, logs_by_date, target_date)
+            if h_repeat == "WEEKLY_X":
+                w_tgt = habit.get("weekly_target_count") or 3
+                if weekly_count > w_tgt:
+                    status_text = f"Done (Bonus! Weekly target reached: {weekly_count}/{w_tgt})"
+                elif weekly_count == w_tgt:
+                    status_text = f"Done (Weekly target completed: {weekly_count}/{w_tgt})"
+                else:
+                    status_text = f"Done ({weekly_count}/{w_tgt} this week)"
+            else:
+                status_text = "Done"
+
+        elif action_clean in ("not_done", "not done", "missed", "no", "uncomplete", "x"):
+            new_state = "MISSED"
+            new_val = 0
+            final_note = clean_user_note or "missed"
+            status_text = "Not Done"
+        else:
+            return f"Unrecognized action '{action}' for yes/no habit. Supported: done, not_done, empty, toggle."
+
+    else: # TARGET
+        if action_clean in ("done", "complete", "mark_all", "all"):
+            new_val = habit_tgt_val
+            new_state = "DONE"
+            if clean_user_note:
+                inc_map = parse_increment_notes(current_note)
+                inc_map[new_val] = clean_user_note
+                final_note = serialize_increment_notes(inc_map)
+            elif current_note and current_note.strip().lower() != "missed":
+                final_note = current_note
+            else:
+                final_note = None
+
+            logs_by_date[date_iso] = {"state": new_state, "value": new_val}
+            weekly_count = count_weekly_completions(habit, logs_by_date, target_date)
+            if h_repeat == "WEEKLY_X":
+                w_tgt = habit.get("weekly_target_count") or 3
+                if weekly_count > w_tgt:
+                    status_text = f"Done (Bonus! Weekly target reached: {weekly_count}/{w_tgt})"
+                elif weekly_count == w_tgt:
+                    status_text = f"Done (Weekly target completed: {weekly_count}/{w_tgt})"
+                else:
+                    status_text = f"Done ({weekly_count}/{w_tgt} this week)"
+            else:
+                status_text = "Done"
+
+        elif action_clean in ("not_done", "not done", "missed", "x", "0"):
+            new_val = 0
+            new_state = "MISSED"
+            final_note = clean_user_note or "missed"
+            status_text = "Not Done"
+
+        elif action_clean in ("increment", "+1", "inc", "add"):
+            step = delta if delta is not None else 1
+            new_val = min(habit_tgt_val, max(0, current_val + step))
+            new_state = "DONE" if new_val >= habit_tgt_val else ("MISSED" if target_date < today else "UNMARKED")
+            
+            inc_map = parse_increment_notes(current_note)
+            if clean_user_note:
+                inc_map[new_val] = clean_user_note
+            final_note = serialize_increment_notes(inc_map) if inc_map else None
+
+            logs_by_date[date_iso] = {"state": new_state, "value": new_val}
+            if new_state == "DONE" and h_repeat == "WEEKLY_X":
+                weekly_count = count_weekly_completions(habit, logs_by_date, target_date)
+                w_tgt = habit.get("weekly_target_count") or 3
+                if weekly_count > w_tgt:
+                    status_text = f"+{step} (Bonus! Weekly target reached: {weekly_count}/{w_tgt})"
+                elif weekly_count == w_tgt:
+                    status_text = f"+{step} (Weekly target completed: {weekly_count}/{w_tgt})"
+                else:
+                    status_text = f"+{step}"
+            else:
+                status_text = f"+{step}" if step > 0 else f"{step}"
+
+        elif action_clean in ("decrement", "-1", "dec", "subtract"):
+            step = abs(delta) if delta is not None else 1
+            new_val = max(0, current_val - step)
+            new_state = "DONE" if new_val >= habit_tgt_val else ("MISSED" if target_date < today else "UNMARKED")
+
+            inc_map = parse_increment_notes(current_note)
+            if current_val in inc_map:
+                del inc_map[current_val]
+            inc_map = {k: v for k, v in inc_map.items() if k <= new_val}
+            final_note = serialize_increment_notes(inc_map) if inc_map else None
+            status_text = f"-{step}"
+
+        elif action_clean in ("set_value", "set"):
+            if target_value is None:
+                return "ERROR: target_value must be provided for set_value action."
+            new_val = min(habit_tgt_val, max(0, target_value))
+            new_state = "DONE" if new_val >= habit_tgt_val else ("MISSED" if target_date < today else "UNMARKED")
+            
+            inc_map = parse_increment_notes(current_note)
+            if clean_user_note:
+                inc_map[new_val] = clean_user_note
+            inc_map = {k: v for k, v in inc_map.items() if k <= new_val}
+            final_note = serialize_increment_notes(inc_map) if inc_map else None
+            status_text = f"Set to {new_val}"
+
+        else:
+            return f"Unrecognized action '{action}' for target habit. Supported: increment, decrement, done, not_done, empty, set_value."
+
+    if new_val == 0 and new_state == "UNMARKED" and not final_note:
+        url = f"{SUPABASE_URL}/rest/v1/habit_logs?habit_id=eq.{habit_id}&date=eq.{date_iso}"
+        requests.delete(url, headers=supabase_headers(), timeout=10)
+    else:
+        log_id = f"{habit_id}_{date_iso}"
+        payload = {
+            "id": log_id,
+            "habit_id": habit_id,
+            "user_code": user_code,
+            "date": date_iso,
+            "state": new_state,
+            "value": new_val,
+            "note": final_note,
+            "created_at": int(time.time() * 1000)
+        }
+        url = f"{SUPABASE_URL}/rest/v1/habit_logs"
+        headers = supabase_headers()
+        headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
+        requests.post(url, headers=headers, json=payload, timeout=10)
+
+    dispatch_alarm_wakeup()
+    return format_habit_action_reply(habit, status=status_text, notes=final_note, current_val=new_val)
+
+def get_habit_analytics(habit_query: str = None) -> str:
+    """
+    Retrieves habit analytics, streaks, and discipline statistics.
+    - habit_query: optional habit name. If specified, returns in-depth analytics for that specific habit. If omitted or 'all', returns the overall discipline dashboard.
+    """
+    user_code = current_user.get("user_code", "")
+    if not user_code:
+        return "ERROR: No active user session."
+
+    habits = fetch_all_habits_for_user()
+    if not habits:
+        return "You have no habits created yet. Use 'add habit' to get started!"
+
+    all_logs = fetch_all_habit_logs_for_user()
+    logs_by_habit = {}
+    for log in all_logs:
+        h_id = log["habit_id"]
+        if h_id not in logs_by_habit:
+            logs_by_habit[h_id] = {}
+        logs_by_habit[h_id][log["date"]] = log
+
+    today = datetime.now(DEFAULT_TIMEZONE).date()
+    today_iso = today.strftime("%Y-%m-%d")
+
+    # If specific habit requested
+    if habit_query and habit_query.strip().lower() not in ("all", "overall", "summary", "overview"):
+        habit, candidates = resolve_habit_by_query(habit_query, habits)
+        if not habit:
+            cand_str = "\n".join(f"- {c.get('title')}" for c in candidates) if candidates else "No habits found."
+            return f"Could not find habit matching '{habit_query}'. Available habits:\n{cand_str}"
+
+        habit_id = habit["id"]
+        habit_logs = logs_by_habit.get(habit_id, {})
+        streak = calculate_habit_streak(habit, habit_logs, today)
+        adherence = calculate_habit_adherence(habit, habit_logs, today)
+        start_date = get_habit_start_date(habit)
+
+        done_count = sum(1 for d, rec in habit_logs.items() if is_day_complete(habit, rec) and d >= start_date.strftime("%Y-%m-%d"))
+        missed_count = sum(1 for d, rec in habit_logs.items() if rec.get("state") == "MISSED" and d >= start_date.strftime("%Y-%m-%d"))
+        best_streak = max(streak, int(done_count / 2))
+
+        is_rest = is_rest_day(habit, today)
+        today_rec = habit_logs.get(today_iso)
+        if is_rest:
+            today_status = "🏖️ Rest Day"
+        elif is_day_complete(habit, today_rec):
+            today_status = "✅ Completed"
+        elif today_rec and today_rec.get("state") == "MISSED":
+            today_status = "❌ Missed"
+        elif today_rec and (today_rec.get("value") or 0) > 0:
+            today_status = f"🔄 In Progress ({today_rec.get('value')}/{habit.get('target_value', 1)} {habit.get('target_unit', '')})"
+        else:
+            today_status = "⚪ Not Done Yet"
+
+        h_repeat = (habit.get("repeat_type") or "EVERYDAY").upper()
+        weekly_str = ""
+        if h_repeat == "WEEKLY_X":
+            w_done = count_weekly_completions(habit, habit_logs, today)
+            w_tgt = habit.get("weekly_target_count") or 3
+            weekly_str = f"\n📊 **This Week's Progress:** {w_done}/{w_tgt} completed"
+            if w_done >= w_tgt:
+                weekly_str += " 🎯 Target Reached!"
+
+        recent_notes = []
+        for d in sorted(habit_logs.keys(), reverse=True):
+            rec = habit_logs[d]
+            note_raw = rec.get("note")
+            if note_raw and note_raw != "missed":
+                disp = format_display_note(note_raw)
+                if disp and disp != "None":
+                    recent_notes.append(f"- {d}: {disp}")
+            if len(recent_notes) >= 5:
+                break
+        notes_str = "\n".join(recent_notes) if recent_notes else "None recorded."
+
+        return (
+            f"📊 **Habit Analytics: {habit.get('title')}**\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"📌 **Type:** {habit.get('type')} ({habit.get('target_value', 1)} {habit.get('target_unit', '')})\n"
+            f"🔁 **Schedule:** {format_repeat_schedule(habit)}\n"
+            f"📅 **Start Date:** {start_date.strftime('%b %d, %Y')}\n"
+            f"🔥 **Current Streak:** {streak} day(s)\n"
+            f"🏆 **Best Streak:** {best_streak} day(s)\n"
+            f"📈 **Adherence Rate:** {adherence:.1f}%\n"
+            f"✅ **Total Completed:** {done_count} time(s)\n"
+            f"❌ **Total Missed:** {missed_count} time(s)\n"
+            f"📍 **Today's Status:** {today_status}{weekly_str}\n\n"
+            f"📝 **Recent Notes:**\n{notes_str}"
+        )
+
+    # Overview Analytics for all habits
+    scheduled_today = []
+    completed_today = 0
+    total_progress_points = 0.0
+    habit_lines = []
+
+    for h in habits:
+        h_id = h["id"]
+        h_logs = logs_by_habit.get(h_id, {})
+        streak = calculate_habit_streak(h, h_logs, today)
+        is_rest = is_rest_day(h, today)
+        today_rec = h_logs.get(today_iso)
+        is_complete = is_day_complete(h, today_rec)
+
+        h_type = (h.get("type") or "YES_NO").upper()
+        t_val = h.get("target_value") or 1
+        t_unit = h.get("target_unit") or ""
+        curr_val = today_rec.get("value") or 0 if today_rec else 0
+
+        if not is_rest:
+            scheduled_today.append(h)
+            if is_complete:
+                completed_today += 1
+                total_progress_points += 1.0
+            elif h_type == "TARGET":
+                total_progress_points += min(1.0, curr_val / max(1, t_val))
+
+        if is_rest:
+            icon = "🏖️"
+            stat_str = "Rest Day"
+        elif is_complete:
+            icon = "✅"
+            stat_str = "Done"
+        elif today_rec and today_rec.get("state") == "MISSED":
+            icon = "❌"
+            stat_str = "Missed"
+        elif curr_val > 0:
+            icon = "🔄"
+            stat_str = f"{curr_val}/{t_val} {t_unit}"
+        else:
+            icon = "⚪"
+            stat_str = "Pending"
+
+        unit_label = f" ({curr_val}/{t_val} {t_unit})" if h_type == "TARGET" and not is_complete and not is_rest and curr_val > 0 else ""
+        habit_lines.append(f"{icon} **{h.get('title')}**{unit_label} | {stat_str} | 🔥 {streak}d streak")
+
+    total_today = len(scheduled_today)
+    pct = int((total_progress_points / total_today * 100)) if total_today > 0 else 0
+    remaining_today = max(0, total_today - completed_today)
+    top_streak = max([calculate_habit_streak(h, logs_by_habit.get(h["id"], {}), today) for h in habits], default=0)
+
+    lines_str = "\n".join(habit_lines)
+    return (
+        f"📊 **Discipline Overview**\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 **Discipline Rate:** {pct}%\n"
+        f"✅ **Completed Today:** {completed_today}/{total_today}\n"
+        f"⏳ **Remaining Today:** {remaining_today}\n"
+        f"🔥 **Top Current Streak:** {top_streak} day(s)\n\n"
+        f"📋 **Today's Habits:**\n"
+        f"{lines_str}\n\n"
+        f"💡 _Tip: Say 'analytics for <habit>' for detailed breakdown & notes._"
+    )
+
+def list_habits() -> str:
+    """Lists all habits with today's status, progress, streaks, and schedules."""
+    return get_habit_analytics(habit_query="all")
+
 # Export tool list for Gemini API
 TOOLS = [
+    # Task Tools
     get_recent_tones,
     add_task,
     get_task_details,
@@ -1293,5 +2327,13 @@ TOOLS = [
     get_category_tasks,
     filter_tasks,
     search_tasks,
-    export_tasks_data
+    export_tasks_data,
+    # Habit Tools
+    add_habit,
+    edit_habit,
+    delete_habit,
+    mark_habit,
+    get_habit_analytics,
+    list_habits
 ]
+

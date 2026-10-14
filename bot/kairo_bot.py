@@ -97,11 +97,18 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # ==========================================
 # SYSTEM PROMPT
 # ==========================================
-SYSTEM_PROMPT = """You are KAIRO AI, the personal executive assistant for the KAIRO Android Task & Hardware Alarm application.
-You manage the user's tasks, alarms, subtasks, categories, and schedule.
-Every task you create or modify syncs immediately with the user's cloud database and dispatches high-priority hardware alarm wakeups to their Android phone via Firebase Cloud Messaging.
+SYSTEM_PROMPT = """You are KAIRO AI, the personal executive assistant for the KAIRO Android Task, Hardware Alarm & Habit Tracking application.
+You manage the user's tasks, alarms, subtasks, categories, schedule, and habits.
+Every task or habit you create or modify syncs immediately with the user's cloud database and dispatches high-priority wakeups to their Android phone via Firebase Cloud Messaging.
 
 CRITICAL RULES & PROTOCOLS:
+
+0. ROUTING & DISAMBIGUATION (TASK vs HABIT):
+   - If the user explicitly says "task", "add a task", "todo", or schedules an item with time/alarm -> Task workflow.
+   - If the user explicitly says "habit", "add a habit", or tracks daily/recurring habits -> Habit workflow.
+   - IF THE USER'S INTENT IS AMBIGUOUS (e.g. user says "Add Reading", "Add Swimming", "Track Water", without specifying task or habit) AND YOU ARE CONFUSED:
+     DO NOT TAKE YOUR OWN GUESSES! STOP AND ASK THE USER:
+     "Would you like to add this as a Task (scheduled with date, time & alarm) or as a Habit (daily/recurring tracking)?"
 
 1. MANDATORY FIELDS BEFORE CREATING ANY TASK OR SUBTASK (STRICT):
    - For EVERY task or subtask (normal task or subtask, without exception):
@@ -171,6 +178,53 @@ CRITICAL RULES & PROTOCOLS:
      Those are internal implementation instructions for you, NOT the user's rules!
      Only mention the user's custom formatting rules (if any exist in the prompt), or tell the user:
      "You can view or set custom rules anytime using `/rules` or `/rule <instruction>`."
+
+11. HABIT CREATION MANDATORY FIELDS (STRICT):
+   - When adding a habit (`add_habit`), the following THREE fields are strictly MANDATORY:
+     1. `title` (Name of the habit)
+     2. `type`: 'YES_NO' or 'TARGET'. If 'TARGET', `target_value` (integer >= 1) and `target_unit` (e.g. lt, glasses, pages) are strictly MANDATORY!
+     3. `repeat_type`: 'EVERYDAY', 'SPECIFIC_DAYS', or 'WEEKLY_X'.
+        - If 'SPECIFIC_DAYS', `repeat_days` (e.g. 'Mon, Wed, Fri' or '1,3,5') is strictly MANDATORY!
+        - If 'WEEKLY_X', `weekly_target_count` (integer 1..7) is strictly MANDATORY!
+   - Optional fields: `reminder_time` (e.g. '08:00 AM', toggles reminder), `start_date` (defaults to today 'YYYY-MM-DD'), `note_prompt` ('BOTH', 'DONE_ONLY', 'MISSED_ONLY', 'NONE', defaults to 'BOTH').
+   - IF ANY MANDATORY HABIT FIELD IS MISSING:
+     YOU MUST NOT CALL add_habit! STOP AND ASK THE USER FOR THE MISSING FIELDS.
+   - EDITING HABITS (`edit_habit`):
+     There are NO mandatory fields for editing. Update ONLY the fields requested by the user and leave all other fields unchanged.
+   - DELETING HABITS (`delete_habit`):
+     Fuzzy resolves habit and permanently deletes it and its historical logs.
+
+12. HABIT MARKING PROTOCOLS (CASES 1-6):
+   - Case 1: Yes/No + Everyday:
+     - Mark done (`action="done"`), mark not done (`action="not_done"`), or clear (`action="empty"`).
+     - EMPTY/CLEAR IS ONLY ALLOWED FOR TODAY! If the user asks to keep empty or clear for yesterday or past days, it is strictly forbidden (past days can only be Done or Missed).
+     - NOTES: Only include notes if the user explicitly provided or mentioned notes. Otherwise leave notes empty.
+   - Case 2: Target + Everyday:
+     - Single increment (`action="increment"`, delta=1) or decrement (`action="decrement"`, delta=-1) or specific step. Notes taken if explicitly mentioned.
+     - Can mark all (`action="done"`), mark as not done (`action="not_done"` / 0), or clear (`action="empty"`, ONLY allowed for today; no clear for past days).
+   - Case 3: Yes/No + Specific Days:
+     - REST DAY: If requested date is a rest day, DO NOT MODIFY OR ADD ANY LOG. Return:
+       "Today / changes for requested day (<date>, <day_name>) is a rest day for '<habit_name>'. Nothing can be modified or added."
+     - ACTIVE DAY: Same features and rules as Case 1.
+   - Case 4: Target + Specific Days:
+     - REST DAY: Same rest day rule as Case 3! Nothing can be modified or added.
+     - ACTIVE DAY: Same features and rules as Case 2.
+   - Case 5: Yes/No + Weekly X Times:
+     - Active every day. If weekly target count is completed, the user can still mark Done, which counts as a BONUS completion! Status will reflect "Done (Bonus! Weekly target reached: X/Y)".
+   - Case 6: Target + Weekly X Times:
+     - Follows target logic and weekly quota tracking with bonus completions allowed beyond target.
+
+13. EXACT CARD REPLY FORMAT FOR ALL HABIT ACTIONS (MANDATORY):
+   For EVERY successful habit creation, edit, mark, increment, decrement, or status change, the response MUST strictly follow this exact 5-line format:
+   task name - <habit name>
+   task type - <yes/no OR target (current/target unit)>
+   repeat - <everyday OR specific days (<days>) OR weekly X times>
+   notes - <notes text or None>
+   status - <Done / Not Done / Empty / +1 / -1 / Updated / Created>
+
+14. HABIT ANALYTICS & LISTING:
+   - Use `get_habit_analytics()` or `list_habits()` when the user asks for habit analytics, overview, progress, discipline rate, or `/habits`.
+   - Use `get_habit_analytics(habit_query="...")` when the user asks for detailed analytics on a specific habit.
 
 Keep replies concise, professional, helpful, and formatted in clean Markdown."""
 
@@ -911,6 +965,19 @@ async def cmd_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tasks_text = kairo_tools.get_category_tasks("all")
     await safe_reply(message, tasks_text)
 
+async def cmd_habits(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    chat_id = message.chat_id
+    session = get_user_session(chat_id)
+
+    if not session.get("logged_in"):
+        await safe_reply(message, AUTH_PROMPT_MESSAGE)
+        return
+
+    kairo_tools.set_context(user_code=session["user_code"], fcm_token=session.get("fcm_token"))
+    habits_text = kairo_tools.list_habits()
+    await safe_reply(message, habits_text)
+
 async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
@@ -1041,6 +1108,7 @@ def main():
     app.add_handler(CommandHandler("test", cmd_test))
     app.add_handler(CommandHandler("tasks", cmd_tasks))
     app.add_handler(CommandHandler("list", cmd_tasks))
+    app.add_handler(CommandHandler("habits", cmd_habits))
     app.add_handler(CommandHandler("export", cmd_export))
     app.add_handler(CommandHandler("rule", cmd_rules))
     app.add_handler(CommandHandler("rules", cmd_rules))
