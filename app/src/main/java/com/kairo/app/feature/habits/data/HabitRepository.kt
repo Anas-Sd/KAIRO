@@ -11,6 +11,7 @@ import com.kairo.app.feature.habits.model.HabitDayInfo
 import com.kairo.app.feature.habits.model.HabitDayRecord
 import com.kairo.app.feature.habits.model.HabitDayState
 import com.kairo.app.feature.habits.model.HabitNoteHelper
+import com.kairo.app.feature.habits.model.HabitNotePrompt
 import com.kairo.app.feature.habits.model.HabitRepeatType
 import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.feature.habits.model.HabitWithStats
@@ -94,6 +95,10 @@ object HabitRepository {
                             reminderToneUri = obj.optString("reminderToneUri").takeIf { it.isNotBlank() },
                             reminderToneTitle = obj.optString("reminderToneTitle").takeIf { it.isNotBlank() },
                             position = obj.optInt("position", i),
+                            notePrompt = runCatching {
+                                HabitNotePrompt.valueOf(obj.optString("notePrompt", HabitNotePrompt.BOTH.name))
+                            }.getOrDefault(HabitNotePrompt.BOTH),
+                            startDate = obj.optString("startDate", ""),
                             createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
                             updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
                         )
@@ -140,6 +145,18 @@ object HabitRepository {
         recomputeAllStats()
     }
 
+    fun getEffectiveStartDate(habit: Habit): LocalDate {
+        val parsed = runCatching {
+            if (habit.startDate.isNotBlank()) LocalDate.parse(habit.startDate, DateTimeFormatter.ISO_LOCAL_DATE) else null
+        }.getOrNull()
+        if (parsed != null) return parsed
+        return runCatching {
+            java.time.Instant.ofEpochMilli(habit.createdAt)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDate()
+        }.getOrDefault(LocalDate.now())
+    }
+
     private fun persistData() {
         try {
             val habitsArr = JSONArray()
@@ -159,6 +176,8 @@ object HabitRepository {
                     put("reminderToneUri", h.reminderToneUri ?: "")
                     put("reminderToneTitle", h.reminderToneTitle ?: "")
                     put("position", h.position)
+                    put("notePrompt", h.notePrompt.name)
+                    put("startDate", h.startDate)
                     put("createdAt", h.createdAt)
                     put("updatedAt", h.updatedAt)
                 }
@@ -214,6 +233,8 @@ object HabitRepository {
                         reminderToneUri = dto.reminderToneUri,
                         reminderToneTitle = dto.reminderToneTitle,
                         position = dto.position,
+                        notePrompt = runCatching { HabitNotePrompt.valueOf(dto.notePrompt) }.getOrDefault(HabitNotePrompt.BOTH),
+                        startDate = dto.startDate,
                         createdAt = dto.createdAt,
                         updatedAt = dto.updatedAt
                     )
@@ -256,7 +277,9 @@ object HabitRepository {
         reminderEnabled: Boolean = false,
         reminderTime: String? = null,
         reminderToneUri: String? = null,
-        reminderToneTitle: String? = null
+        reminderToneTitle: String? = null,
+        notePrompt: HabitNotePrompt = HabitNotePrompt.BOTH,
+        startDate: String = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
     ) {
         val userCode = AuthManager.getUserCode() ?: "DEFAULT"
         val newHabit = Habit(
@@ -273,7 +296,9 @@ object HabitRepository {
             reminderTime = if (reminderEnabled) reminderTime else null,
             reminderToneUri = if (reminderEnabled) reminderToneUri else null,
             reminderToneTitle = if (reminderEnabled) reminderToneTitle else null,
-            position = _habitsList.value.size
+            position = _habitsList.value.size,
+            notePrompt = notePrompt,
+            startDate = startDate.ifBlank { LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE) }
         )
 
         val updated = _habitsList.value.toMutableList().apply { add(newHabit) }
@@ -299,6 +324,8 @@ object HabitRepository {
                 reminderToneUri = newHabit.reminderToneUri,
                 reminderToneTitle = newHabit.reminderToneTitle,
                 position = newHabit.position,
+                notePrompt = newHabit.notePrompt.name,
+                startDate = newHabit.startDate,
                 createdAt = newHabit.createdAt,
                 updatedAt = newHabit.updatedAt
             )
@@ -328,6 +355,8 @@ object HabitRepository {
                 reminderToneUri = updatedHabit.reminderToneUri,
                 reminderToneTitle = updatedHabit.reminderToneTitle,
                 position = updatedHabit.position,
+                notePrompt = updatedHabit.notePrompt.name,
+                startDate = updatedHabit.startDate,
                 createdAt = updatedHabit.createdAt,
                 updatedAt = updatedHabit.updatedAt
             )
@@ -827,14 +856,10 @@ object HabitRepository {
         val userCode = AuthManager.getUserCode() ?: "DEFAULT"
         val logsToUpsert = mutableListOf<HabitLogDto>()
         _habitsList.value.forEach { habit ->
-            val habitCreatedDate = runCatching {
-                java.time.Instant.ofEpochMilli(habit.createdAt)
-                    .atZone(java.time.ZoneId.systemDefault())
-                    .toLocalDate()
-            }.getOrDefault(today)
+            val habitStartDate = getEffectiveStartDate(habit)
 
-            // Only auto-mark missed from the day the habit was created up to yesterday
-            val startDate = maxOf(today.minusDays(60), habitCreatedDate)
+            // Only auto-mark missed from the habit start date up to yesterday
+            val startDate = maxOf(today.minusDays(60), habitStartDate)
             if (!startDate.isAfter(today.minusDays(1))) {
                 val habitDates = currentLogs[habit.id]?.toMutableMap() ?: mutableMapOf()
                 var checkDate = startDate
@@ -1143,18 +1168,17 @@ object HabitRepository {
     private fun calculateAdherence(habit: Habit, logs: Map<String, HabitDayRecord>, today: LocalDate): Float {
         if (logs.isEmpty()) return 100f
         val dateFormatter = DateTimeFormatter.ISO_LOCAL_DATE
-        val habitCreatedDate = runCatching {
-            java.time.Instant.ofEpochMilli(habit.createdAt)
-                .atZone(java.time.ZoneId.systemDefault())
-                .toLocalDate()
-        }.getOrDefault(today)
+        val habitStartDate = getEffectiveStartDate(habit)
 
         when (habit.repeatType) {
             HabitRepeatType.EVERYDAY -> {
-                val totalDone = logs.values.count { isDayComplete(habit, it) }
+                val totalDone = logs.entries.count { (dateStr, record) ->
+                    val d = runCatching { LocalDate.parse(dateStr, dateFormatter) }.getOrNull()
+                    isDayComplete(habit, record) && (d == null || !d.isBefore(habitStartDate))
+                }
                 val totalMissed = logs.entries.count { (dateStr, record) ->
                     val d = runCatching { LocalDate.parse(dateStr, dateFormatter) }.getOrNull()
-                    record.state == HabitDayState.MISSED && (d == null || !d.isBefore(habitCreatedDate))
+                    record.state == HabitDayState.MISSED && (d == null || !d.isBefore(habitStartDate))
                 }
                 val totalLogged = totalDone + totalMissed
                 return if (totalLogged > 0) (totalDone.toFloat() / totalLogged * 100f) else 100f
@@ -1164,19 +1188,22 @@ object HabitRepository {
                 var totalScheduledMissed = 0
                 logs.forEach { (dateStr, record) ->
                     val d = runCatching { LocalDate.parse(dateStr, dateFormatter) }.getOrNull()
-                    if (d != null && habit.repeatDays.contains(d.dayOfWeek.value)) {
+                    if (d != null && habit.repeatDays.contains(d.dayOfWeek.value) && !d.isBefore(habitStartDate)) {
                         if (isDayComplete(habit, record)) totalScheduledDone++
-                        else if (record.state == HabitDayState.MISSED && !d.isBefore(habitCreatedDate)) totalScheduledMissed++
+                        else if (record.state == HabitDayState.MISSED) totalScheduledMissed++
                     }
                 }
                 val total = totalScheduledDone + totalScheduledMissed
                 return if (total > 0) (totalScheduledDone.toFloat() / total * 100f) else 100f
             }
             HabitRepeatType.WEEKLY_X -> {
-                val totalDone = logs.values.count { isDayComplete(habit, it) }
+                val totalDone = logs.entries.count { (dateStr, record) ->
+                    val d = runCatching { LocalDate.parse(dateStr, dateFormatter) }.getOrNull()
+                    isDayComplete(habit, record) && (d == null || !d.isBefore(habitStartDate))
+                }
                 val totalMissed = logs.entries.count { (dateStr, record) ->
                     val d = runCatching { LocalDate.parse(dateStr, dateFormatter) }.getOrNull()
-                    record.state == HabitDayState.MISSED && (d == null || !d.isBefore(habitCreatedDate))
+                    record.state == HabitDayState.MISSED && (d == null || !d.isBefore(habitStartDate))
                 }
                 val totalLogged = totalDone + totalMissed
                 return if (totalLogged > 0) (totalDone.toFloat() / totalLogged * 100f) else 100f
@@ -1213,6 +1240,7 @@ object HabitRepository {
             val logsForHabit = _logsMap.value[habit.id] ?: emptyMap()
             val todayRecord = logsForHabit[today.format(dateFormatter)] ?: HabitDayRecord()
             val target = habit.targetValue.coerceAtLeast(1)
+            val habitStartDate = getEffectiveStartDate(habit)
 
             // Today's progress fraction for this habit
             val todayFraction: Float = when (habit.type) {
@@ -1244,9 +1272,11 @@ object HabitRepository {
                 val record = logsForHabit[dStr] ?: HabitDayRecord()
                 val isRest = (habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(d.dayOfWeek.value))
                 val isPast = d.isBefore(today)
-                // For previous days, there should be NO unmarked (empty) box: only DONE or MISSED
+                val isBeforeStart = d.isBefore(habitStartDate)
+                // For days before start date, treat as UNMARKED (not started yet)
                 val effectiveState = when {
                     isRest -> HabitDayState.UNMARKED
+                    isBeforeStart -> HabitDayState.UNMARKED
                     isPast -> {
                         if (record.state == HabitDayState.DONE || (habit.type == HabitType.TARGET && record.value >= target && target > 0)) {
                             HabitDayState.DONE
@@ -1284,16 +1314,13 @@ object HabitRepository {
             val bestStreak = calculateBestStreak(habit, logsForHabit, currentStreak)
             val adherence = calculateAdherence(habit, logsForHabit, today)
 
-            val habitCreatedDate = runCatching {
-                java.time.Instant.ofEpochMilli(habit.createdAt)
-                    .atZone(java.time.ZoneId.systemDefault())
-                    .toLocalDate()
-            }.getOrDefault(today)
-
-            val totalDone = logsForHabit.values.count { isDayComplete(habit, it) }
+            val totalDone = logsForHabit.entries.count { (dateStr, record) ->
+                val d = runCatching { LocalDate.parse(dateStr, dateFormatter) }.getOrNull()
+                isDayComplete(habit, record) && (d == null || !d.isBefore(habitStartDate))
+            }
             val totalMissed = logsForHabit.entries.count { (dateStr, record) ->
                 val d = runCatching { LocalDate.parse(dateStr, dateFormatter) }.getOrNull()
-                record.state == HabitDayState.MISSED && (d == null || !d.isBefore(habitCreatedDate))
+                record.state == HabitDayState.MISSED && (d == null || !d.isBefore(habitStartDate))
             }
 
             HabitWithStats(

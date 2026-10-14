@@ -91,6 +91,7 @@ import com.kairo.app.ui.theme.KairoSurfaceContainerLow
 import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import com.kairo.app.ui.theme.KairoSurfaceContainerHighest
 import com.kairo.app.feature.habits.model.HabitNoteHelper
+import com.kairo.app.feature.habits.model.HabitNotePrompt
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -582,13 +583,15 @@ fun HabitDetailScreen(
                                     onClick = {
                                         val nextVal = habitWithStats.todayValue + 1
                                         HabitRepository.incrementHabitDay(currentHabit.id, today, 1)
-                                        activeNoteDialog = DetailNoteDialogState(
-                                            habit = currentHabit,
-                                            date = today,
-                                            state = HabitDayState.DONE,
-                                            initialNote = null,
-                                            countIndex = nextVal
-                                        )
+                                        if (currentHabit.notePrompt == HabitNotePrompt.BOTH || currentHabit.notePrompt == HabitNotePrompt.DONE_ONLY) {
+                                            activeNoteDialog = DetailNoteDialogState(
+                                                habit = currentHabit,
+                                                date = today,
+                                                state = HabitDayState.DONE,
+                                                initialNote = null,
+                                                countIndex = nextVal
+                                            )
+                                        }
                                     },
                                     enabled = canIncrementToday,
                                     shape = RoundedCornerShape(10.dp),
@@ -614,14 +617,16 @@ fun HabitDetailScreen(
                                         if (!isAlreadyDone) {
                                             HabitRepository.setHabitDayValue(currentHabit.id, today, currentHabit.targetValue)
                                         }
-                                        val todayStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                                        val existingNote = HabitRepository.getHabitLogs(currentHabit.id)[todayStr]?.note
-                                        activeNoteDialog = DetailNoteDialogState(
-                                            habit = currentHabit,
-                                            date = today,
-                                            state = HabitDayState.DONE,
-                                            initialNote = existingNote
-                                        )
+                                        if (currentHabit.notePrompt == HabitNotePrompt.BOTH || currentHabit.notePrompt == HabitNotePrompt.DONE_ONLY) {
+                                            val todayStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                                            val existingNote = HabitRepository.getHabitLogs(currentHabit.id)[todayStr]?.note
+                                            activeNoteDialog = DetailNoteDialogState(
+                                                habit = currentHabit,
+                                                date = today,
+                                                state = HabitDayState.DONE,
+                                                initialNote = existingNote
+                                            )
+                                        }
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (habitWithStats.todayProgressFraction >= 1f) KairoSecondary else KairoSecondary.copy(alpha = 0.15f),
@@ -650,7 +655,7 @@ fun HabitDetailScreen(
                                 }
                             }
 
-                            // Show Today's Note if recorded
+                            // Show Today's Note if recorded, or allow adding note manually
                             val todayStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
                             val todayRecord = HabitRepository.getHabitLogs(currentHabit.id)[todayStr]
                             if (!todayRecord?.note.isNullOrBlank()) {
@@ -700,6 +705,40 @@ fun HabitDetailScreen(
                                         )
                                     }
                                 }
+                            } else if (habitWithStats.todayValue > 0 || todayRecord?.state == HabitDayState.MISSED) {
+                                Surface(
+                                    onClick = {
+                                        activeNoteDialog = DetailNoteDialogState(
+                                            habit = currentHabit,
+                                            date = today,
+                                            state = todayRecord?.state ?: HabitDayState.DONE,
+                                            initialNote = null
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color.White.copy(alpha = 0.03f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.EditNote,
+                                            contentDescription = null,
+                                            tint = KairoSecondary,
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                        Text(
+                                            text = "+ Add note for today",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = KairoSecondary
+                                        )
+                                    }
+                                }
                             }
                         }
                     } else {
@@ -745,21 +784,25 @@ fun HabitDetailScreen(
                                     when (todayState) {
                                         HabitDayState.UNMARKED -> {
                                             HabitRepository.setHabitDayState(currentHabit.id, today, HabitDayState.DONE)
-                                            activeNoteDialog = DetailNoteDialogState(
-                                                habit = currentHabit,
-                                                date = today,
-                                                state = HabitDayState.DONE,
-                                                initialNote = todayRecord.note
-                                            )
+                                            if (currentHabit.notePrompt == HabitNotePrompt.BOTH || currentHabit.notePrompt == HabitNotePrompt.DONE_ONLY) {
+                                                activeNoteDialog = DetailNoteDialogState(
+                                                    habit = currentHabit,
+                                                    date = today,
+                                                    state = HabitDayState.DONE,
+                                                    initialNote = todayRecord.note
+                                                )
+                                            }
                                         }
                                         HabitDayState.DONE -> {
                                             HabitRepository.setHabitDayState(currentHabit.id, today, HabitDayState.MISSED)
-                                            activeNoteDialog = DetailNoteDialogState(
-                                                habit = currentHabit,
-                                                date = today,
-                                                state = HabitDayState.MISSED,
-                                                initialNote = todayRecord.note
-                                            )
+                                            if (currentHabit.notePrompt == HabitNotePrompt.BOTH || currentHabit.notePrompt == HabitNotePrompt.MISSED_ONLY) {
+                                                activeNoteDialog = DetailNoteDialogState(
+                                                    habit = currentHabit,
+                                                    date = today,
+                                                    state = HabitDayState.MISSED,
+                                                    initialNote = todayRecord.note
+                                                )
+                                            }
                                         }
                                         HabitDayState.MISSED -> {
                                             HabitRepository.setHabitDayState(currentHabit.id, today, HabitDayState.UNMARKED, clearNote = true)
@@ -793,7 +836,7 @@ fun HabitDetailScreen(
                                 }
                             }
 
-                            // Show Today's Note if recorded for Yes/No
+                            // Show Today's Note if recorded for Yes/No, or allow adding note manually
                             if (!todayRecord.note.isNullOrBlank()) {
                                 Surface(
                                     onClick = {
@@ -838,6 +881,40 @@ fun HabitDetailScreen(
                                             contentDescription = "Edit Note",
                                             tint = Color(0xFFC8C4D9),
                                             modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            } else if (todayState == HabitDayState.DONE || todayState == HabitDayState.MISSED) {
+                                Surface(
+                                    onClick = {
+                                        activeNoteDialog = DetailNoteDialogState(
+                                            habit = currentHabit,
+                                            date = today,
+                                            state = todayState,
+                                            initialNote = null
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color.White.copy(alpha = 0.03f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.EditNote,
+                                            contentDescription = null,
+                                            tint = if (todayState == HabitDayState.DONE) KairoSecondary else Color(0xFFFFB77D),
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                        Text(
+                                            text = if (todayState == HabitDayState.DONE) "+ Add completion note" else "+ Add missed reason",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (todayState == HabitDayState.DONE) KairoSecondary else Color(0xFFFFB77D)
                                         )
                                     }
                                 }
@@ -931,7 +1008,7 @@ fun HabitDetailScreen(
         CreateHabitDialog(
             initialHabit = currentHabit,
             onDismiss = { showEditDialog = false },
-            onConfirm = { title, type, targetValue, targetUnit, repeatType, repeatDays, weeklyTargetCount, reminderEnabled, reminderTime, reminderToneUri, reminderToneTitle ->
+            onConfirm = { title, type, targetValue, targetUnit, repeatType, repeatDays, weeklyTargetCount, reminderEnabled, reminderTime, reminderToneUri, reminderToneTitle, notePrompt, startDate ->
                 val updated = currentHabit.copy(
                     title = title,
                     type = type,
@@ -944,6 +1021,8 @@ fun HabitDetailScreen(
                     reminderTime = reminderTime,
                     reminderToneUri = reminderToneUri,
                     reminderToneTitle = reminderToneTitle,
+                    notePrompt = notePrompt,
+                    startDate = startDate,
                     updatedAt = System.currentTimeMillis()
                 )
                 currentHabit = updated
@@ -1041,8 +1120,12 @@ fun MonthlyHeatmapSection(
 
     val monthName = yearMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault())
 
+    val habitStartDate = remember(habit.startDate, habit.createdAt) {
+        HabitRepository.getEffectiveStartDate(habit)
+    }
+
     // Month stats
-    val (monthDoneCount, monthMissedCount) = remember(habitLogs, selectedYear, selectedMonth) {
+    val (monthDoneCount, monthMissedCount) = remember(habitLogs, selectedYear, selectedMonth, habitStartDate) {
         var done = 0
         var missed = 0
         for (day in 1..daysInMonth) {
@@ -1053,7 +1136,7 @@ fun MonthlyHeatmapSection(
             val isDone = rec?.state == HabitDayState.DONE || (habit.type == HabitType.TARGET && (rec?.value ?: 0) >= habit.targetValue && habit.targetValue > 0)
             if (isDone) {
                 done++
-            } else if (!isRest && (rec?.state == HabitDayState.MISSED || cellDate.isBefore(today))) {
+            } else if (!isRest && !cellDate.isBefore(habitStartDate) && (rec?.state == HabitDayState.MISSED || cellDate.isBefore(today))) {
                 missed++
             }
         }
@@ -1283,8 +1366,9 @@ fun MonthlyHeatmapSection(
                                 val isDone = state == HabitDayState.DONE || (habit.type == HabitType.TARGET && recordVal >= target)
                                 val isPast = cellDate.isBefore(today)
                                 val isRestDay = (habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(cellDate.dayOfWeek.value) && !isDone)
+                                val isBeforeStart = cellDate.isBefore(habitStartDate)
                                 val isPartial = habit.type == HabitType.TARGET && recordVal in 1 until target
-                                val isMissed = (state == HabitDayState.MISSED || (isPast && !isDone && !isRestDay)) && !isPartial
+                                val isMissed = !isBeforeStart && (state == HabitDayState.MISSED || (isPast && !isDone && !isRestDay)) && !isPartial
                                 val isSelected = selectedDayDate == cellDate
                                 val isToday = cellDate == today
 
@@ -1293,6 +1377,7 @@ fun MonthlyHeatmapSection(
                                     isPartial -> Color(0xFFFACC15).copy(alpha = 0.22f)
                                     isMissed -> Color(0xFFF43F5E).copy(alpha = 0.15f)
                                     isRestDay -> Color.White.copy(alpha = 0.03f)
+                                    isBeforeStart -> Color.White.copy(alpha = 0.03f)
                                     else -> KairoSurfaceContainerHighest
                                 }
                                 val textColor = when {
@@ -1300,6 +1385,7 @@ fun MonthlyHeatmapSection(
                                     isPartial -> Color(0xFFFACC15)
                                     isMissed -> Color(0xFFFB7185)
                                     isRestDay -> Color(0xFF64748B)
+                                    isBeforeStart -> Color(0xFF64748B)
                                     else -> Color(0xFFCBD5E1)
                                 }
 
@@ -1384,9 +1470,10 @@ fun MonthlyHeatmapSection(
                     val target = habit.targetValue.coerceAtLeast(1)
 
                     val isPastSelected = sDate.isBefore(today)
+                    val isBeforeStartSelected = sDate.isBefore(habitStartDate)
                     val isDateDone = dayState == HabitDayState.DONE || (habit.type == HabitType.TARGET && dayValue >= target)
                     val isDatePartial = habit.type == HabitType.TARGET && dayValue in 1 until target
-                    val isSelectedMissed = (dayState == HabitDayState.MISSED || (isPastSelected && !isDateDone)) && !isDatePartial
+                    val isSelectedMissed = !isBeforeStartSelected && (dayState == HabitDayState.MISSED || (isPastSelected && !isDateDone)) && !isDatePartial
                     val formattedSelectedDate = sDate.format(DateTimeFormatter.ofPattern("EEEE, MMM d, yyyy"))
 
                 Box(
@@ -1411,7 +1498,7 @@ fun MonthlyHeatmapSection(
                                     color = Color.White
                                 )
                                 Text(
-                                    text = if (sDate == today) "Today" else if (sDate.isAfter(today)) "Upcoming day" else "Past day",
+                                    text = if (sDate == today) "Today" else if (sDate.isAfter(today)) "Upcoming day" else if (isBeforeStartSelected) "Prior to start date" else "Past day",
                                     fontSize = 11.sp,
                                     color = Color(0xFF94A3B8)
                                 )
@@ -1423,6 +1510,7 @@ fun MonthlyHeatmapSection(
                                 isDatePartial -> Color(0xFFFACC15).copy(alpha = 0.20f)
                                 isSelectedMissed -> Color(0xFFF43F5E).copy(alpha = 0.20f)
                                 isDateRest -> Color.White.copy(alpha = 0.08f)
+                                isBeforeStartSelected -> Color.White.copy(alpha = 0.05f)
                                 else -> KairoSurfaceContainerHighest
                             }
                             val badgeText = when {
@@ -1430,6 +1518,7 @@ fun MonthlyHeatmapSection(
                                 isDatePartial -> if (isPastSelected) "Partial (${dayValue}✕/$target ${habit.targetUnit})" else "$dayValue / $target ${habit.targetUnit}"
                                 isSelectedMissed -> if (habit.type == HabitType.TARGET) "Missed (0✕/$target ${habit.targetUnit})" else "Missed"
                                 isDateRest -> "Rest Day"
+                                isBeforeStartSelected -> "Before Start Date"
                                 else -> "Unmarked"
                             }
                             val badgeTextColor = when {
@@ -1437,6 +1526,7 @@ fun MonthlyHeatmapSection(
                                 isDatePartial -> Color(0xFFFACC15)
                                 isSelectedMissed -> Color(0xFFFB7185)
                                 isDateRest -> Color(0xFF94A3B8)
+                                isBeforeStartSelected -> Color(0xFF94A3B8)
                                 else -> Color(0xFFC8C4D9)
                             }
 
@@ -1524,7 +1614,9 @@ fun MonthlyHeatmapSection(
                                     onClick = {
                                         val nextVal = dayValue + 1
                                         HabitRepository.incrementHabitDay(habit.id, sDate, 1)
-                                        onPromptNote(sDate, HabitDayState.DONE, null, false, nextVal)
+                                        if (habit.notePrompt == HabitNotePrompt.BOTH || habit.notePrompt == HabitNotePrompt.DONE_ONLY) {
+                                            onPromptNote(sDate, HabitDayState.DONE, null, false, nextVal)
+                                        }
                                     },
                                     enabled = canIncrement,
                                     shape = RoundedCornerShape(10.dp),
@@ -1547,7 +1639,9 @@ fun MonthlyHeatmapSection(
                                 Surface(
                                     onClick = {
                                         HabitRepository.setHabitDayValue(habit.id, sDate, target)
-                                        onPromptNote(sDate, HabitDayState.DONE, dayRecord.note, false, null)
+                                        if (habit.notePrompt == HabitNotePrompt.BOTH || habit.notePrompt == HabitNotePrompt.DONE_ONLY) {
+                                            onPromptNote(sDate, HabitDayState.DONE, dayRecord.note, false, null)
+                                        }
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (isDateDone) KairoSecondary else KairoSecondary.copy(alpha = 0.15f),
@@ -1580,7 +1674,9 @@ fun MonthlyHeatmapSection(
                                 Surface(
                                     onClick = {
                                         HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.MISSED)
-                                        onPromptNote(sDate, HabitDayState.MISSED, dayRecord.note, false, null)
+                                        if (habit.notePrompt == HabitNotePrompt.BOTH || habit.notePrompt == HabitNotePrompt.MISSED_ONLY) {
+                                            onPromptNote(sDate, HabitDayState.MISSED, dayRecord.note, false, null)
+                                        }
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (isTargetMissed) Color(0xFFFFB77D) else KairoSurfaceContainerHighest,
@@ -1661,7 +1757,9 @@ fun MonthlyHeatmapSection(
                                         )
                                         .clickable {
                                             HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.DONE)
-                                            onPromptNote(sDate, HabitDayState.DONE, dayRecord.note, false, null)
+                                            if (habit.notePrompt == HabitNotePrompt.BOTH || habit.notePrompt == HabitNotePrompt.DONE_ONLY) {
+                                                onPromptNote(sDate, HabitDayState.DONE, dayRecord.note, false, null)
+                                            }
                                         }
                                         .padding(vertical = 8.dp),
                                     contentAlignment = Alignment.Center
@@ -1699,7 +1797,9 @@ fun MonthlyHeatmapSection(
                                         )
                                         .clickable {
                                             HabitRepository.setHabitDayState(habit.id, sDate, HabitDayState.MISSED)
-                                            onPromptNote(sDate, HabitDayState.MISSED, dayRecord.note, false, null)
+                                            if (habit.notePrompt == HabitNotePrompt.BOTH || habit.notePrompt == HabitNotePrompt.MISSED_ONLY) {
+                                                onPromptNote(sDate, HabitDayState.MISSED, dayRecord.note, false, null)
+                                            }
                                         }
                                         .padding(vertical = 8.dp),
                                     contentAlignment = Alignment.Center
@@ -1808,7 +1908,7 @@ fun MonthlyHeatmapSection(
                                         )
                                     }
                                 }
-                            } else if ((isDateDone && habit.type == HabitType.TARGET) || dayState == HabitDayState.MISSED) {
+                            } else if (isDateDone || dayState == HabitDayState.MISSED) {
                                 Surface(
                                     onClick = {
                                         onPromptNote(sDate, if (isDateDone) HabitDayState.DONE else HabitDayState.MISSED, null, false, null)

@@ -19,6 +19,13 @@ enum class HabitDayState {
     MISSED
 }
 
+enum class HabitNotePrompt {
+    BOTH,
+    DONE_ONLY,
+    MISSED_ONLY,
+    NONE
+}
+
 data class HabitDayRecord(
     val state: HabitDayState = HabitDayState.UNMARKED,
     val value: Int = 0,
@@ -40,6 +47,8 @@ data class Habit(
     val reminderToneUri: String? = null,
     val reminderToneTitle: String? = null,
     val position: Int = 0,
+    val notePrompt: HabitNotePrompt = HabitNotePrompt.BOTH,
+    val startDate: String = "", // "YYYY-MM-DD"
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

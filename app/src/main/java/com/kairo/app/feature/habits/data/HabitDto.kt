@@ -19,6 +19,8 @@ data class HabitDto(
     @SerialName("reminder_tone_uri") val reminderToneUri: String? = null,
     @SerialName("reminder_tone_title") val reminderToneTitle: String? = null,
     @SerialName("position") val position: Int = 0,
+    @SerialName("note_prompt") val notePrompt: String = "BOTH",
+    @SerialName("start_date") val startDate: String = "",
     @SerialName("created_at") val createdAt: Long = System.currentTimeMillis(),
     @SerialName("updated_at") val updatedAt: Long = System.currentTimeMillis()
 )

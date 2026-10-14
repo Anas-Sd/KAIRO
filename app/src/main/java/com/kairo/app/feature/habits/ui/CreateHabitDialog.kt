@@ -1,5 +1,6 @@
 package com.kairo.app.feature.habits.ui
 
+import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -27,6 +28,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Remove
@@ -63,6 +66,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.kairo.app.feature.habits.model.Habit
+import com.kairo.app.feature.habits.model.HabitNotePrompt
 import com.kairo.app.feature.habits.model.HabitRepeatType
 import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.ui.components.TonePickerDialog
@@ -71,6 +75,8 @@ import com.kairo.app.ui.theme.KairoPrimaryContainer
 import com.kairo.app.ui.theme.KairoSecondary
 import com.kairo.app.ui.theme.KairoSurfaceContainer
 import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Locale
 
@@ -89,7 +95,9 @@ fun CreateHabitDialog(
         reminderEnabled: Boolean,
         reminderTime: String?,
         reminderToneUri: String?,
-        reminderToneTitle: String?
+        reminderToneTitle: String?,
+        notePrompt: HabitNotePrompt,
+        startDate: String
     ) -> Unit
 ) {
     val context = LocalContext.current
@@ -103,6 +111,14 @@ fun CreateHabitDialog(
     var repeatType by remember { mutableStateOf(initialHabit?.repeatType ?: HabitRepeatType.EVERYDAY) }
     var selectedDays by remember { mutableStateOf(initialHabit?.repeatDays?.toSet() ?: setOf(1, 2, 3, 4, 5, 6, 7)) } // 1=Mon .. 7=Sun
     var weeklyCount by remember { mutableIntStateOf(initialHabit?.weeklyTargetCount ?: 3) }
+
+    var startDateText by remember {
+        mutableStateOf(
+            initialHabit?.startDate?.takeIf { it.isNotBlank() }
+                ?: LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+        )
+    }
+    var notePrompt by remember { mutableStateOf(initialHabit?.notePrompt ?: HabitNotePrompt.BOTH) }
 
     var reminderEnabled by remember { mutableStateOf(initialHabit?.reminderEnabled ?: false) }
     var reminderTime by remember { mutableStateOf(initialHabit?.reminderTime ?: "08:00 AM") }
@@ -541,6 +557,132 @@ fun CreateHabitDialog(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Start Date Picker
+                Text(
+                    text = "START DATE",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF94A3B8),
+                    letterSpacing = 0.5.sp
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                val parsedStartDate = runCatching {
+                    LocalDate.parse(startDateText, DateTimeFormatter.ISO_LOCAL_DATE)
+                }.getOrDefault(LocalDate.now())
+                val isStartToday = parsedStartDate == LocalDate.now()
+                val displayDateText = if (isStartToday) {
+                    "Today (${parsedStartDate.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))})"
+                } else {
+                    parsedStartDate.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy"))
+                }
+
+                Surface(
+                    onClick = {
+                        DatePickerDialog(
+                            context,
+                            { _, year, month, dayOfMonth ->
+                                val picked = LocalDate.of(year, month + 1, dayOfMonth)
+                                startDateText = picked.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                            },
+                            parsedStartDate.year,
+                            parsedStartDate.monthValue - 1,
+                            parsedStartDate.dayOfMonth
+                        ).show()
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    color = KairoSurfaceContainerHigh,
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarMonth,
+                                contentDescription = null,
+                                tint = KairoPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = displayDateText,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White
+                            )
+                        }
+                        Text(
+                            text = "Change",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = KairoPrimary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Ask for Notes Section
+                Text(
+                    text = "ASK FOR NOTES",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF94A3B8),
+                    letterSpacing = 0.5.sp
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    TypePill(
+                        label = "Both",
+                        isSelected = notePrompt == HabitNotePrompt.BOTH,
+                        modifier = Modifier.weight(1f)
+                    ) { notePrompt = HabitNotePrompt.BOTH }
+
+                    TypePill(
+                        label = "Done Only",
+                        isSelected = notePrompt == HabitNotePrompt.DONE_ONLY,
+                        modifier = Modifier.weight(1.1f)
+                    ) { notePrompt = HabitNotePrompt.DONE_ONLY }
+
+                    TypePill(
+                        label = "Missed Only",
+                        isSelected = notePrompt == HabitNotePrompt.MISSED_ONLY,
+                        modifier = Modifier.weight(1.2f)
+                    ) { notePrompt = HabitNotePrompt.MISSED_ONLY }
+
+                    TypePill(
+                        label = "None",
+                        isSelected = notePrompt == HabitNotePrompt.NONE,
+                        modifier = Modifier.weight(1f)
+                    ) { notePrompt = HabitNotePrompt.NONE }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                val promptDescription = when (notePrompt) {
+                    HabitNotePrompt.BOTH -> "Prompts for note when marking Done and Missed"
+                    HabitNotePrompt.DONE_ONLY -> "Prompts for note only when marking Done"
+                    HabitNotePrompt.MISSED_ONLY -> "Prompts for note only when marking Missed / Not Done"
+                    HabitNotePrompt.NONE -> "Never auto-prompts on check-in"
+                }
+                Text(
+                    text = promptDescription,
+                    fontSize = 11.sp,
+                    color = Color(0xFF94A3B8),
+                    modifier = Modifier.padding(start = 2.dp)
+                )
+
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // Actions: Cancel / Create
@@ -577,7 +719,9 @@ fun CreateHabitDialog(
                                 reminderEnabled,
                                 if (reminderEnabled) reminderTime else null,
                                 if (reminderEnabled) reminderToneUri else null,
-                                if (reminderEnabled) reminderToneTitle else null
+                                if (reminderEnabled) reminderToneTitle else null,
+                                notePrompt,
+                                startDateText.ifBlank { LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE) }
                             )
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = KairoPrimaryContainer),

@@ -60,6 +60,7 @@ import com.kairo.app.feature.habits.model.Habit
 import com.kairo.app.feature.habits.model.HabitDayRecord
 import com.kairo.app.feature.habits.model.HabitDayState
 import com.kairo.app.feature.habits.model.HabitNoteHelper
+import com.kairo.app.feature.habits.model.HabitNotePrompt
 import com.kairo.app.feature.habits.model.HabitRepeatType
 import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.feature.habits.model.HabitWithStats
@@ -443,28 +444,18 @@ fun HabitsScreen(
                                         // For previous days, ONLY 2 options: DONE / MISSED (no unmarked box)
                                         if (currentRecord.state == HabitDayState.DONE) {
                                             HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.MISSED)
-                                            activeIncrementNote = ActiveIncrementNote(
-                                                habit = item.habit,
-                                                date = date,
-                                                countIndex = null,
-                                                isMissed = true,
-                                                initialNote = currentRecord.note
-                                            )
+                                            if (item.habit.notePrompt == HabitNotePrompt.BOTH || item.habit.notePrompt == HabitNotePrompt.MISSED_ONLY) {
+                                                activeIncrementNote = ActiveIncrementNote(
+                                                    habit = item.habit,
+                                                    date = date,
+                                                    countIndex = null,
+                                                    isMissed = true,
+                                                    initialNote = currentRecord.note
+                                                )
+                                            }
                                         } else {
                                             HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.DONE)
-                                            activeIncrementNote = ActiveIncrementNote(
-                                                habit = item.habit,
-                                                date = date,
-                                                countIndex = null,
-                                                isMissed = false,
-                                                initialNote = currentRecord.note
-                                            )
-                                        }
-                                    } else {
-                                        // Today: toggle UNMARKED -> DONE -> MISSED -> UNMARKED
-                                        when (currentRecord.state) {
-                                            HabitDayState.UNMARKED -> {
-                                                HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.DONE)
+                                            if (item.habit.notePrompt == HabitNotePrompt.BOTH || item.habit.notePrompt == HabitNotePrompt.DONE_ONLY) {
                                                 activeIncrementNote = ActiveIncrementNote(
                                                     habit = item.habit,
                                                     date = date,
@@ -473,15 +464,33 @@ fun HabitsScreen(
                                                     initialNote = currentRecord.note
                                                 )
                                             }
+                                        }
+                                    } else {
+                                        // Today: toggle UNMARKED -> DONE -> MISSED -> UNMARKED
+                                        when (currentRecord.state) {
+                                            HabitDayState.UNMARKED -> {
+                                                HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.DONE)
+                                                if (item.habit.notePrompt == HabitNotePrompt.BOTH || item.habit.notePrompt == HabitNotePrompt.DONE_ONLY) {
+                                                    activeIncrementNote = ActiveIncrementNote(
+                                                        habit = item.habit,
+                                                        date = date,
+                                                        countIndex = null,
+                                                        isMissed = false,
+                                                        initialNote = currentRecord.note
+                                                    )
+                                                }
+                                            }
                                             HabitDayState.DONE -> {
                                                 HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.MISSED)
-                                                activeIncrementNote = ActiveIncrementNote(
-                                                    habit = item.habit,
-                                                    date = date,
-                                                    countIndex = null,
-                                                    isMissed = true,
-                                                    initialNote = currentRecord.note
-                                                )
+                                                if (item.habit.notePrompt == HabitNotePrompt.BOTH || item.habit.notePrompt == HabitNotePrompt.MISSED_ONLY) {
+                                                    activeIncrementNote = ActiveIncrementNote(
+                                                        habit = item.habit,
+                                                        date = date,
+                                                        countIndex = null,
+                                                        isMissed = true,
+                                                        initialNote = currentRecord.note
+                                                    )
+                                                }
                                             }
                                             HabitDayState.MISSED -> {
                                                 HabitRepository.setHabitDayState(item.habit.id, date, HabitDayState.UNMARKED, clearNote = true)
@@ -499,8 +508,8 @@ fun HabitsScreen(
                                     val nextVal = item.todayValue + 1
                                     HabitRepository.incrementHabitDay(item.habit.id, today, 1)
 
-                                    // For target habits: prompt for note on EVERY increment!
-                                    if (isTarget) {
+                                    // For target habits: prompt for note if configured
+                                    if (isTarget && (item.habit.notePrompt == HabitNotePrompt.BOTH || item.habit.notePrompt == HabitNotePrompt.DONE_ONLY)) {
                                         val todayDateStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
                                         val existingLogs = HabitRepository.getHabitLogs(item.habit.id)
                                         val existingNotesMap = HabitNoteHelper.parseIncrementNotes(existingLogs[todayDateStr]?.note)
@@ -536,22 +545,26 @@ fun HabitsScreen(
                                         note = currentRec.note,
                                         state = HabitDayState.DONE
                                     )
-                                    activeIncrementNote = ActiveIncrementNote(
-                                        habit = item.habit,
-                                        date = today,
-                                        countIndex = targetVal,
-                                        isMissed = false,
-                                        initialNote = currentRec.note
-                                    )
+                                    if (item.habit.notePrompt == HabitNotePrompt.BOTH || item.habit.notePrompt == HabitNotePrompt.DONE_ONLY) {
+                                        activeIncrementNote = ActiveIncrementNote(
+                                            habit = item.habit,
+                                            date = today,
+                                            countIndex = targetVal,
+                                            isMissed = false,
+                                            initialNote = currentRec.note
+                                        )
+                                    }
                                 } else {
                                     HabitRepository.setHabitDayState(item.habit.id, today, HabitDayState.DONE)
-                                    activeIncrementNote = ActiveIncrementNote(
-                                        habit = item.habit,
-                                        date = today,
-                                        countIndex = null,
-                                        isMissed = false,
-                                        initialNote = currentRec.note
-                                    )
+                                    if (item.habit.notePrompt == HabitNotePrompt.BOTH || item.habit.notePrompt == HabitNotePrompt.DONE_ONLY) {
+                                        activeIncrementNote = ActiveIncrementNote(
+                                            habit = item.habit,
+                                            date = today,
+                                            countIndex = null,
+                                            isMissed = false,
+                                            initialNote = currentRec.note
+                                        )
+                                    }
                                 }
                             },
                             dragHandleModifier = buildDragHandleModifier(item, filteredHabits),
@@ -814,7 +827,7 @@ fun HabitsScreen(
     if (showCreateDialog) {
         CreateHabitDialog(
             onDismiss = { showCreateDialog = false },
-            onConfirm = { title, type, targetValue, targetUnit, repeatType, repeatDays, weeklyTargetCount, reminderEnabled, reminderTime, reminderToneUri, reminderToneTitle ->
+            onConfirm = { title, type, targetValue, targetUnit, repeatType, repeatDays, weeklyTargetCount, reminderEnabled, reminderTime, reminderToneUri, reminderToneTitle, notePrompt, startDate ->
                 HabitRepository.addHabit(
                     title = title,
                     type = type,
@@ -826,7 +839,9 @@ fun HabitsScreen(
                     reminderEnabled = reminderEnabled,
                     reminderTime = reminderTime,
                     reminderToneUri = reminderToneUri,
-                    reminderToneTitle = reminderToneTitle
+                    reminderToneTitle = reminderToneTitle,
+                    notePrompt = notePrompt,
+                    startDate = startDate
                 )
                 showCreateDialog = false
             }
