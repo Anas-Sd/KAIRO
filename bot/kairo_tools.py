@@ -2375,7 +2375,7 @@ SUPABASE_RULES_CONFIG_ID = "00000000-0000-0000-0000-000000000001"
 def _load_cloud_rules() -> dict:
     try:
         url = f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{SUPABASE_RULES_CONFIG_ID}&select=notes"
-        res = requests.get(url, headers=supabase_headers(), timeout=5)
+        res = requests.get(url, headers=supabase_headers(), timeout=10)
         if res.status_code == 200:
             rows = res.json()
             if rows and rows[0].get("notes"):
@@ -2398,11 +2398,18 @@ def _save_cloud_rules(data: dict):
             "section": "TODAY",
             "user_code": "__BOT_INTERNAL__"
         }
-        requests.post(f"{SUPABASE_URL}/rest/v1/tasks", headers=headers, json=row, timeout=5)
+        requests.post(f"{SUPABASE_URL}/rest/v1/tasks", headers=headers, json=row, timeout=10)
     except Exception as e:
         logger.error(f"Error saving cloud rules: {e}")
 
 def load_rules() -> dict:
+    cloud_data = _load_cloud_rules()
+    if cloud_data:
+        try:
+            RULES_FILE_PATH.write_text(json.dumps(cloud_data, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        return cloud_data
     if RULES_FILE_PATH.exists():
         try:
             content = RULES_FILE_PATH.read_text(encoding="utf-8").strip()
@@ -2412,13 +2419,6 @@ def load_rules() -> dict:
                     return data
         except Exception as e:
             logger.error(f"Error loading rules file: {e}")
-    cloud_data = _load_cloud_rules()
-    if cloud_data:
-        try:
-            RULES_FILE_PATH.write_text(json.dumps(cloud_data, indent=2), encoding="utf-8")
-        except Exception:
-            pass
-        return cloud_data
     return {}
 
 def save_rules(data: dict):
