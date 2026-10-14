@@ -146,24 +146,44 @@ def score_match(query: str, target: str) -> float:
         return 0.0
     if q == t:
         return 1.0
-    if q in t or t in q:
-        return 0.90
 
-    qw = re.findall(r'\w+', q)
-    tw = re.findall(r'\w+', t)
+    # Substring check with length penalty
+    if q in t or t in q:
+        len_ratio = min(len(q), len(t)) / max(len(q), len(t))
+        return 0.80 + 0.18 * len_ratio
+
+    qw = [w for w in re.findall(r'\w+', q) if w not in ('task', 'habit', 'the', 'a', 'an', 'to', 'for', 'my')]
+    tw = [w for w in re.findall(r'\w+', t) if w not in ('task', 'habit', 'the', 'a', 'an', 'to', 'for', 'my')]
     if not qw or not tw:
         return SequenceMatcher(None, q, t).ratio()
 
+    # Stem / fuzzy token matches
     stem_hits = 0
+    matched_tw = set()
     for w1 in qw:
         for w2 in tw:
-            if w1 in w2 or w2 in w1 or SequenceMatcher(None, w1, w2).ratio() >= 0.72:
+            if w2 in matched_tw:
+                continue
+            if w1 == w2 or (len(w1) >= 4 and len(w2) >= 4 and (w1 in w2 or w2 in w1)):
                 stem_hits += 1
+                matched_tw.add(w2)
                 break
-    if qw and stem_hits > 0:
-        return 0.70 + 0.25 * (stem_hits / len(qw))
+            elif SequenceMatcher(None, w1, w2).ratio() >= 0.80:
+                stem_hits += 1
+                matched_tw.add(w2)
+                break
 
-    return SequenceMatcher(None, q, t).ratio()
+    unmatched_qw = len(qw) - stem_hits
+    unmatched_tw = len(tw) - stem_hits
+
+    dice = (2.0 * stem_hits) / (len(qw) + len(tw))
+    seq_ratio = SequenceMatcher(None, q, t).ratio()
+
+    # Heavy penalty if distinct conflicting words (e.g. 'drinking milk' vs 'drink water')
+    if unmatched_qw > 0 and unmatched_tw > 0 and stem_hits == 1 and (len(qw) > 1 or len(tw) > 1):
+        return min(dice * 0.6, seq_ratio)
+
+    return max(dice, seq_ratio)
 
 def resolve_task_by_query(query: str, tasks: list = None) -> tuple[dict | None, list]:
     """
@@ -191,9 +211,9 @@ def resolve_task_by_query(query: str, tasks: list = None) -> tuple[dict | None, 
         scored.append((best_score, t))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    high_matches = [t for s, t in scored if s >= 0.55]
+    high_matches = [t for s, t in scored if s >= 0.70]
 
-    if scored and scored[0][0] >= 0.55:
+    if scored and scored[0][0] >= 0.70:
         return scored[0][1], high_matches
     return None, [t for s, t in scored[:3]]
 
@@ -1493,9 +1513,9 @@ def resolve_habit_by_query(query: str, habits: list = None) -> tuple[dict | None
         scored.append((s_title, h))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    high_matches = [h for s, h in scored if s >= 0.55]
+    high_matches = [h for s, h in scored if s >= 0.70]
 
-    if scored and scored[0][0] >= 0.55:
+    if scored and scored[0][0] >= 0.70:
         return scored[0][1], high_matches
     return None, [h for s, h in scored[:3]]
 
@@ -1673,7 +1693,7 @@ def format_habit_action_reply(
     current_val: int = None,
     header: str = None
 ) -> str:
-    """Formats exact reply for every habit action strictly matching requested card format."""
+    """Formats a clean, rich Telegram card with bold labels and icons for habit actions."""
     title = habit.get("title", "")
     h_type = (habit.get("type") or "YES_NO").upper()
     if h_type == "TARGET":
@@ -1681,28 +1701,33 @@ def format_habit_action_reply(
         unit = habit.get("target_unit") or ""
         unit_str = f" {unit}" if unit else ""
         if current_val is not None:
-            type_str = f"target ({current_val}/{tgt_val}{unit_str})"
+            type_str = f"Target ({current_val}/{tgt_val}{unit_str})"
         else:
-            type_str = f"target ({tgt_val}{unit_str})"
+            type_str = f"Target ({tgt_val}{unit_str})"
     else:
-        type_str = "yes/no"
+        type_str = "Yes/No"
 
-    repeat_str = format_repeat_schedule(habit)
+    repeat_str = format_repeat_schedule(habit).capitalize()
     creation_date = habit.get("start_date") or datetime.now(DEFAULT_TIMEZONE).strftime("%Y-%m-%d")
     notes_format = habit.get("note_prompt") or "BOTH"
     notes_display = format_display_note(notes) if notes else "None"
 
     lines = []
     if header:
-        lines.append(header)
+        h_text = header.strip()
+        if not h_text.startswith("*") and not h_text.startswith("**"):
+            h_text = f"*{h_text}*"
+        lines.append(h_text)
         lines.append("")
-    lines.append(f"task name - {title}")
-    lines.append(f"task type - {type_str}")
-    lines.append(f"repeat - {repeat_str}")
-    lines.append(f"creation date - {creation_date}")
-    lines.append(f"notes format - {notes_format}")
-    lines.append(f"notes - {notes_display}")
-    lines.append(f"status - {status}")
+
+    lines.append(f"✨ *Habit:* {title}")
+    lines.append(f"🎯 *Type:* {type_str}")
+    lines.append(f"🔁 *Repeat:* {repeat_str}")
+    lines.append(f"📅 *Created:* {creation_date}")
+    lines.append(f"📝 *Notes Format:* {notes_format}")
+    if notes_display and notes_display != "None":
+        lines.append(f"💬 *Notes:* {notes_display}")
+    lines.append(f"⚡ *Status:* {status}")
 
     return "\n".join(lines)
 
@@ -2039,7 +2064,7 @@ def mark_habit(
         url = f"{SUPABASE_URL}/rest/v1/habit_logs?habit_id=eq.{habit_id}&date=eq.{date_iso}"
         requests.delete(url, headers=supabase_headers(), timeout=10)
         dispatch_alarm_wakeup()
-        return format_habit_action_reply(habit, status="Empty", notes=None, current_val=0)
+        return format_habit_action_reply(habit, status="Empty", notes=None, current_val=0, header="⚪ Habit Log Cleared")
 
     # Note handling: only if explicitly provided by user
     clean_user_note = note.strip() if note and note.strip() else None
@@ -2180,7 +2205,8 @@ def mark_habit(
         requests.post(url, headers=headers, json=payload, timeout=10)
 
     dispatch_alarm_wakeup()
-    return format_habit_action_reply(habit, status=status_text, notes=final_note, current_val=new_val)
+    action_header = "✅ Habit Marked Done!" if new_state == "DONE" else ("❌ Habit Marked Not Done" if new_state == "MISSED" else "📈 Progress Logged!")
+    return format_habit_action_reply(habit, status=status_text, notes=final_note, current_val=new_val, header=action_header)
 
 def get_habit_analytics(habit_query: str = None) -> str:
     """
