@@ -1957,10 +1957,38 @@ def edit_habit(
     updated_habit.update(updates)
     dispatch_alarm_wakeup()
 
+    today = datetime.now(DEFAULT_TIMEZONE).date()
+    today_iso = today.strftime("%Y-%m-%d")
+    logs = fetch_all_habit_logs_for_user(habit_id=habit_id)
+    today_rec = next((l for l in logs if l.get("date") == today_iso), None)
+
+    if is_rest_day(updated_habit, today):
+        today_status = "Rest Day"
+    elif is_day_complete(updated_habit, today_rec):
+        today_status = "Done"
+    elif today_rec and today_rec.get("state") == "MISSED":
+        today_status = "Not Done"
+    elif today_rec and (today_rec.get("value") or 0) > 0:
+        h_type = (updated_habit.get("type") or "YES_NO").upper()
+        if h_type == "TARGET":
+            today_status = f"{today_rec.get('value')}/{updated_habit.get('target_value', 1)} {updated_habit.get('target_unit', '')} (In Progress)"
+        else:
+            today_status = "In Progress"
+    else:
+        today_status = "Not Done"
+
+    curr_val = today_rec.get("value") if today_rec else 0
+    curr_note = today_rec.get("note") if today_rec else None
+
+    changes_info = f" ({', '.join(changes_desc)})" if changes_desc else ""
+    header_text = f"✏️ Successfully updated habit!{changes_info}"
+
     return format_habit_action_reply(
         updated_habit,
-        status=f"Updated ({', '.join(changes_desc)})",
-        header="✏️ Successfully updated habit!"
+        status=today_status,
+        notes=curr_note,
+        current_val=curr_val,
+        header=header_text
     )
 
 def delete_habit(habit_query: str) -> str:

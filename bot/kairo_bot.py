@@ -231,14 +231,15 @@ CRITICAL RULES & PROTOCOLS:
    (CRITICAL: On creation, status MUST show whether that habit was checked on that day or not, e.g. 'Not Done', 'Done', or 'Rest Day'. NEVER show 'Created'!).
 
    On Modification (`edit_habit`):
-   *✏️ Successfully updated habit!*
+   *✏️ Successfully updated habit! (<specific changes>)*
 
    ✨ *Habit:* <habit title>
    🎯 *Type:* <Target (target unit) OR Yes/No>
    🔁 *Repeat:* <Repeat schedule>
    📅 *Created:* <YYYY-MM-DD>
    📝 *Notes Format:* <note prompt>
-   ⚡ *Status:* Updated (<specific changes>)
+   ⚡ *Status:* <Done / Not Done / Rest Day>
+   (CRITICAL: On modification as well as creation, the status field must ALWAYS show whether the habit was checked/completed on that day or not, e.g. 'Done', 'Not Done', or 'Rest Day'. NEVER show 'Updated'!).
 
    On Marking / Progress Logging (`mark_habit`):
    *<Action Header>*
