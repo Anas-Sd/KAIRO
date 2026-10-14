@@ -232,8 +232,8 @@ fun HabitCard(
                         }
                     }
 
-                    // If Target Habit: Show Live Interactive Stepper
-                    if (habit.type == HabitType.TARGET) {
+                    // If Target Habit: Show Live Interactive Stepper (Only on Active Scheduled Days)
+                    if (habit.type == HabitType.TARGET && habitWithStats.isTodayScheduled) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -415,14 +415,22 @@ fun HabitCard(
                     }
                 }
 
-                // 2. Completed / Done Button (Clickable to complete & add note)
+                // 2. Completed / Done Button (Clickable to complete & add note on active days)
                 Box(
                     modifier = Modifier
                         .size(24.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(KairoSecondary.copy(alpha = 0.16f))
-                        .border(1.dp, KairoSecondary.copy(alpha = 0.40f), RoundedCornerShape(6.dp))
-                        .clickable { onDoneBoxClick() },
+                        .background(
+                            if (habitWithStats.isTodayScheduled) KairoSecondary.copy(alpha = 0.16f)
+                            else Color.White.copy(alpha = 0.04f)
+                        )
+                        .border(
+                            1.dp,
+                            if (habitWithStats.isTodayScheduled) KairoSecondary.copy(alpha = 0.40f)
+                            else Color.White.copy(alpha = 0.08f),
+                            RoundedCornerShape(6.dp)
+                        )
+                        .clickable(enabled = habitWithStats.isTodayScheduled) { onDoneBoxClick() },
                     contentAlignment = Alignment.Center
                 ) {
                     Row(
@@ -432,14 +440,14 @@ fun HabitCard(
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = "Completed",
-                            tint = KairoSecondary,
+                            tint = if (habitWithStats.isTodayScheduled) KairoSecondary else Color(0xFF64748B),
                             modifier = Modifier.size(10.dp)
                         )
                         Text(
                             text = "${habitWithStats.doneCount}",
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
-                            color = KairoSecondary
+                            color = if (habitWithStats.isTodayScheduled) KairoSecondary else Color(0xFF64748B)
                         )
                     }
                 }

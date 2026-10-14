@@ -353,8 +353,13 @@ fun HabitDetailScreen(
                             )
 
                             if (currentHabit.type == HabitType.TARGET) {
+                                val scheduleDesc = when (currentHabit.repeatType) {
+                                    HabitRepeatType.EVERYDAY -> "daily"
+                                    HabitRepeatType.SPECIFIC_DAYS -> "on ${formatRepeatDaysShort(currentHabit.repeatDays)}"
+                                    HabitRepeatType.WEEKLY_X -> "${currentHabit.weeklyTargetCount}x / week"
+                                }
                                 Text(
-                                    text = "Target: ${currentHabit.targetValue} ${currentHabit.targetUnit} daily",
+                                    text = "Target: ${currentHabit.targetValue} ${currentHabit.targetUnit} $scheduleDesc",
                                     fontSize = 13.sp,
                                     color = Color(0xFF94A3B8)
                                 )
@@ -883,10 +888,11 @@ fun MonthlyHeatmapSection(
     val allLogsMap: Map<String, Map<String, HabitDayRecord>> by HabitRepository.logsMap.collectAsState()
     val habitLogs: Map<String, HabitDayRecord> = allLogsMap[habit.id] ?: emptyMap()
     val today = remember { LocalDate.now() }
+    val isTodayRest = habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(today.dayOfWeek.value)
 
     var selectedYear by remember { mutableIntStateOf(today.year) }
     var selectedMonth by remember { mutableIntStateOf(today.monthValue) } // 1..12
-    var selectedDayDate by remember { mutableStateOf<LocalDate?>(today) }
+    var selectedDayDate by remember { mutableStateOf<LocalDate?>(if (isTodayRest) null else today) }
     var showPickerMenu by remember { mutableStateOf(false) }
 
     val yearMonth = remember(selectedYear, selectedMonth) { YearMonth.of(selectedYear, selectedMonth) }
@@ -1179,7 +1185,7 @@ fun MonthlyHeatmapSection(
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(bgColor)
                                         .then(borderModifier)
-                                        .clickable {
+                                        .clickable(enabled = !isRestDay) {
                                             selectedDayDate = cellDate
                                         },
                                     contentAlignment = Alignment.Center
@@ -1229,21 +1235,22 @@ fun MonthlyHeatmapSection(
                 }
             }
 
-            // Day Status & Direct Edit Panel
+            // Day Status & Direct Edit Panel (Only shown for active scheduled days, never rest days)
             if (selectedDayDate != null) {
                 val sDate = selectedDayDate!!
-                val sDateStr = sDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                val dayRecord = habitLogs[sDateStr] ?: HabitDayRecord()
-                val dayState = dayRecord.state
-                val dayValue = dayRecord.value
-                val target = habit.targetValue.coerceAtLeast(1)
-
-                val isPastSelected = sDate.isBefore(today)
-                val isDateDone = dayState == HabitDayState.DONE || (habit.type == HabitType.TARGET && dayValue >= target)
                 val isDateRest = (habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(sDate.dayOfWeek.value))
-                val isDatePartial = habit.type == HabitType.TARGET && dayValue in 1 until target
-                val isSelectedMissed = (dayState == HabitDayState.MISSED || (isPastSelected && !isDateDone && !isDateRest)) && !isDatePartial
-                val formattedSelectedDate = sDate.format(DateTimeFormatter.ofPattern("EEEE, MMM d, yyyy"))
+                if (!isDateRest) {
+                    val sDateStr = sDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                    val dayRecord = habitLogs[sDateStr] ?: HabitDayRecord()
+                    val dayState = dayRecord.state
+                    val dayValue = dayRecord.value
+                    val target = habit.targetValue.coerceAtLeast(1)
+
+                    val isPastSelected = sDate.isBefore(today)
+                    val isDateDone = dayState == HabitDayState.DONE || (habit.type == HabitType.TARGET && dayValue >= target)
+                    val isDatePartial = habit.type == HabitType.TARGET && dayValue in 1 until target
+                    val isSelectedMissed = (dayState == HabitDayState.MISSED || (isPastSelected && !isDateDone)) && !isDatePartial
+                    val formattedSelectedDate = sDate.format(DateTimeFormatter.ofPattern("EEEE, MMM d, yyyy"))
 
                 Box(
                     modifier = Modifier
@@ -1698,6 +1705,7 @@ fun MonthlyHeatmapSection(
                     }
                 }
             }
+        }
 
             // Legend
             Row(

@@ -60,6 +60,7 @@ import com.kairo.app.feature.habits.model.Habit
 import com.kairo.app.feature.habits.model.HabitDayRecord
 import com.kairo.app.feature.habits.model.HabitDayState
 import com.kairo.app.feature.habits.model.HabitNoteHelper
+import com.kairo.app.feature.habits.model.HabitRepeatType
 import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.feature.habits.model.HabitWithStats
 import com.kairo.app.ui.components.AppHeader
@@ -122,15 +123,22 @@ fun HabitsScreen(
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
     var localReorderList by remember { mutableStateOf<List<HabitWithStats>?>(null) }
 
-    // Filter habits according to search query (completed habits sink to bottom when not dragging)
+    // Filter habits according to search query (pending at top, completed middle, rest days sink to bottom when not dragging)
     val activeList = if (draggingHabitId != null && localReorderList != null) {
         localReorderList!!
     } else {
-        habitsWithStats.sortedBy { item ->
-            val isDoneToday = item.todayProgressFraction >= 1f ||
-                item.days.find { it.isToday }?.state == HabitDayState.DONE
-            if (isDoneToday) 1 else 0
-        }
+        habitsWithStats.sortedWith(
+            compareBy<HabitWithStats> { item ->
+                val isRestDayToday = !item.isTodayScheduled
+                val isDoneToday = item.todayProgressFraction >= 1f ||
+                    item.days.find { it.isToday }?.state == HabitDayState.DONE
+                when {
+                    isRestDayToday -> 2
+                    isDoneToday -> 1
+                    else -> 0
+                }
+            }.thenBy { it.habit.position }
+        )
     }
 
     val filteredHabits = remember(activeList, searchQuery) {
@@ -414,6 +422,10 @@ fun HabitsScreen(
                                 if (date.isAfter(LocalDate.now())) {
                                     return@HabitCard
                                 }
+                                val isRest = (item.habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !item.habit.repeatDays.contains(date.dayOfWeek.value))
+                                if (isRest) {
+                                    return@HabitCard
+                                }
                                 val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
                                 val logs = HabitRepository.getHabitLogs(item.habit.id)
                                 val currentRecord = logs[dateStr] ?: HabitDayRecord()
@@ -479,6 +491,7 @@ fun HabitsScreen(
                                 }
                             },
                             onIncrement = {
+                                if (!item.isTodayScheduled) return@HabitCard
                                 val today = LocalDate.now()
                                 val isTarget = item.habit.type == HabitType.TARGET
 
@@ -504,9 +517,11 @@ fun HabitsScreen(
                                 }
                             },
                             onDecrement = {
+                                if (!item.isTodayScheduled) return@HabitCard
                                 HabitRepository.incrementHabitDay(item.habit.id, LocalDate.now(), -1)
                             },
                             onDoneBoxClick = {
+                                if (!item.isTodayScheduled) return@HabitCard
                                 val today = LocalDate.now()
                                 val todayStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
                                 val logs = HabitRepository.getHabitLogs(item.habit.id)
