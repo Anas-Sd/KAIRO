@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.EventBusy
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
@@ -50,6 +51,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -107,6 +109,7 @@ private data class DetailNoteDialogState(
     val countIndex: Int? = null
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HabitDetailScreen(
     habitWithStats: HabitWithStats,
@@ -120,10 +123,14 @@ fun HabitDetailScreen(
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showDetailsBottomSheet by remember { mutableStateOf(false) }
     var activeNoteDialog by remember { mutableStateOf<DetailNoteDialogState?>(null) }
 
     val context = LocalContext.current
     val today = remember { LocalDate.now() }
+    val habitEffectiveStartDate = remember(currentHabit.startDate, currentHabit.createdAt) {
+        HabitRepository.getEffectiveStartDate(currentHabit)
+    }
     val allLogsMap by HabitRepository.logsMap.collectAsState()
     val habitLogs = allLogsMap[currentHabit.id] ?: emptyMap()
 
@@ -203,6 +210,14 @@ fun HabitDetailScreen(
                         onClick = {
                             showOverflowMenu = false
                             showEditDialog = true
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Details", color = Color.White) },
+                        leadingIcon = { Icon(Icons.Default.Info, null, tint = Color(0xFFC8C4D9)) },
+                        onClick = {
+                            showOverflowMenu = false
+                            showDetailsBottomSheet = true
                         }
                     )
                     HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
@@ -548,8 +563,8 @@ fun HabitDetailScreen(
                             }
 
                             // Stepper Controls
-                            val canDecrementToday = habitWithStats.todayValue > 0
-                            val canIncrementToday = habitWithStats.todayValue < currentHabit.targetValue
+                            val canDecrementToday = habitWithStats.todayValue > 0 && !today.isBefore(habitEffectiveStartDate)
+                            val canIncrementToday = habitWithStats.todayValue < currentHabit.targetValue && !today.isBefore(habitEffectiveStartDate)
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -612,6 +627,7 @@ fun HabitDetailScreen(
 
                                 // Complete Goal Button
                                 Surface(
+                                    enabled = !today.isBefore(habitEffectiveStartDate),
                                     onClick = {
                                         val isAlreadyDone = habitWithStats.todayProgressFraction >= 1f
                                         if (!isAlreadyDone) {
@@ -780,6 +796,7 @@ fun HabitDetailScreen(
 
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Surface(
+                                enabled = !today.isBefore(habitEffectiveStartDate),
                                 onClick = {
                                     when (todayState) {
                                         HabitDayState.UNMARKED -> {
@@ -1093,6 +1110,17 @@ fun HabitDetailScreen(
             }
         )
     }
+
+    if (showDetailsBottomSheet) {
+        HabitDetailsBottomSheet(
+            habitWithStats = habitWithStats.copy(habit = currentHabit),
+            onDismiss = { showDetailsBottomSheet = false },
+            onEditClicked = {
+                showDetailsBottomSheet = false
+                showEditDialog = true
+            }
+        )
+    }
 }
 
 @Composable
@@ -1106,9 +1134,13 @@ fun MonthlyHeatmapSection(
     val today = remember { LocalDate.now() }
     val isTodayRest = habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(today.dayOfWeek.value)
 
+    val habitStartDate = remember(habit.startDate, habit.createdAt) {
+        HabitRepository.getEffectiveStartDate(habit)
+    }
+
     var selectedYear by remember { mutableIntStateOf(today.year) }
     var selectedMonth by remember { mutableIntStateOf(today.monthValue) } // 1..12
-    var selectedDayDate by remember { mutableStateOf<LocalDate?>(if (isTodayRest) null else today) }
+    var selectedDayDate by remember { mutableStateOf<LocalDate?>(if (isTodayRest || today.isBefore(habitStartDate)) null else today) }
     var showPickerMenu by remember { mutableStateOf(false) }
 
     val yearMonth = remember(selectedYear, selectedMonth) { YearMonth.of(selectedYear, selectedMonth) }
@@ -1119,10 +1151,6 @@ fun MonthlyHeatmapSection(
     val numRows = (totalCells + 6) / 7
 
     val monthName = yearMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault())
-
-    val habitStartDate = remember(habit.startDate, habit.createdAt) {
-        HabitRepository.getEffectiveStartDate(habit)
-    }
 
     // Month stats
     val (monthDoneCount, monthMissedCount) = remember(habitLogs, selectedYear, selectedMonth, habitStartDate) {
@@ -1369,27 +1397,29 @@ fun MonthlyHeatmapSection(
                                 val isBeforeStart = cellDate.isBefore(habitStartDate)
                                 val isPartial = habit.type == HabitType.TARGET && recordVal in 1 until target
                                 val isMissed = !isBeforeStart && (state == HabitDayState.MISSED || (isPast && !isDone && !isRestDay)) && !isPartial
-                                val isSelected = selectedDayDate == cellDate
+                                val isSelected = selectedDayDate == cellDate && !isBeforeStart
                                 val isToday = cellDate == today
 
                                 val bgColor = when {
+                                    isBeforeStart -> Color.White.copy(alpha = 0.02f)
                                     isDone -> KairoSecondary
                                     isPartial -> Color(0xFFFACC15).copy(alpha = 0.22f)
                                     isMissed -> Color(0xFFF43F5E).copy(alpha = 0.15f)
                                     isRestDay -> Color.White.copy(alpha = 0.03f)
-                                    isBeforeStart -> Color.White.copy(alpha = 0.03f)
                                     else -> KairoSurfaceContainerHighest
                                 }
                                 val textColor = when {
+                                    isBeforeStart -> Color(0xFF64748B)
                                     isDone -> Color(0xFF003822)
                                     isPartial -> Color(0xFFFACC15)
                                     isMissed -> Color(0xFFFB7185)
                                     isRestDay -> Color(0xFF64748B)
-                                    isBeforeStart -> Color(0xFF64748B)
                                     else -> Color(0xFFCBD5E1)
                                 }
 
-                                val borderModifier = if (isSelected) {
+                                val borderModifier = if (isBeforeStart) {
+                                    Modifier.border(0.8.dp, Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
+                                } else if (isSelected) {
                                     Modifier.border(2.dp, KairoPrimary, RoundedCornerShape(8.dp))
                                 } else if (isToday) {
                                     Modifier.border(1.5.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
@@ -1408,7 +1438,7 @@ fun MonthlyHeatmapSection(
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(bgColor)
                                         .then(borderModifier)
-                                        .clickable(enabled = !isRestDay) {
+                                        .clickable(enabled = !isRestDay && !isBeforeStart) {
                                             selectedDayDate = cellDate
                                         },
                                     contentAlignment = Alignment.Center
@@ -1417,12 +1447,20 @@ fun MonthlyHeatmapSection(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.Center
                                     ) {
-                                        Text(
-                                            text = "$dayNum",
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Medium,
-                                            color = textColor
-                                        )
+                                        if (isBeforeStart) {
+                                            Text(
+                                                text = "—",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF64748B)
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "$dayNum",
+                                                fontSize = 12.sp,
+                                                fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Medium,
+                                                color = textColor
+                                            )
                                         if (isRestDay) {
                                             Text(
                                                 text = "—",
@@ -1450,6 +1488,7 @@ fun MonthlyHeatmapSection(
                                                 lineHeight = 9.sp
                                             )
                                         }
+                                        }
                                     }
                                 }
                             }
@@ -1458,8 +1497,8 @@ fun MonthlyHeatmapSection(
                 }
             }
 
-            // Day Status & Direct Edit Panel (Only shown for active scheduled days, never rest days)
-            if (selectedDayDate != null) {
+            // Day Status & Direct Edit Panel (Only shown for active scheduled days, never rest days or days before creation)
+            if (selectedDayDate != null && !selectedDayDate!!.isBefore(habitStartDate)) {
                 val sDate = selectedDayDate!!
                 val isDateRest = (habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !habit.repeatDays.contains(sDate.dayOfWeek.value))
                 if (!isDateRest) {

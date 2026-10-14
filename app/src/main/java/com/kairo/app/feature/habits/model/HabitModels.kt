@@ -61,7 +61,8 @@ data class HabitDayInfo(
     val state: HabitDayState,
     val value: Int = 0,
     val isRestDay: Boolean = false,
-    val note: String? = null
+    val note: String? = null,
+    val isBeforeStart: Boolean = false
 )
 
 data class HabitWithStats(

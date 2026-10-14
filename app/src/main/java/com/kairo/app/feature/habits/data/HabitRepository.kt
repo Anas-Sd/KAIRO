@@ -514,6 +514,8 @@ object HabitRepository {
     fun incrementHabitDay(habitId: String, date: LocalDate, delta: Int = 1, note: String? = null) {
         if (date.isAfter(LocalDate.now())) return
         val habit = _habitsList.value.find { it.id == habitId } ?: return
+        val habitStartDate = getEffectiveStartDate(habit)
+        if (date.isBefore(habitStartDate)) return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
         val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
@@ -598,6 +600,8 @@ object HabitRepository {
     ) {
         if (date.isAfter(LocalDate.now())) return
         val habit = _habitsList.value.find { it.id == habitId } ?: return
+        val habitStartDate = getEffectiveStartDate(habit)
+        if (date.isBefore(habitStartDate)) return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
         val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
@@ -663,6 +667,8 @@ object HabitRepository {
     fun setIncrementNote(habitId: String, date: LocalDate, countIndex: Int, note: String?) {
         if (date.isAfter(LocalDate.now())) return
         val habit = _habitsList.value.find { it.id == habitId } ?: return
+        val habitStartDate = getEffectiveStartDate(habit)
+        if (date.isBefore(habitStartDate)) return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
         val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
@@ -710,7 +716,9 @@ object HabitRepository {
         clearNote: Boolean = false
     ) {
         if (date.isAfter(LocalDate.now())) return
-        val habit = _habitsList.value.find { it.id == habitId }
+        val habit = _habitsList.value.find { it.id == habitId } ?: return
+        val habitStartDate = getEffectiveStartDate(habit)
+        if (date.isBefore(habitStartDate)) return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
         val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
@@ -766,6 +774,8 @@ object HabitRepository {
     fun setHabitDayNote(habitId: String, date: LocalDate, note: String?) {
         if (date.isAfter(LocalDate.now())) return
         val habit = _habitsList.value.find { it.id == habitId } ?: return
+        val habitStartDate = getEffectiveStartDate(habit)
+        if (date.isBefore(habitStartDate)) return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val currentLogs = _logsMap.value.toMutableMap()
         val habitDates = currentLogs[habitId]?.toMutableMap() ?: mutableMapOf()
@@ -1253,7 +1263,7 @@ object HabitRepository {
                 }
             }
 
-            val isTodayScheduled = when (habit.repeatType) {
+            val isTodayScheduled = !today.isBefore(habitStartDate) && when (habit.repeatType) {
                 HabitRepeatType.EVERYDAY -> true
                 HabitRepeatType.SPECIFIC_DAYS -> habit.repeatDays.contains(today.dayOfWeek.value)
                 HabitRepeatType.WEEKLY_X -> true
@@ -1294,7 +1304,8 @@ object HabitRepository {
                     state = effectiveState,
                     value = record.value,
                     isRestDay = isRest,
-                    note = record.note
+                    note = record.note,
+                    isBeforeStart = isBeforeStart
                 )
             }
 

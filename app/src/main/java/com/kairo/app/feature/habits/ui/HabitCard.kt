@@ -372,7 +372,11 @@ fun HabitCard(
                                         dayInfo = dayInfo,
                                         isTargetType = habit.type == HabitType.TARGET,
                                         targetValue = habit.targetValue,
-                                        onToggle = { onDayClick(dayInfo.date) }
+                                        onToggle = {
+                                            if (!dayInfo.isBeforeStart && !dayInfo.isRestDay) {
+                                                onDayClick(dayInfo.date)
+                                            }
+                                        }
                                     )
                                 }
                             }
@@ -516,6 +520,7 @@ private fun DayCheckboxNode(
                 fontWeight = if (dayInfo.isToday) FontWeight.ExtraBold else FontWeight.Medium,
                 color = when {
                     dayInfo.isToday -> KairoPrimary
+                    dayInfo.isBeforeStart -> Color(0xFF475569)
                     isFuture -> Color(0xFF64748B)
                     else -> Color(0xFF94A3B8)
                 }
@@ -527,6 +532,7 @@ private fun DayCheckboxNode(
                 fontWeight = if (dayInfo.isToday) FontWeight.Bold else FontWeight.Normal,
                 color = when {
                     dayInfo.isToday -> KairoPrimary.copy(alpha = 0.85f)
+                    dayInfo.isBeforeStart -> Color(0xFF334155)
                     isFuture -> Color(0xFF475569)
                     else -> Color(0xFF64748B)
                 }
@@ -536,8 +542,8 @@ private fun DayCheckboxNode(
         Spacer(modifier = Modifier.height(3.dp))
 
         // Checkbox Box
-        if (dayInfo.isRestDay) {
-            // Rest Day indicator
+        if (dayInfo.isRestDay || dayInfo.isBeforeStart) {
+            // Rest Day or Pre-creation Date indicator: marked as '-' and completely non-functional
             Box(
                 modifier = Modifier
                     .size(21.dp)
@@ -592,7 +598,7 @@ private fun DayCheckboxNode(
                             }
                         }
                     )
-                    .clickable(enabled = !isFuture && !dayInfo.isRestDay) {
+                    .clickable(enabled = !isFuture && !dayInfo.isRestDay && !dayInfo.isBeforeStart) {
                         isPressed = true
                         onToggle()
                     },

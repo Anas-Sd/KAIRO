@@ -31,7 +31,7 @@ open class AlarmRingingService : Service() {
     private var currentTaskId: String? = null
 
     companion object {
-        const val CHANNEL_ID = "kairo_silent_ringing_service_channel_v2"
+        const val CHANNEL_ID = "kairo_alarm_fullscreen_channel_v3"
         const val NOTIFICATION_ID = 20261001
 
         const val ACTION_START_RINGING = "com.kairo.app.ACTION_START_RINGING"
@@ -99,15 +99,16 @@ open class AlarmRingingService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = "KAIRO Task Alarms"
-            val descriptionText = "Silent background channel for full-screen alarm overlay"
-            val importance = NotificationManager.IMPORTANCE_LOW
+            val descriptionText = "Full-screen alarm alerts and lock screen overlays"
+            val importance = NotificationManager.IMPORTANCE_HIGH
             val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
                 description = descriptionText
-                enableLights(false)
-                enableVibration(false)
-                setSound(null, null)
-                setShowBadge(false)
-                lockscreenVisibility = Notification.VISIBILITY_SECRET
+                enableLights(true)
+                enableVibration(false) // Vibrator handled directly by service
+                setSound(null, null)   // MediaPlayer handled directly by service
+                setShowBadge(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                setBypassDnd(true)
             }
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
@@ -470,16 +471,20 @@ open class AlarmRingingService : Service() {
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("KAIRO Alarm Active")
-            .setContentText(title)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setContentTitle(title)
+            .setContentText(displayText.ifBlank { "Task alarm ringing" })
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(false)
             .setOngoing(true)
             .setSilent(true)
             .setDeleteIntent(deletePendingIntent)
+            .setFullScreenIntent(fullScreenPendingIntent, true)
             .setContentIntent(fullScreenPendingIntent)
+            .addAction(0, "Mark as Done", donePendingIntent)
+            .addAction(0, "Snooze 10m", snoozePendingIntent)
+            .addAction(0, "Dismiss", dismissPendingIntent)
             .build()
 
         notification.flags = notification.flags or

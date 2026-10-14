@@ -423,6 +423,10 @@ fun HabitsScreen(
                                 if (date.isAfter(LocalDate.now())) {
                                     return@HabitCard
                                 }
+                                val habitStartDate = HabitRepository.getEffectiveStartDate(item.habit)
+                                if (date.isBefore(habitStartDate)) {
+                                    return@HabitCard
+                                }
                                 val isRest = (item.habit.repeatType == HabitRepeatType.SPECIFIC_DAYS && !item.habit.repeatDays.contains(date.dayOfWeek.value))
                                 if (isRest) {
                                     return@HabitCard
