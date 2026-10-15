@@ -33,7 +33,7 @@ open class AlarmRingingService : Service() {
     private var currentTaskId: String? = null
 
     companion object {
-        const val CHANNEL_ID = "kairo_alarm_fullscreen_channel_v4"
+        const val CHANNEL_ID = "kairo_alarm_fullscreen_channel_v5"
         const val NOTIFICATION_ID = 20261001
 
         const val ACTION_START_RINGING = "com.kairo.app.ACTION_START_RINGING"
@@ -118,6 +118,12 @@ open class AlarmRingingService : Service() {
                 setBypassDnd(true)
             }
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            runCatching {
+                notificationManager.deleteNotificationChannel("kairo_alarm_fullscreen_channel")
+                notificationManager.deleteNotificationChannel("kairo_alarm_fullscreen_channel_v2")
+                notificationManager.deleteNotificationChannel("kairo_alarm_fullscreen_channel_v3")
+                notificationManager.deleteNotificationChannel("kairo_alarm_fullscreen_channel_v4")
+            }
             notificationManager.createNotificationChannel(channel)
         }
     }

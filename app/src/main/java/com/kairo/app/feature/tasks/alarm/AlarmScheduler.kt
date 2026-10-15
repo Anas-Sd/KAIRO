@@ -21,55 +21,26 @@ internal object AlarmScheduler {
     fun calculateTriggerMillis(dueDate: String, dueTime: String?, dueDateMillis: Long?): Long? {
         val calendar = Calendar.getInstance()
 
-        // 1. Determine base date
-        var targetYear = calendar.get(Calendar.YEAR)
-        var targetMonth = calendar.get(Calendar.MONTH)
-        var targetDay = calendar.get(Calendar.DAY_OF_MONTH)
+        // 1. Determine base date using DateUtils
+        val baseMillis = dueDateMillis ?: com.kairo.app.ui.utils.DateUtils.parseDueDateMillis(dueDate)
+        val dueCal = Calendar.getInstance().apply { timeInMillis = baseMillis }
+        val targetYear = dueCal.get(Calendar.YEAR)
+        val targetMonth = dueCal.get(Calendar.MONTH)
+        val targetDay = dueCal.get(Calendar.DAY_OF_MONTH)
 
-        if (dueDateMillis != null) {
-            val dueCal = Calendar.getInstance().apply { timeInMillis = dueDateMillis }
-            targetYear = dueCal.get(Calendar.YEAR)
-            targetMonth = dueCal.get(Calendar.MONTH)
-            targetDay = dueCal.get(Calendar.DAY_OF_MONTH)
-        } else {
-            when {
-                dueDate.contains("Today", ignoreCase = true) -> {
-                    // today is default
-                }
-                dueDate.contains("Tomorrow", ignoreCase = true) -> {
-                    val tomCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
-                    targetYear = tomCal.get(Calendar.YEAR)
-                    targetMonth = tomCal.get(Calendar.MONTH)
-                    targetDay = tomCal.get(Calendar.DAY_OF_MONTH)
-                }
-                dueDate.contains("Yesterday", ignoreCase = true) -> {
-                    val yestCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-                    targetYear = yestCal.get(Calendar.YEAR)
-                    targetMonth = yestCal.get(Calendar.MONTH)
-                    targetDay = yestCal.get(Calendar.DAY_OF_MONTH)
-                }
-                else -> {
-                    try {
-                        val parsed = SimpleDateFormat("MMM d", Locale.getDefault()).parse(dueDate)
-                        if (parsed != null) {
-                            val parsedCal = Calendar.getInstance().apply { time = parsed }
-                            targetMonth = parsedCal.get(Calendar.MONTH)
-                            targetDay = parsedCal.get(Calendar.DAY_OF_MONTH)
-                        }
-                    } catch (_: Exception) {}
-                }
-            }
-        }
-
-        // 2. Parse time (e.g. "09:41", "10:45 AM", "21:30")
+        // 2. Parse time (e.g. "09:41", "10:45 AM", "7:30 PM", "21:30")
         var targetHour = 9
         var targetMinute = 0
 
         if (!dueTime.isNullOrBlank()) {
             val cleanTime = dueTime.trim()
             val formats = listOf(
+                SimpleDateFormat("hh:mm a", Locale.US),
+                SimpleDateFormat("h:mm a", Locale.US),
                 SimpleDateFormat("hh:mm a", Locale.getDefault()),
                 SimpleDateFormat("h:mm a", Locale.getDefault()),
+                SimpleDateFormat("HH:mm", Locale.US),
+                SimpleDateFormat("H:mm", Locale.US),
                 SimpleDateFormat("HH:mm", Locale.getDefault()),
                 SimpleDateFormat("H:mm", Locale.getDefault())
             )
@@ -87,11 +58,16 @@ internal object AlarmScheduler {
                 } catch (_: Exception) {}
             }
             if (!parsed) {
-                // Try simple colon split
-                val parts = cleanTime.split(":")
+                val upper = cleanTime.uppercase(Locale.US)
+                val isPM = upper.contains("PM")
+                val isAM = upper.contains("AM")
+                val digitsOnly = cleanTime.replace("[^0-9:]".toRegex(), "")
+                val parts = digitsOnly.split(":")
                 if (parts.size >= 2) {
-                    val h = parts[0].filter { it.isDigit() }.toIntOrNull() ?: 9
-                    val m = parts[1].filter { it.isDigit() }.toIntOrNull() ?: 0
+                    var h = parts[0].toIntOrNull() ?: 9
+                    val m = parts[1].toIntOrNull() ?: 0
+                    if (isPM && h < 12) h += 12
+                    else if (isAM && h == 12) h = 0
                     targetHour = h
                     targetMinute = m
                 }

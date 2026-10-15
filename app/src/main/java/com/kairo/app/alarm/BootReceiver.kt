@@ -20,7 +20,10 @@ class BootReceiver : BroadcastReceiver() {
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val tasks = TaskRepository.getAllTasks()
+                    val userCode = com.kairo.app.data.auth.AuthManager.getUserCode()
+                    val tasks = TaskRepository.getAllTasks().ifEmpty {
+                        com.kairo.app.data.local.LocalTaskDatabase.getInstance(context).getTasksForUser(userCode)
+                    }
                     val now = System.currentTimeMillis()
 
                     tasks.filter { !it.isCompleted }.forEach { task ->

@@ -39,8 +39,10 @@ object HabitRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val prefs: SharedPreferences by lazy {
-        KairoApplication.instance.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences? by lazy {
+        if (KairoApplication.isInitialized) {
+            KairoApplication.instance.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        } else null
     }
 
     private val _habitsList = MutableStateFlow<List<Habit>>(emptyList())
@@ -64,14 +66,16 @@ object HabitRepository {
     val disciplineOverview: StateFlow<DisciplineOverviewStats> = _disciplineOverview.asStateFlow()
 
     init {
-        loadDataFromLocal()
-        // Pull latest from Supabase on init
-        fetchFromSupabase()
+        if (KairoApplication.isInitialized) {
+            loadDataFromLocal()
+            // Pull latest from Supabase on init
+            fetchFromSupabase()
+        }
     }
 
     private fun loadDataFromLocal() {
-        val habitsJson = prefs.getString(KEY_HABITS, null)
-        val logsJson = prefs.getString(KEY_LOGS, null)
+        val habitsJson = prefs?.getString(KEY_HABITS, null)
+        val logsJson = prefs?.getString(KEY_LOGS, null)
 
         val loadedHabits = mutableListOf<Habit>()
         if (!habitsJson.isNullOrBlank()) {
@@ -200,10 +204,10 @@ object HabitRepository {
                 logsObj.put(hId, dObj)
             }
 
-            prefs.edit()
-                .putString(KEY_HABITS, habitsArr.toString())
-                .putString(KEY_LOGS, logsObj.toString())
-                .apply()
+            prefs?.edit()
+                ?.putString(KEY_HABITS, habitsArr.toString())
+                ?.putString(KEY_LOGS, logsObj.toString())
+                ?.apply()
         } catch (e: Exception) {
             e.printStackTrace()
         }

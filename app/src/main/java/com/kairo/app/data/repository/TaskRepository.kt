@@ -54,14 +54,17 @@ object TaskRepository {
     fun getInstance(): TaskRepository = this
 
     init {
-        SyncManager.onSyncComplete = {
+        if (KairoApplication.isInitialized) {
+            SyncManager.onSyncComplete = {
+                loadFromLocalDb()
+            }
             loadFromLocalDb()
+            refreshFromSupabase()
         }
-        loadFromLocalDb()
-        refreshFromSupabase()
     }
 
     fun loadFromLocalDb() {
+        if (!KairoApplication.isInitialized) return
         val userCode = AuthManager.getUserCode()
         val localList = localDb.getTasksForUser(userCode)
         val sanitizedList = localList.map { task ->
@@ -78,6 +81,7 @@ object TaskRepository {
     }
 
     fun clearTasksLocally() {
+        if (!KairoApplication.isInitialized) return
         val userCode = AuthManager.getUserCode()
         localDb.clearTasksForUser(userCode)
         _tasks.value = emptyList()
@@ -85,6 +89,7 @@ object TaskRepository {
     }
 
     fun refreshFromSupabase() {
+        if (!KairoApplication.isInitialized) return
         val userCode = AuthManager.getUserCode()
         if (userCode.isNullOrBlank()) {
             _tasks.value = emptyList()
@@ -110,7 +115,7 @@ object TaskRepository {
             val curr = queue.removeFirst()
             val children = allTasks.filter { it.parentId == curr }
             for (c in children) {
-                if (result.add(c.id)) {
+                if (c.id != taskId && result.add(c.id)) {
                     queue.add(c.id)
                 }
             }
@@ -122,7 +127,7 @@ object TaskRepository {
         val byId = allTasks.associateBy { it.id }
         val ancestors = mutableListOf<String>()
         var curr = byId[taskId]?.parentId
-        val visited = mutableSetOf<String>()
+        val visited = mutableSetOf(taskId)
         while (curr != null && visited.add(curr)) {
             ancestors.add(curr)
             curr = byId[curr]?.parentId
@@ -206,36 +211,115 @@ object TaskRepository {
             }
         }
 
-        // Apply state update
-        val updatedList = allTasks.map { task ->
-            if (toComplete.contains(task.id)) {
-                val safeDueDate = if (task.dueDate.equals("SNOOZED", ignoreCase = true)) {
-                    com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, task.dueDateMillis ?: task.createdAt)
-                } else {
-                    task.dueDate
-                }
-                task.copy(
-                    isCompleted = true,
-                    dueDate = safeDueDate,
-                    section = TaskSection.COMPLETED,
-                    snoozeUntilMillis = null,
-                    completedAt = now,
-                    updatedAt = now
-                )
-            } else task
-        }
-        _tasks.value = updatedList
+        val nextOccurrence = if (!target.repeatType.isNullOrBlank() && !target.repeatType.equals("NONE", ignoreCase = true)) {
+            com.kairo.app.ui.utils.DateUtils.calculateNextRepeatDueDate(
+                currentDueDateMillis = target.dueDateMillis,
+                currentDueDateStr = target.dueDate,
+                repeatType = target.repeatType,
+                repeatDays = target.repeatDays,
+                repeatDates = target.repeatDates
+            )
+        } else null
 
-        // Cancel alarms for auto-completed tasks
-        for (id in toComplete) {
-            runCatching {
-                AlarmScheduler.cancelAlarm(KairoApplication.instance, id)
-                com.kairo.app.feature.tasks.alarm.TaskAlarmFacade.stopAlarmRinging(KairoApplication.instance)
+        // Apply state update
+        val updatedList = mutableListOf<Task>()
+        val affected = mutableListOf<Task>()
+
+        if (nextOccurrence != null) {
+            // REPEATING TASK ROLLING RECURRENCE
+            val (nextDueDateStr, nextDueDateMillis) = nextOccurrence
+            val nextSection = determineOpenSection(nextDueDateStr, nextDueDateMillis, target.dueTime)
+
+            // 1. Snapshot completed instance in history
+            val completedSnapshot = target.copy(
+                id = java.util.UUID.randomUUID().toString(),
+                isCompleted = true,
+                dueDate = if (target.dueDate.equals("SNOOZED", ignoreCase = true)) {
+                    com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, target.dueDateMillis ?: target.createdAt)
+                } else target.dueDate,
+                section = TaskSection.COMPLETED,
+                snoozeUntilMillis = null,
+                completedAt = now,
+                repeatType = null,
+                updatedAt = now
+            )
+            updatedList.add(completedSnapshot)
+            affected.add(completedSnapshot)
+
+            // 2. Roll over active target task to next occurrence
+            val rolledOverTarget = target.copy(
+                dueDate = nextDueDateStr,
+                dueDateMillis = nextDueDateMillis,
+                isCompleted = false,
+                completedAt = null,
+                snoozeUntilMillis = null,
+                section = nextSection,
+                updatedAt = now
+            )
+
+            // 3. Update existing tasks
+            for (t in allTasks) {
+                if (t.id == target.id) {
+                    updatedList.add(rolledOverTarget)
+                    affected.add(rolledOverTarget)
+                } else if (toComplete.contains(t.id)) {
+                    val safeDueDate = if (t.dueDate.equals("SNOOZED", ignoreCase = true)) {
+                        com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, t.dueDateMillis ?: t.createdAt)
+                    } else t.dueDate
+                    val modified = t.copy(
+                        isCompleted = false,
+                        dueDate = safeDueDate,
+                        section = determineOpenSection(safeDueDate, t.dueDateMillis, t.dueTime),
+                        snoozeUntilMillis = null,
+                        completedAt = null,
+                        updatedAt = now
+                    )
+                    updatedList.add(modified)
+                    affected.add(modified)
+                } else {
+                    updatedList.add(t)
+                }
+            }
+
+            _tasks.value = updatedList
+
+            // Cancel old alarm and schedule next alarm for tomorrow/next recurrence
+            AlarmScheduler.cancelAlarm(KairoApplication.instance, target.id)
+            com.kairo.app.feature.tasks.alarm.TaskAlarmFacade.stopAlarmRinging(KairoApplication.instance)
+            AlarmScheduler.scheduleAlarm(KairoApplication.instance, rolledOverTarget)
+        } else {
+            // STANDARD ONE-OFF TASK COMPLETION
+            for (task in allTasks) {
+                if (toComplete.contains(task.id)) {
+                    val safeDueDate = if (task.dueDate.equals("SNOOZED", ignoreCase = true)) {
+                        com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, task.dueDateMillis ?: task.createdAt)
+                    } else task.dueDate
+                    val modified = task.copy(
+                        isCompleted = true,
+                        dueDate = safeDueDate,
+                        section = TaskSection.COMPLETED,
+                        snoozeUntilMillis = null,
+                        completedAt = now,
+                        updatedAt = now
+                    )
+                    updatedList.add(modified)
+                    affected.add(modified)
+                } else {
+                    updatedList.add(task)
+                }
+            }
+            _tasks.value = updatedList
+
+            // Cancel alarms for auto-completed tasks
+            for (id in toComplete) {
+                runCatching {
+                    AlarmScheduler.cancelAlarm(KairoApplication.instance, id)
+                    com.kairo.app.feature.tasks.alarm.TaskAlarmFacade.stopAlarmRinging(KairoApplication.instance)
+                }
             }
         }
 
         // Save to local SQLite and queue sync
-        val affected = updatedList.filter { toComplete.contains(it.id) }
         val userCode = AuthManager.getUserCode() ?: ""
         localDb.saveTasksBatch(affected, userCode, syncStatus = "PENDING")
         for (item in affected) {
@@ -464,6 +548,18 @@ object TaskRepository {
         localDb.saveTask(task, userCode, syncStatus = "PENDING")
         localDb.enqueueSyncAction(task.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(task, userCode)), userCode)
         SyncManager.triggerSync()
+
+        // Synchronize alarm with task state
+        runCatching {
+            if (KairoApplication.isInitialized) {
+                if (task.isCompleted) {
+                    AlarmScheduler.cancelAlarm(KairoApplication.instance, task.id)
+                } else {
+                    AlarmScheduler.scheduleAlarm(KairoApplication.instance, task)
+                }
+            }
+        }
+
         val hasLocation = task.latitude != null && task.longitude != null
         TaskLocationFacade.syncGeofencesWithActiveTasks(
             KairoApplication.instance,
@@ -709,7 +805,7 @@ object TaskRepository {
     }
 
     fun getTaskById(taskId: String): Task? {
-        return _tasks.value.firstOrNull { it.id == taskId } ?: runCatching { localDb.getTaskById(taskId) }.getOrNull()
+        return _tasks.value.firstOrNull { it.id == taskId } ?: runCatching { if (KairoApplication.isInitialized) localDb.getTaskById(taskId) else null }.getOrNull()
     }
 
     fun getAllTasks(): List<Task> {
@@ -721,23 +817,30 @@ object TaskRepository {
             return TaskSection.TODAY
         }
         val now = System.currentTimeMillis()
-        val todayEnd = Calendar.getInstance().apply {
+        val todayStart = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
-            add(Calendar.DAY_OF_YEAR, 1)
         }.timeInMillis
+        val todayEnd = todayStart + (24 * 60 * 60 * 1000L)
 
-        val trigger = com.kairo.app.alarm.AlarmScheduler.calculateTriggerMillis(dueDate, dueTime, dueDateMillis)
-        if (trigger != null && trigger > 0) {
-            return when {
-                trigger < now -> TaskSection.OVERDUE
-                trigger < todayEnd -> TaskSection.TODAY
-                else -> TaskSection.UPCOMING
+        val targetMillis = dueDateMillis ?: com.kairo.app.ui.utils.DateUtils.parseDueDateMillis(dueDate)
+
+        if (dueDate.contains("Yesterday", ignoreCase = true) || targetMillis < todayStart) {
+            return TaskSection.OVERDUE
+        }
+
+        if (!dueTime.isNullOrBlank()) {
+            val trigger = com.kairo.app.alarm.AlarmScheduler.calculateTriggerMillis(dueDate, dueTime, targetMillis)
+            if (trigger != null && trigger < now) {
+                return TaskSection.OVERDUE
             }
         }
 
-        return TaskSection.OVERDUE
+        return when {
+            targetMillis < todayEnd -> TaskSection.TODAY
+            else -> TaskSection.UPCOMING
+        }
     }
 }

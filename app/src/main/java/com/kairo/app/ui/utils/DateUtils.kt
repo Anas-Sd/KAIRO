@@ -101,4 +101,82 @@ object DateUtils {
         val millis = parseDueDateMillis(raw)
         return SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(millis))
     }
+
+    /**
+     * Calculates the next recurring due date and epoch millis for a task.
+     * Supports "DAYS" (with repeatDays e.g. "MON,TUE,WED,THU,FRI,SAT,SUN" or "MON,WED"),
+     * "EVERYDAY", "DAILY", "MONTHLY_DATES", and "BOTH_MONTHLY".
+     */
+    fun calculateNextRepeatDueDate(
+        currentDueDateMillis: Long?,
+        currentDueDateStr: String?,
+        repeatType: String?,
+        repeatDays: String?,
+        repeatDates: String?
+    ): Pair<String, Long>? {
+        if (repeatType.isNullOrBlank() || repeatType.equals("NONE", ignoreCase = true)) {
+            return null
+        }
+
+        val baseMillis = currentDueDateMillis ?: parseDueDateMillis(currentDueDateStr)
+        val cal = Calendar.getInstance().apply { timeInMillis = baseMillis }
+
+        // Search relative to today if the base due date is in the past
+        val todayStart = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        if (cal.before(todayStart)) {
+            cal.timeInMillis = todayStart.timeInMillis
+        }
+
+        when (repeatType.uppercase(Locale.US)) {
+            "EVERYDAY", "DAILY" -> {
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+                val nextMillis = cal.timeInMillis
+                return Pair(formatDisplayDate(null, nextMillis), nextMillis)
+            }
+            "DAYS" -> {
+                val dayMap = mapOf(
+                    "SUN" to Calendar.SUNDAY,
+                    "MON" to Calendar.MONDAY,
+                    "TUE" to Calendar.TUESDAY,
+                    "WED" to Calendar.WEDNESDAY,
+                    "THU" to Calendar.THURSDAY,
+                    "FRI" to Calendar.FRIDAY,
+                    "SAT" to Calendar.SATURDAY
+                )
+                val targetDays = repeatDays?.split(",")?.map { it.trim().uppercase(Locale.US) }?.mapNotNull { dayMap[it] }?.toSet()
+                if (targetDays.isNullOrEmpty() || targetDays.size == 7) {
+                    cal.add(Calendar.DAY_OF_YEAR, 1)
+                    val nextMillis = cal.timeInMillis
+                    return Pair(formatDisplayDate(null, nextMillis), nextMillis)
+                }
+
+                // Advance day-by-day up to 14 days to find next scheduled day
+                for (i in 1..14) {
+                    cal.add(Calendar.DAY_OF_YEAR, 1)
+                    if (targetDays.contains(cal.get(Calendar.DAY_OF_WEEK))) {
+                        val nextMillis = cal.timeInMillis
+                        return Pair(formatDisplayDate(null, nextMillis), nextMillis)
+                    }
+                }
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+                val nextMillis = cal.timeInMillis
+                return Pair(formatDisplayDate(null, nextMillis), nextMillis)
+            }
+            "MONTHLY_DATES", "BOTH_MONTHLY" -> {
+                cal.add(Calendar.MONTH, 1)
+                val nextMillis = cal.timeInMillis
+                return Pair(formatDisplayDate(null, nextMillis), nextMillis)
+            }
+            else -> {
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+                val nextMillis = cal.timeInMillis
+                return Pair(formatDisplayDate(null, nextMillis), nextMillis)
+            }
+        }
+    }
 }

@@ -7,6 +7,12 @@ class KairoApplication : Application() {
     companion object {
         lateinit var instance: KairoApplication
             private set
+
+        val isInitialized: Boolean
+            get() = ::instance.isInitialized
+
+        val instanceOrNull: KairoApplication?
+            get() = if (::instance.isInitialized) instance else null
     }
 
     override fun onCreate() {

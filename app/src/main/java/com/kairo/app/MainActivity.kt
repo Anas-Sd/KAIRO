@@ -70,8 +70,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             KAIROTheme {
                 val session by AuthFeatureFacade.sessionState.collectAsState()
+                val hasOverlay = FullScreenAlarmPermissionManager.hasOverlayPermission(this@MainActivity)
+                val hasFullScreenIntent = FullScreenAlarmPermissionManager.hasFullScreenIntentPermission(this@MainActivity)
                 var showOverlayPrompt by remember {
-                    mutableStateOf(!FullScreenAlarmPermissionManager.hasOverlayPermission(this@MainActivity))
+                    mutableStateOf(!hasOverlay || !hasFullScreenIntent)
                 }
 
                 if (session == null) {
@@ -92,14 +94,14 @@ class MainActivity : ComponentActivity() {
                         },
                         title = {
                             Text(
-                                text = "Direct Full-Screen Alarms",
+                                text = "Full-Screen Lock Screen Alarms",
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         },
                         text = {
                             Text(
-                                text = "To show alarms directly in full-screen over other apps and when your phone is asleep (without a notification banner), please allow 'Display over other apps'.",
+                                text = "To wake the screen and ring in full screen over the lock screen (like your phone's built-in alarm app), please allow Full-Screen Alarm Intent and Display Over Other Apps.",
                                 fontSize = 14.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -108,7 +110,11 @@ class MainActivity : ComponentActivity() {
                             Button(
                                 onClick = {
                                     showOverlayPrompt = false
-                                    FullScreenAlarmPermissionManager.openOverlaySettings(this@MainActivity)
+                                    if (!hasFullScreenIntent) {
+                                        FullScreenAlarmPermissionManager.openFullScreenIntentSettings(this@MainActivity)
+                                    } else {
+                                        FullScreenAlarmPermissionManager.openOverlaySettings(this@MainActivity)
+                                    }
                                     if (FullScreenAlarmPermissionManager.isXiaomiDevice()) {
                                         FullScreenAlarmPermissionManager.openXiaomiPermissions(this@MainActivity)
                                     }
