@@ -33,7 +33,7 @@ open class AlarmRingingService : Service() {
     private var currentTaskId: String? = null
 
     companion object {
-        const val CHANNEL_ID = "kairo_alarm_fullscreen_channel_v5"
+        const val CHANNEL_ID = "kairo_alarm_fullscreen_channel_v6"
         const val NOTIFICATION_ID = 20261001
 
         const val ACTION_START_RINGING = "com.kairo.app.ACTION_START_RINGING"
@@ -108,11 +108,9 @@ open class AlarmRingingService : Service() {
                 enableLights(true)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 600, 300, 600, 300, 1000)
-                val audioAttributes = AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .build()
-                setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM), audioAttributes)
+                // Set sound to null on the notification channel so only AlarmRingingService MediaPlayer
+                // plays the selected tone, preventing default tone and selected tone from merging
+                setSound(null, null)
                 setShowBadge(true)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 setBypassDnd(true)
@@ -123,6 +121,7 @@ open class AlarmRingingService : Service() {
                 notificationManager.deleteNotificationChannel("kairo_alarm_fullscreen_channel_v2")
                 notificationManager.deleteNotificationChannel("kairo_alarm_fullscreen_channel_v3")
                 notificationManager.deleteNotificationChannel("kairo_alarm_fullscreen_channel_v4")
+                notificationManager.deleteNotificationChannel("kairo_alarm_fullscreen_channel_v5")
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -502,6 +501,8 @@ open class AlarmRingingService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(false)
             .setOngoing(true)
+            .setSilent(true)
+            .setSound(null)
             .setDeleteIntent(deletePendingIntent)
             .setFullScreenIntent(fullScreenPendingIntent, true)
             .setContentIntent(fullScreenPendingIntent)
