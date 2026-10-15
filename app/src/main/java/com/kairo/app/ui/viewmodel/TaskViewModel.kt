@@ -355,6 +355,7 @@ class TaskViewModel(
             repository.getTaskById(taskId)?.let { updated ->
                 if (updated.isCompleted) {
                     AlarmScheduler.cancelAlarm(KairoApplication.instance, taskId)
+                    com.kairo.app.feature.tasks.alarm.TaskAlarmFacade.stopAlarmRinging(KairoApplication.instance)
                 } else {
                     AlarmScheduler.scheduleAlarm(KairoApplication.instance, updated)
                 }

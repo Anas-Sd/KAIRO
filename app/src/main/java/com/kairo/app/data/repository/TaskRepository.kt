@@ -230,6 +230,7 @@ object TaskRepository {
         for (id in toComplete) {
             runCatching {
                 AlarmScheduler.cancelAlarm(KairoApplication.instance, id)
+                com.kairo.app.feature.tasks.alarm.TaskAlarmFacade.stopAlarmRinging(KairoApplication.instance)
             }
         }
 
@@ -708,7 +709,7 @@ object TaskRepository {
     }
 
     fun getTaskById(taskId: String): Task? {
-        return _tasks.value.firstOrNull { it.id == taskId }
+        return _tasks.value.firstOrNull { it.id == taskId } ?: runCatching { localDb.getTaskById(taskId) }.getOrNull()
     }
 
     fun getAllTasks(): List<Task> {

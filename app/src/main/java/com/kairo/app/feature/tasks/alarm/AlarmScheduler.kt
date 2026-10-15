@@ -9,6 +9,7 @@ import android.os.Build
 import android.util.Log
 import com.kairo.app.MainActivity
 import com.kairo.app.data.model.Task
+import com.kairo.app.data.repository.TaskRepository
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -139,10 +140,7 @@ internal object AlarmScheduler {
 
         val intent = Intent(context, AlarmReceiver::class.java).apply {
             action = AlarmReceiver.ACTION_TRIGGER_ALARM
-            if (!task.alarmToneUri.isNullOrBlank() && task.alarmToneUri != "NONE") {
-                data = Uri.parse(task.alarmToneUri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
+            data = Uri.parse("kairo://task/${task.id}")
             putExtra(AlarmReceiver.EXTRA_TASK_ID, task.id)
             putExtra(AlarmReceiver.EXTRA_TASK_TITLE, task.title)
             putExtra(AlarmReceiver.EXTRA_TASK_NOTES, task.notes)
@@ -163,7 +161,9 @@ internal object AlarmScheduler {
         )
 
         // Intent opening MainActivity when user taps the status bar alarm icon
-        val showIntent = Intent(context, MainActivity::class.java)
+        val showIntent = Intent(context, MainActivity::class.java).apply {
+            data = Uri.parse("kairo://task_show/${task.id}")
+        }
         val showPendingIntent = PendingIntent.getActivity(
             context,
             requestCode,
@@ -194,16 +194,77 @@ internal object AlarmScheduler {
 
     fun cancelAlarm(context: Context, taskId: String) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        val intent = Intent(context, AlarmReceiver::class.java).apply {
+        val requestCode = taskId.hashCode()
+
+        // 1. Cancel exact matching PendingIntent (Standard format)
+        val standardIntent = Intent(context, AlarmReceiver::class.java).apply {
             action = AlarmReceiver.ACTION_TRIGGER_ALARM
+            data = Uri.parse("kairo://task/$taskId")
         }
-        val pendingIntent = PendingIntent.getBroadcast(
+        val standardPendingIntent = PendingIntent.getBroadcast(
             context,
-            taskId.hashCode(),
-            intent,
+            requestCode,
+            standardIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        alarmManager.cancel(pendingIntent)
-        Log.d(TAG, "Cancelled alarm for task id: $taskId")
+        alarmManager.cancel(standardPendingIntent)
+        standardPendingIntent.cancel()
+
+        // 2. Cancel legacy / fallback format (where data was null)
+        val legacyIntent = Intent(context, AlarmReceiver::class.java).apply {
+            action = AlarmReceiver.ACTION_TRIGGER_ALARM
+        }
+        val legacyPendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            legacyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmManager.cancel(legacyPendingIntent)
+        legacyPendingIntent.cancel()
+
+        // 3. Cancel if task had custom alarmToneUri as intent data (legacy format)
+        runCatching {
+            val task = TaskRepository.getTaskById(taskId)
+            if (!task?.alarmToneUri.isNullOrBlank() && task?.alarmToneUri != "NONE") {
+                val toneIntent = Intent(context, AlarmReceiver::class.java).apply {
+                    action = AlarmReceiver.ACTION_TRIGGER_ALARM
+                    data = Uri.parse(task.alarmToneUri)
+                }
+                val tonePendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    requestCode,
+                    toneIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                alarmManager.cancel(tonePendingIntent)
+                tonePendingIntent.cancel()
+            }
+        }
+
+        // 4. Cancel showPendingIntent (MainActivity status bar alarm icon)
+        val showIntent = Intent(context, MainActivity::class.java).apply {
+            data = Uri.parse("kairo://task_show/$taskId")
+        }
+        val showPendingIntent = PendingIntent.getActivity(
+            context,
+            requestCode,
+            showIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmManager.cancel(showPendingIntent)
+        showPendingIntent.cancel()
+
+        val legacyShowIntent = Intent(context, MainActivity::class.java)
+        val legacyShowPendingIntent = PendingIntent.getActivity(
+            context,
+            requestCode,
+            legacyShowIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmManager.cancel(legacyShowPendingIntent)
+        legacyShowPendingIntent.cancel()
+
+        Log.d(TAG, "Cancelled all alarm intent variations for task id: $taskId")
     }
 }

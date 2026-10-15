@@ -21,6 +21,8 @@ import android.os.VibratorManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.kairo.app.R
+import com.kairo.app.data.local.LocalTaskDatabase
+import com.kairo.app.data.repository.TaskRepository
 import java.io.File
 
 open class AlarmRingingService : Service() {
@@ -138,6 +140,17 @@ open class AlarmRingingService : Service() {
 
         val taskId = intent.getStringExtra(EXTRA_TASK_ID).orEmpty()
         currentTaskId = taskId
+
+        // Validation guard: Terminate immediately if task is completed or deleted
+        if (taskId.isNotBlank()) {
+            val task = TaskRepository.getTaskById(taskId)
+                ?: LocalTaskDatabase.getInstance(this).getTaskById(taskId)
+            if (task == null || task.isCompleted) {
+                Log.i(TAG, "Task '$taskId' is completed or deleted. Terminating AlarmRingingService immediately.")
+                stopRingingAndSelf()
+                return START_NOT_STICKY
+            }
+        }
         val title = intent.getStringExtra(EXTRA_TASK_TITLE).orEmpty().ifBlank { "Task Reminder" }
         val notes = intent.getStringExtra(EXTRA_TASK_NOTES)
         val priority = intent.getStringExtra(EXTRA_TASK_PRIORITY).orEmpty()

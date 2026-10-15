@@ -12,6 +12,7 @@ import android.os.PowerManager
 import android.util.Log
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import com.kairo.app.data.local.LocalTaskDatabase
 import com.kairo.app.data.model.Priority
 import com.kairo.app.data.model.Task
 import com.kairo.app.data.repository.TaskRepository
@@ -56,6 +57,33 @@ open class AlarmReceiver : BroadcastReceiver() {
 
     private fun handleTriggerAlarm(context: Context, intent: Intent) {
         val taskId = intent.getStringExtra(EXTRA_TASK_ID).orEmpty()
+
+        // 0. Active Validation Guard: Never ring for completed, deleted, or future-rescheduled tasks
+        if (taskId.isNotBlank()) {
+            val task = TaskRepository.getTaskById(taskId)
+                ?: LocalTaskDatabase.getInstance(context).getTaskById(taskId)
+
+            if (task == null) {
+                Log.i(TAG, "Task '$taskId' no longer exists in database. Aborting alarm.")
+                AlarmScheduler.cancelAlarm(context, taskId)
+                return
+            }
+
+            if (task.isCompleted) {
+                Log.i(TAG, "Task '$taskId' ('${task.title}') is already completed. Aborting alarm.")
+                AlarmScheduler.cancelAlarm(context, taskId)
+                return
+            }
+
+            val currentTrigger = AlarmScheduler.calculateTriggerMillis(task.dueDate, task.dueTime, task.dueDateMillis)
+            if (currentTrigger != null && currentTrigger > System.currentTimeMillis() + 60000L) {
+                Log.i(TAG, "Task '$taskId' ('${task.title}') was rescheduled to the future ($currentTrigger). Skipping obsolete alarm.")
+                AlarmScheduler.cancelAlarm(context, taskId)
+                AlarmScheduler.scheduleAlarm(context, task, currentTrigger)
+                return
+            }
+        }
+
         val title = intent.getStringExtra(EXTRA_TASK_TITLE).orEmpty().ifBlank { "Task Reminder" }
         val notes = intent.getStringExtra(EXTRA_TASK_NOTES)
         val priority = intent.getStringExtra(EXTRA_TASK_PRIORITY).orEmpty()

@@ -193,42 +193,85 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
             val colSnooze = cursor.getColumnIndex(COL_SNOOZE_UNTIL_MILLIS)
 
             while (cursor.moveToNext()) {
-                val task = Task(
-                    id = if (colId >= 0) cursor.getString(colId) else java.util.UUID.randomUUID().toString(),
-                    title = if (colTitle >= 0) cursor.getString(colTitle) else "",
-                    notes = if (colNotes >= 0 && !cursor.isNull(colNotes)) cursor.getString(colNotes) else null,
-                    priority = if (colPriority >= 0 && !cursor.isNull(colPriority)) {
-                        runCatching { Priority.valueOf(cursor.getString(colPriority)) }.getOrDefault(Priority.LOW)
-                    } else Priority.LOW,
-                    dueDate = if (colDueDate >= 0) cursor.getString(colDueDate) else "Today",
-                    dueDateMillis = if (colDueDateMillis >= 0 && !cursor.isNull(colDueDateMillis)) cursor.getLong(colDueDateMillis) else null,
-                    dueTime = if (colDueTime >= 0 && !cursor.isNull(colDueTime)) cursor.getString(colDueTime) else null,
-                    location = if (colLocation >= 0 && !cursor.isNull(colLocation)) cursor.getString(colLocation) else null,
-                    attachmentName = if (colAttName >= 0 && !cursor.isNull(colAttName)) cursor.getString(colAttName) else null,
-                    attachmentUri = if (colAttUri >= 0 && !cursor.isNull(colAttUri)) cursor.getString(colAttUri) else null,
-                    isCompleted = colIsCompleted >= 0 && cursor.getInt(colIsCompleted) == 1,
-                    section = if (colSection >= 0 && !cursor.isNull(colSection)) {
-                        runCatching { TaskSection.valueOf(cursor.getString(colSection)) }.getOrDefault(TaskSection.TODAY)
-                    } else TaskSection.TODAY,
-                    createdAt = if (colCreatedAt >= 0) cursor.getLong(colCreatedAt) else System.currentTimeMillis(),
-                    updatedAt = if (colUpdatedAt >= 0) cursor.getLong(colUpdatedAt) else System.currentTimeMillis(),
-                    completedAt = if (colCompletedAt >= 0 && !cursor.isNull(colCompletedAt)) cursor.getLong(colCompletedAt) else null,
-                    alarmToneUri = if (colToneUri >= 0 && !cursor.isNull(colToneUri)) cursor.getString(colToneUri) else null,
-                    alarmToneTitle = if (colToneTitle >= 0 && !cursor.isNull(colToneTitle)) cursor.getString(colToneTitle) else null,
-                    repeatType = if (colRepeatType >= 0 && !cursor.isNull(colRepeatType)) cursor.getString(colRepeatType) else null,
-                    repeatDays = if (colRepeatDays >= 0 && !cursor.isNull(colRepeatDays)) cursor.getString(colRepeatDays) else null,
-                    repeatDates = if (colRepeatDates >= 0 && !cursor.isNull(colRepeatDates)) cursor.getString(colRepeatDates) else null,
-                    parentId = if (colParentId >= 0 && !cursor.isNull(colParentId)) cursor.getString(colParentId) else null,
-                    position = if (colPos >= 0) cursor.getInt(colPos) else 0,
-                    latitude = if (colLat >= 0 && !cursor.isNull(colLat)) cursor.getDouble(colLat) else null,
-                    longitude = if (colLng >= 0 && !cursor.isNull(colLng)) cursor.getDouble(colLng) else null,
-                    locationRadius = if (colRadius >= 0 && !cursor.isNull(colRadius)) cursor.getInt(colRadius) else 500,
-                    snoozeUntilMillis = if (colSnooze >= 0 && !cursor.isNull(colSnooze)) cursor.getLong(colSnooze) else null
-                )
-                tasks.add(task)
+                tasks.add(parseTaskFromCursor(cursor))
             }
         }
         return tasks
+    }
+
+    private fun parseTaskFromCursor(cursor: android.database.Cursor): Task {
+        val colId = cursor.getColumnIndex(COL_ID)
+        val colTitle = cursor.getColumnIndex(COL_TITLE)
+        val colNotes = cursor.getColumnIndex(COL_NOTES)
+        val colPriority = cursor.getColumnIndex(COL_PRIORITY)
+        val colDueDate = cursor.getColumnIndex(COL_DUE_DATE)
+        val colDueDateMillis = cursor.getColumnIndex(COL_DUE_DATE_MILLIS)
+        val colDueTime = cursor.getColumnIndex(COL_DUE_TIME)
+        val colLocation = cursor.getColumnIndex(COL_LOCATION)
+        val colAttName = cursor.getColumnIndex(COL_ATTACHMENT_NAME)
+        val colAttUri = cursor.getColumnIndex(COL_ATTACHMENT_URI)
+        val colIsCompleted = cursor.getColumnIndex(COL_IS_COMPLETED)
+        val colSection = cursor.getColumnIndex(COL_SECTION)
+        val colCreatedAt = cursor.getColumnIndex(COL_CREATED_AT)
+        val colUpdatedAt = cursor.getColumnIndex(COL_UPDATED_AT)
+        val colCompletedAt = cursor.getColumnIndex(COL_COMPLETED_AT)
+        val colToneUri = cursor.getColumnIndex(COL_ALARM_TONE_URI)
+        val colToneTitle = cursor.getColumnIndex(COL_ALARM_TONE_TITLE)
+        val colRepeatType = cursor.getColumnIndex(COL_REPEAT_TYPE)
+        val colRepeatDays = cursor.getColumnIndex(COL_REPEAT_DAYS)
+        val colRepeatDates = cursor.getColumnIndex(COL_REPEAT_DATES)
+        val colParentId = cursor.getColumnIndex(COL_PARENT_ID)
+        val colPos = cursor.getColumnIndex(COL_POSITION)
+        val colLat = cursor.getColumnIndex(COL_LATITUDE)
+        val colLng = cursor.getColumnIndex(COL_LONGITUDE)
+        val colRadius = cursor.getColumnIndex(COL_LOCATION_RADIUS)
+        val colSnooze = cursor.getColumnIndex(COL_SNOOZE_UNTIL_MILLIS)
+
+        return Task(
+            id = if (colId >= 0) cursor.getString(colId) else java.util.UUID.randomUUID().toString(),
+            title = if (colTitle >= 0) cursor.getString(colTitle) else "",
+            notes = if (colNotes >= 0 && !cursor.isNull(colNotes)) cursor.getString(colNotes) else null,
+            priority = if (colPriority >= 0 && !cursor.isNull(colPriority)) {
+                runCatching { Priority.valueOf(cursor.getString(colPriority)) }.getOrDefault(Priority.LOW)
+            } else Priority.LOW,
+            dueDate = if (colDueDate >= 0) cursor.getString(colDueDate) else "Today",
+            dueDateMillis = if (colDueDateMillis >= 0 && !cursor.isNull(colDueDateMillis)) cursor.getLong(colDueDateMillis) else null,
+            dueTime = if (colDueTime >= 0 && !cursor.isNull(colDueTime)) cursor.getString(colDueTime) else null,
+            location = if (colLocation >= 0 && !cursor.isNull(colLocation)) cursor.getString(colLocation) else null,
+            attachmentName = if (colAttName >= 0 && !cursor.isNull(colAttName)) cursor.getString(colAttName) else null,
+            attachmentUri = if (colAttUri >= 0 && !cursor.isNull(colAttUri)) cursor.getString(colAttUri) else null,
+            isCompleted = colIsCompleted >= 0 && cursor.getInt(colIsCompleted) == 1,
+            section = if (colSection >= 0 && !cursor.isNull(colSection)) {
+                runCatching { TaskSection.valueOf(cursor.getString(colSection)) }.getOrDefault(TaskSection.TODAY)
+            } else TaskSection.TODAY,
+            createdAt = if (colCreatedAt >= 0) cursor.getLong(colCreatedAt) else System.currentTimeMillis(),
+            updatedAt = if (colUpdatedAt >= 0) cursor.getLong(colUpdatedAt) else System.currentTimeMillis(),
+            completedAt = if (colCompletedAt >= 0 && !cursor.isNull(colCompletedAt)) cursor.getLong(colCompletedAt) else null,
+            alarmToneUri = if (colToneUri >= 0 && !cursor.isNull(colToneUri)) cursor.getString(colToneUri) else null,
+            alarmToneTitle = if (colToneTitle >= 0 && !cursor.isNull(colToneTitle)) cursor.getString(colToneTitle) else null,
+            repeatType = if (colRepeatType >= 0 && !cursor.isNull(colRepeatType)) cursor.getString(colRepeatType) else null,
+            repeatDays = if (colRepeatDays >= 0 && !cursor.isNull(colRepeatDays)) cursor.getString(colRepeatDays) else null,
+            repeatDates = if (colRepeatDates >= 0 && !cursor.isNull(colRepeatDates)) cursor.getString(colRepeatDates) else null,
+            parentId = if (colParentId >= 0 && !cursor.isNull(colParentId)) cursor.getString(colParentId) else null,
+            position = if (colPos >= 0) cursor.getInt(colPos) else 0,
+            latitude = if (colLat >= 0 && !cursor.isNull(colLat)) cursor.getDouble(colLat) else null,
+            longitude = if (colLng >= 0 && !cursor.isNull(colLng)) cursor.getDouble(colLng) else null,
+            locationRadius = if (colRadius >= 0 && !cursor.isNull(colRadius)) cursor.getInt(colRadius) else 500,
+            snoozeUntilMillis = if (colSnooze >= 0 && !cursor.isNull(colSnooze)) cursor.getLong(colSnooze) else null
+        )
+    }
+
+    @Synchronized
+    fun getTaskById(taskId: String): Task? {
+        val db = readableDatabase
+        val query = "SELECT * FROM $TABLE_TASKS WHERE $COL_ID = ? LIMIT 1"
+        return db.rawQuery(query, arrayOf(taskId)).use { cursor ->
+            if (cursor.moveToNext()) {
+                parseTaskFromCursor(cursor)
+            } else {
+                null
+            }
+        }
     }
 
     @Synchronized
