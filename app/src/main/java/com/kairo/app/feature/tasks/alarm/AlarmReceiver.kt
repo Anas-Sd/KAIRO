@@ -169,7 +169,8 @@ open class AlarmReceiver : BroadcastReceiver() {
                 context,
                 taskId.hashCode(),
                 activityIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                options
             )
             if (options != null) {
                 pending.send(context, 0, null, null, null, null, options)

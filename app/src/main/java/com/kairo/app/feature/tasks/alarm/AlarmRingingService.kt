@@ -6,8 +6,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
@@ -20,6 +22,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.kairo.app.R
 import com.kairo.app.data.local.LocalTaskDatabase
 import com.kairo.app.data.repository.TaskRepository
@@ -33,7 +36,7 @@ open class AlarmRingingService : Service() {
     private var currentTaskId: String? = null
 
     companion object {
-        const val CHANNEL_ID = "kairo_alarm_fullscreen_channel_v6"
+        const val CHANNEL_ID = "kairo_alarm_fullscreen_channel_v7"
         const val NOTIFICATION_ID = 20261001
 
         const val ACTION_START_RINGING = "com.kairo.app.ACTION_START_RINGING"
@@ -108,9 +111,15 @@ open class AlarmRingingService : Service() {
                 enableLights(true)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 600, 300, 600, 300, 1000)
-                // Set sound to null on the notification channel so only AlarmRingingService MediaPlayer
-                // plays the selected tone, preventing default tone and selected tone from merging
-                setSound(null, null)
+                // Use bundled silent audio so the notification channel has a valid alarm sound
+                // (preventing Android from treating the notification as silent and suppressing fullScreenIntent),
+                // while ensuring no unwanted tone is played over the MediaPlayer.
+                val silentUri = Uri.parse("${ContentResolver.SCHEME_ANDROID_RESOURCE}://${packageName}/${R.raw.kairo_silent}")
+                val audioAttributes = AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .build()
+                setSound(silentUri, audioAttributes)
                 setShowBadge(true)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 setBypassDnd(true)
@@ -122,6 +131,7 @@ open class AlarmRingingService : Service() {
                 notificationManager.deleteNotificationChannel("kairo_alarm_fullscreen_channel_v3")
                 notificationManager.deleteNotificationChannel("kairo_alarm_fullscreen_channel_v4")
                 notificationManager.deleteNotificationChannel("kairo_alarm_fullscreen_channel_v5")
+                notificationManager.deleteNotificationChannel("kairo_alarm_fullscreen_channel_v6")
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -200,7 +210,16 @@ open class AlarmRingingService : Service() {
             attachment = attachment
         )
 
-        startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
 
         // 3.5. Direct full-screen WindowManager overlay directly over ANY foreground app (Instagram, YouTube, etc.)
         try {
@@ -415,7 +434,10 @@ open class AlarmRingingService : Service() {
         attachment: String?
     ): Notification {
         val fullScreenIntent = Intent(this, AlarmActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             putExtra(EXTRA_TASK_ID, taskId)
             putExtra(EXTRA_TASK_TITLE, title)
             putExtra(EXTRA_TASK_NOTES, notes)
@@ -425,11 +447,21 @@ open class AlarmRingingService : Service() {
             putExtra(EXTRA_TASK_LOCATION, location)
             putExtra(EXTRA_TASK_ATTACHMENT, attachment)
         }
+
+        val options = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ActivityOptions.makeBasic().apply {
+                pendingIntentBackgroundActivityStartMode = ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+            }.toBundle()
+        } else {
+            null
+        }
+
         val fullScreenPendingIntent = PendingIntent.getActivity(
             this,
             taskId.hashCode(),
             fullScreenIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            options
         )
 
         val doneIntent = Intent(this, AlarmReceiver::class.java).apply {
@@ -492,6 +524,8 @@ open class AlarmRingingService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val silentUri = Uri.parse("${ContentResolver.SCHEME_ANDROID_RESOURCE}://${packageName}/${R.raw.kairo_silent}")
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
@@ -501,8 +535,8 @@ open class AlarmRingingService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(false)
             .setOngoing(true)
-            .setSilent(true)
-            .setSound(null)
+            .setSound(silentUri)
+            .setVibrate(longArrayOf(0, 600, 300, 600, 300, 1000))
             .setDeleteIntent(deletePendingIntent)
             .setFullScreenIntent(fullScreenPendingIntent, true)
             .setContentIntent(fullScreenPendingIntent)
