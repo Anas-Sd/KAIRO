@@ -64,8 +64,16 @@ object TaskRepository {
     fun loadFromLocalDb() {
         val userCode = AuthManager.getUserCode()
         val localList = localDb.getTasksForUser(userCode)
-        _tasks.value = localList
-        Log.d("TaskRepository", "Loaded ${localList.size} tasks immediately from local SQLite database")
+        val sanitizedList = localList.map { task ->
+            if (task.dueDate.equals("SNOOZED", ignoreCase = true)) {
+                val repairedDate = com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, task.dueDateMillis ?: task.createdAt)
+                task.copy(dueDate = repairedDate)
+            } else {
+                task
+            }
+        }
+        _tasks.value = sanitizedList
+        Log.d("TaskRepository", "Loaded ${sanitizedList.size} tasks immediately from local SQLite database")
         TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
     }
 
@@ -162,7 +170,12 @@ object TaskRepository {
         val byId = allTasks.associateBy { it.id }.toMutableMap()
         for (id in toComplete) {
             byId[id]?.let {
-                byId[id] = it.copy(isCompleted = true, section = TaskSection.COMPLETED, snoozeUntilMillis = null, completedAt = now, updatedAt = now)
+                val safeDueDate = if (it.dueDate.equals("SNOOZED", ignoreCase = true)) {
+                    com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, it.dueDateMillis ?: it.createdAt)
+                } else {
+                    it.dueDate
+                }
+                byId[id] = it.copy(isCompleted = true, dueDate = safeDueDate, section = TaskSection.COMPLETED, snoozeUntilMillis = null, completedAt = now, updatedAt = now)
             }
         }
 
@@ -174,8 +187,14 @@ object TaskRepository {
             val allSiblingsDone = siblings.isNotEmpty() && siblings.all { it.isCompleted || toComplete.contains(it.id) }
             if (allSiblingsDone) {
                 toComplete.add(currentParentId)
+                val safeDueDate = if (parentTask.dueDate.equals("SNOOZED", ignoreCase = true)) {
+                    com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, parentTask.dueDateMillis ?: parentTask.createdAt)
+                } else {
+                    parentTask.dueDate
+                }
                 byId[currentParentId] = parentTask.copy(
                     isCompleted = true,
+                    dueDate = safeDueDate,
                     section = TaskSection.COMPLETED,
                     snoozeUntilMillis = null,
                     completedAt = now,
@@ -190,8 +209,14 @@ object TaskRepository {
         // Apply state update
         val updatedList = allTasks.map { task ->
             if (toComplete.contains(task.id)) {
+                val safeDueDate = if (task.dueDate.equals("SNOOZED", ignoreCase = true)) {
+                    com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, task.dueDateMillis ?: task.createdAt)
+                } else {
+                    task.dueDate
+                }
                 task.copy(
                     isCompleted = true,
+                    dueDate = safeDueDate,
                     section = TaskSection.COMPLETED,
                     snoozeUntilMillis = null,
                     completedAt = now,
@@ -331,9 +356,13 @@ object TaskRepository {
         _tasks.update { currentList ->
             currentList.map { task ->
                 if (task.id == taskId) {
+                    val safeDueDate = if (task.dueDate.equals("SNOOZED", ignoreCase = true)) {
+                        com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, task.dueDateMillis ?: now)
+                    } else {
+                        task.dueDate
+                    }
                     val modified = task.copy(
-                        dueDate = "SNOOZED",
-                        dueDateMillis = snoozeMillis,
+                        dueDate = safeDueDate,
                         snoozeUntilMillis = snoozeMillis,
                         updatedAt = now
                     )
@@ -347,9 +376,13 @@ object TaskRepository {
         if (updatedTask == null) {
             val fromDb = localDb.getTasksForUser(userCode).find { it.id == taskId }
             if (fromDb != null) {
+                val safeDueDate = if (fromDb.dueDate.equals("SNOOZED", ignoreCase = true)) {
+                    com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, fromDb.dueDateMillis ?: now)
+                } else {
+                    fromDb.dueDate
+                }
                 val modified = fromDb.copy(
-                    dueDate = "SNOOZED",
-                    dueDateMillis = snoozeMillis,
+                    dueDate = safeDueDate,
                     snoozeUntilMillis = snoozeMillis,
                     updatedAt = now
                 )

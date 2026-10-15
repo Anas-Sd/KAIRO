@@ -120,7 +120,7 @@ object TaskExportHelper {
                 sb.appendLine("${index + 1}. [ ] ${task.title}")
                 sb.appendLine("   • Priority: ${task.priority.label}")
                 val dueText = buildString {
-                    append(task.dueDate)
+                    append(getSanitizedDueDate(task))
                     if (!task.dueTime.isNullOrBlank()) {
                         append(" at ${task.dueTime}")
                     }
@@ -160,7 +160,7 @@ object TaskExportHelper {
                 if (task.completedAt != null) {
                     sb.appendLine("   • Completed: ${dateTimeFormatter.format(Date(task.completedAt))}")
                 }
-                sb.appendLine("   • Due Was: ${task.dueDate}${task.dueTime?.let { " at $it" } ?: ""}")
+                sb.appendLine("   • Due Was: ${getSanitizedDueDate(task)}${task.dueTime?.let { " at $it" } ?: ""}")
                 if (!task.location.isNullOrBlank()) {
                     sb.appendLine("   • Location: ${task.location}")
                 }
@@ -218,13 +218,14 @@ object TaskExportHelper {
             val createdAtStr = dateTimeFormatter.format(Date(task.createdAt))
             val completedAtStr = task.completedAt?.let { dateTimeFormatter.format(Date(it)) } ?: ""
 
+            val displayDueDate = getSanitizedDueDate(task)
             val row = listOf(
                 task.id,
                 task.title,
                 status,
                 task.section.title,
                 task.priority.label,
-                task.dueDate,
+                displayDueDate,
                 task.dueTime ?: "",
                 task.location ?: "",
                 task.notes ?: "",
@@ -242,6 +243,14 @@ object TaskExportHelper {
     private fun escapeCsv(value: String): String {
         val escaped = value.replace("\"", "\"\"")
         return "\"$escaped\""
+    }
+
+    private fun getSanitizedDueDate(task: Task): String {
+        return if (task.dueDate.equals("SNOOZED", ignoreCase = true)) {
+            com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, task.dueDateMillis ?: task.createdAt)
+        } else {
+            task.dueDate
+        }
     }
 
     private fun saveToDownloads(

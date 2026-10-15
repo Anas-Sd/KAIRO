@@ -596,11 +596,10 @@ class TaskViewModel(
         }.timeInMillis
         val todayEnd = todayStart + 86400000L
 
-        val normalizedDueDate = if (dueDate.equals("SNOOZED", ignoreCase = true)) "SNOOZED"
-            else com.kairo.app.ui.utils.DateUtils.formatDisplayDate(dueDate, targetMillis)
+        val cleanDueDate = if (dueDate.equals("SNOOZED", ignoreCase = true)) null else dueDate
+        val normalizedDueDate = com.kairo.app.ui.utils.DateUtils.formatDisplayDate(cleanDueDate, targetMillis)
 
         val assignedSection = when {
-            dueDate.equals("SNOOZED", ignoreCase = true) -> TaskSection.TODAY
             dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
             !dueTime.isNullOrBlank() && trigger != null && trigger < System.currentTimeMillis() -> TaskSection.OVERDUE
             targetMillis < todayStart -> TaskSection.OVERDUE
@@ -666,11 +665,10 @@ class TaskViewModel(
         }.timeInMillis
         val todayEnd = todayStart + 86400000L
 
-        val normalizedDueDate = if (dueDate.equals("SNOOZED", ignoreCase = true)) "SNOOZED"
-            else com.kairo.app.ui.utils.DateUtils.formatDisplayDate(dueDate, targetMillis)
+        val cleanDueDate = if (dueDate.equals("SNOOZED", ignoreCase = true)) null else dueDate
+        val normalizedDueDate = com.kairo.app.ui.utils.DateUtils.formatDisplayDate(cleanDueDate, targetMillis)
 
         val assignedSection = when {
-            dueDate.equals("SNOOZED", ignoreCase = true) -> TaskSection.TODAY
             dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
             !dueTime.isNullOrBlank() && trigger != null && trigger < System.currentTimeMillis() -> TaskSection.OVERDUE
             targetMillis < todayStart -> TaskSection.OVERDUE
