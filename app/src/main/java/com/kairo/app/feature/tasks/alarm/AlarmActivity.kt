@@ -1,7 +1,9 @@
 package com.kairo.app.feature.tasks.alarm
 
 import android.Manifest
+import android.app.DatePickerDialog
 import android.app.KeyguardManager
+import android.app.TimePickerDialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -10,6 +12,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -77,9 +80,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kairo.app.alarm.AlarmReceiver
+import com.kairo.app.feature.tasks.alarm.AlarmReceiver
 import com.kairo.app.alarm.AlarmRingingService
 import com.kairo.app.alarm.AlarmScheduler
+import com.kairo.app.data.local.LocalTaskDatabase
+import com.kairo.app.data.model.TaskSection
 import com.kairo.app.data.repository.TaskRepository
 import com.kairo.app.ui.theme.KAIROTheme
 import com.kairo.app.ui.theme.KairoBackground
@@ -96,6 +101,7 @@ import com.kairo.app.ui.theme.KairoSurfaceContainerHighest
 import com.kairo.app.ui.theme.KairoSurfaceContainerLow
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -137,6 +143,7 @@ open class AlarmActivity : ComponentActivity() {
         val dueTime = intent.getStringExtra(AlarmRingingService.EXTRA_TASK_DUE_TIME).orEmpty()
         val location = intent.getStringExtra(AlarmRingingService.EXTRA_TASK_LOCATION)
         val attachment = intent.getStringExtra(AlarmRingingService.EXTRA_TASK_ATTACHMENT)
+        val initialOpenPostpone = intent.getBooleanExtra("extra_open_postpone", false)
 
         setContent {
             KAIROTheme {
@@ -149,6 +156,7 @@ open class AlarmActivity : ComponentActivity() {
                     dueTime = dueTime,
                     location = location,
                     attachment = attachment,
+                    initialOpenPostpone = initialOpenPostpone,
                     onComplete = {
                         AlarmRingingService.stop(this@AlarmActivity)
                         if (taskId.isNotBlank()) {
@@ -161,6 +169,49 @@ open class AlarmActivity : ComponentActivity() {
                         }
                         sendBroadcast(completeIntent)
                         android.widget.Toast.makeText(this@AlarmActivity, "Task marked as completed", android.widget.Toast.LENGTH_SHORT).show()
+                        finish()
+                    },
+                    onPostpone = { newDateStr, newTimeStr, targetMillis ->
+                        AlarmRingingService.stop(this@AlarmActivity)
+                        if (taskId.isNotBlank()) {
+                            val existing = TaskRepository.getTaskById(taskId)
+                                ?: LocalTaskDatabase.getInstance(this@AlarmActivity).getTaskById(taskId)
+                            if (existing != null) {
+                                val todayStart = Calendar.getInstance().apply {
+                                    set(Calendar.HOUR_OF_DAY, 0)
+                                    set(Calendar.MINUTE, 0)
+                                    set(Calendar.SECOND, 0)
+                                    set(Calendar.MILLISECOND, 0)
+                                }.timeInMillis
+                                val todayEnd = todayStart + (24 * 60 * 60 * 1000L)
+                                val assignedSection = when {
+                                    targetMillis in todayStart until todayEnd -> TaskSection.TODAY
+                                    else -> TaskSection.UPCOMING
+                                }
+                                val updated = existing.copy(
+                                    dueDate = newDateStr,
+                                    dueDateMillis = targetMillis,
+                                    dueTime = newTimeStr,
+                                    section = assignedSection,
+                                    isCompleted = false,
+                                    completedAt = null,
+                                    snoozeUntilMillis = null,
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                                TaskRepository.updateTask(updated)
+                                AlarmScheduler.cancelAlarm(this@AlarmActivity, taskId)
+                                AlarmScheduler.scheduleAlarm(this@AlarmActivity, updated, targetMillis)
+                            }
+                        }
+                        val postponeIntent = Intent(this@AlarmActivity, AlarmReceiver::class.java).apply {
+                            action = AlarmReceiver.ACTION_POSTPONE_ALARM
+                            putExtra(AlarmReceiver.EXTRA_TASK_ID, taskId)
+                            putExtra(AlarmReceiver.EXTRA_POSTPONE_DATE, newDateStr)
+                            putExtra(AlarmReceiver.EXTRA_POSTPONE_TIME, newTimeStr)
+                            putExtra(AlarmReceiver.EXTRA_POSTPONE_MILLIS, targetMillis)
+                        }
+                        sendBroadcast(postponeIntent)
+                        Toast.makeText(this@AlarmActivity, "Task postponed to $newDateStr at $newTimeStr", Toast.LENGTH_LONG).show()
                         finish()
                     },
                     onSnooze = { minutes ->
@@ -265,7 +316,9 @@ fun AlarmTriggerScreen(
     dueTime: String,
     location: String?,
     attachment: String?,
+    initialOpenPostpone: Boolean = false,
     onComplete: () -> Unit,
+    onPostpone: (newDateStr: String, newTimeStr: String, targetMillis: Long) -> Unit,
     onSnooze: (minutes: Int) -> Unit,
     onDismiss: () -> Unit,
     onCloseHeader: () -> Unit
@@ -289,6 +342,17 @@ fun AlarmTriggerScreen(
             currentAmPm = SimpleDateFormat("a", Locale.getDefault()).format(now)
             currentDateStr = SimpleDateFormat("EEEE, MMM d", Locale.getDefault()).format(now)
             delay(1000)
+        }
+    }
+
+    LaunchedEffect(initialOpenPostpone) {
+        if (initialOpenPostpone) {
+            showPostponeDateTimePicker(
+                context = context,
+                onConfirmed = { newDateStr, newTimeStr, targetMillis ->
+                    onPostpone(newDateStr, newTimeStr, targetMillis)
+                }
+            )
         }
     }
 
@@ -395,7 +459,41 @@ fun AlarmTriggerScreen(
                     )
                 }
 
-                // 2. Snooze in 5min
+                // 2. Postpone
+                Button(
+                    onClick = {
+                        showPostponeDateTimePicker(
+                            context = context,
+                            onConfirmed = { newDateStr, newTimeStr, targetMillis ->
+                                onPostpone(newDateStr, newTimeStr, targetMillis)
+                            }
+                        )
+                    },
+                    shape = RoundedCornerShape(100.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF0F172A),
+                        contentColor = Color(0xFF38BDF8)
+                    ),
+                    border = BorderStroke(1.5.dp, Color(0xFF0284C7)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = "Postpone",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Postpone",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // 3. Snooze in 5min
                 Button(
                     onClick = { onSnooze(5) },
                     shape = RoundedCornerShape(100.dp),
@@ -491,4 +589,76 @@ private fun SoundwaveEqualizer() {
         Box(modifier = Modifier.width(3.dp).height(bar4.value.dp).background(KairoPrimary, RoundedCornerShape(2.dp)))
         Box(modifier = Modifier.width(3.dp).height(bar5.value.dp).background(KairoSecondary, RoundedCornerShape(2.dp)))
     }
+}
+
+private fun showPostponeDateTimePicker(
+    context: Context,
+    onConfirmed: (newDateStr: String, newTimeStr: String, targetMillis: Long) -> Unit,
+    onCancelled: () -> Unit = {}
+) {
+    AlarmRingingService.duckVolume(true)
+    val nowCalendar = Calendar.getInstance()
+    val currentYear = nowCalendar.get(Calendar.YEAR)
+    val currentMonth = nowCalendar.get(Calendar.MONTH)
+    val currentDay = nowCalendar.get(Calendar.DAY_OF_MONTH)
+
+    val datePicker = DatePickerDialog(
+        context,
+        { _, year, month, dayOfMonth ->
+            val currentHour = nowCalendar.get(Calendar.HOUR_OF_DAY)
+            val currentMinute = (nowCalendar.get(Calendar.MINUTE) + 5) % 60
+            val timePicker = TimePickerDialog(
+                context,
+                { _, hourOfDay, minute ->
+                    val finalCal = Calendar.getInstance().apply {
+                        set(Calendar.YEAR, year)
+                        set(Calendar.MONTH, month)
+                        set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                        set(Calendar.HOUR_OF_DAY, hourOfDay)
+                        set(Calendar.MINUTE, minute)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }
+
+                    val targetMillis = finalCal.timeInMillis
+                    if (targetMillis <= System.currentTimeMillis()) {
+                        Toast.makeText(context, "Please select a future time to postpone", Toast.LENGTH_SHORT).show()
+                        AlarmRingingService.duckVolume(false)
+                        return@TimePickerDialog
+                    }
+
+                    val formattedDate = SimpleDateFormat("MMM d", Locale.getDefault()).format(finalCal.time)
+                    val formattedTime = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(finalCal.time)
+                    onConfirmed(formattedDate, formattedTime, targetMillis)
+                },
+                currentHour,
+                currentMinute,
+                false
+            )
+
+            timePicker.setOnCancelListener {
+                AlarmRingingService.duckVolume(false)
+                onCancelled()
+            }
+            timePicker.window?.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+            timePicker.show()
+        },
+        currentYear,
+        currentMonth,
+        currentDay
+    )
+
+    datePicker.datePicker.minDate = System.currentTimeMillis() - 1000L
+    datePicker.setOnCancelListener {
+        AlarmRingingService.duckVolume(false)
+        onCancelled()
+    }
+    datePicker.window?.addFlags(
+        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+    )
+    datePicker.show()
 }

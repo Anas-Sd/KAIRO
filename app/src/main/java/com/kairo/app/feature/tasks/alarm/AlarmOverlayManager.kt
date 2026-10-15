@@ -225,7 +225,51 @@ object AlarmOverlayManager {
 
                 buttonLayout.addView(View(context), LinearLayout.LayoutParams(1, (12 * dp).toInt()))
 
-                // 2. Snooze in 5min Button
+                // 2. Postpone Button (Below Completed)
+                val postponeButton = TextView(context).apply {
+                    text = "Postpone"
+                    textSize = 15f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(Color.parseColor("#38BDF8"))
+                    gravity = Gravity.CENTER
+                    val btnBg = GradientDrawable().apply {
+                        cornerRadius = 28 * dp
+                        setColor(Color.parseColor("#0F172A"))
+                        setStroke((1.5f * dp).toInt(), Color.parseColor("#0284C7"))
+                    }
+                    background = btnBg
+                    setPadding((20 * dp).toInt(), (15 * dp).toInt(), (20 * dp).toInt(), (15 * dp).toInt())
+                    isClickable = true
+                    setOnClickListener {
+                        val fullScreenIntent = Intent(context, AlarmActivity::class.java).apply {
+                            setFlags(
+                                Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            )
+                            putExtra(AlarmRingingService.EXTRA_TASK_ID, taskId)
+                            putExtra(AlarmRingingService.EXTRA_TASK_TITLE, title)
+                            putExtra(AlarmRingingService.EXTRA_TASK_NOTES, notes)
+                            putExtra(AlarmRingingService.EXTRA_TASK_PRIORITY, priority)
+                            putExtra(AlarmRingingService.EXTRA_TASK_DUE_DATE, dueDate)
+                            putExtra(AlarmRingingService.EXTRA_TASK_DUE_TIME, dueTime)
+                            putExtra(AlarmRingingService.EXTRA_TASK_LOCATION, location)
+                            putExtra(AlarmRingingService.EXTRA_TASK_ATTACHMENT, attachment)
+                            putExtra("extra_open_postpone", true)
+                        }
+                        context.startActivity(fullScreenIntent)
+                        dismiss()
+                    }
+                }
+                buttonLayout.addView(postponeButton, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ))
+
+                buttonLayout.addView(View(context), LinearLayout.LayoutParams(1, (12 * dp).toInt()))
+
+                // 3. Snooze in 5min Button
                 val snoozeButton = TextView(context).apply {
                     text = "Snooze in 5min"
                     textSize = 15f

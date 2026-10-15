@@ -27,6 +27,7 @@ open class AlarmReceiver : BroadcastReceiver() {
         const val ACTION_COMPLETE_ALARM = "com.kairo.app.ACTION_COMPLETE_ALARM"
         const val ACTION_SNOOZE_ALARM = "com.kairo.app.ACTION_SNOOZE_ALARM"
         const val ACTION_DISMISS_ALARM = "com.kairo.app.ACTION_DISMISS_ALARM"
+        const val ACTION_POSTPONE_ALARM = "com.kairo.app.ACTION_POSTPONE_ALARM"
 
         const val EXTRA_TASK_ID = "extra_task_id"
         const val EXTRA_TASK_TITLE = "extra_task_title"
@@ -38,6 +39,9 @@ open class AlarmReceiver : BroadcastReceiver() {
         const val EXTRA_TASK_ATTACHMENT = "extra_task_attachment"
         const val EXTRA_SNOOZE_MINUTES = "extra_snooze_minutes"
         const val EXTRA_ALARM_URI = "extra_alarm_uri"
+        const val EXTRA_POSTPONE_MILLIS = "extra_postpone_millis"
+        const val EXTRA_POSTPONE_DATE = "extra_postpone_date"
+        const val EXTRA_POSTPONE_TIME = "extra_postpone_time"
 
         private const val TAG = "AlarmReceiver"
     }
@@ -52,6 +56,7 @@ open class AlarmReceiver : BroadcastReceiver() {
             ACTION_COMPLETE_ALARM -> handleCompleteAlarm(context, taskId)
             ACTION_SNOOZE_ALARM -> handleSnoozeAlarm(context, intent)
             ACTION_DISMISS_ALARM -> handleDismissAlarm(context, taskId)
+            ACTION_POSTPONE_ALARM -> handlePostponeAlarm(context, intent)
         }
     }
 
@@ -269,6 +274,56 @@ open class AlarmReceiver : BroadcastReceiver() {
                 }
             }
             Toast.makeText(context, "Alarm dismissed • Task moved to Overdue", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun handlePostponeAlarm(context: Context, intent: Intent) {
+        stopRinging(context)
+        notifyAlarmOverlayFinish(context)
+
+        val taskId = intent.getStringExtra(EXTRA_TASK_ID).orEmpty()
+        val newDateStr = intent.getStringExtra(EXTRA_POSTPONE_DATE).orEmpty()
+        val newTimeStr = intent.getStringExtra(EXTRA_POSTPONE_TIME).orEmpty()
+        val targetMillis = intent.getLongExtra(EXTRA_POSTPONE_MILLIS, 0L)
+
+        if (taskId.isNotBlank() && targetMillis > 0L) {
+            val pendingResult = goAsync()
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val task = TaskRepository.getTaskById(taskId)
+                        ?: LocalTaskDatabase.getInstance(context).getTaskById(taskId)
+                    if (task != null) {
+                        val todayStart = java.util.Calendar.getInstance().apply {
+                            set(java.util.Calendar.HOUR_OF_DAY, 0)
+                            set(java.util.Calendar.MINUTE, 0)
+                            set(java.util.Calendar.SECOND, 0)
+                            set(java.util.Calendar.MILLISECOND, 0)
+                        }.timeInMillis
+                        val todayEnd = todayStart + (24 * 60 * 60 * 1000L)
+                        val assignedSection = when {
+                            targetMillis in todayStart until todayEnd -> com.kairo.app.data.model.TaskSection.TODAY
+                            else -> com.kairo.app.data.model.TaskSection.UPCOMING
+                        }
+                        val updated = task.copy(
+                            dueDate = newDateStr,
+                            dueDateMillis = targetMillis,
+                            dueTime = newTimeStr,
+                            section = assignedSection,
+                            isCompleted = false,
+                            completedAt = null,
+                            snoozeUntilMillis = null,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        TaskRepository.updateTask(updated)
+                        AlarmScheduler.cancelAlarm(context, taskId)
+                        AlarmScheduler.scheduleAlarm(context, updated, targetMillis)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in handlePostponeAlarm: ${e.message}", e)
+                } finally {
+                    pendingResult.finish()
+                }
+            }
         }
     }
 

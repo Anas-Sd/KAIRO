@@ -11,6 +11,7 @@ class AlarmReceiver : com.kairo.app.feature.tasks.alarm.AlarmReceiver() {
         const val ACTION_COMPLETE_ALARM = com.kairo.app.feature.tasks.alarm.AlarmReceiver.ACTION_COMPLETE_ALARM
         const val ACTION_SNOOZE_ALARM = com.kairo.app.feature.tasks.alarm.AlarmReceiver.ACTION_SNOOZE_ALARM
         const val ACTION_DISMISS_ALARM = com.kairo.app.feature.tasks.alarm.AlarmReceiver.ACTION_DISMISS_ALARM
+        const val ACTION_POSTPONE_ALARM = com.kairo.app.feature.tasks.alarm.AlarmReceiver.ACTION_POSTPONE_ALARM
 
         const val EXTRA_TASK_ID = com.kairo.app.feature.tasks.alarm.AlarmReceiver.EXTRA_TASK_ID
         const val EXTRA_TASK_TITLE = com.kairo.app.feature.tasks.alarm.AlarmReceiver.EXTRA_TASK_TITLE
@@ -22,5 +23,8 @@ class AlarmReceiver : com.kairo.app.feature.tasks.alarm.AlarmReceiver() {
         const val EXTRA_TASK_ATTACHMENT = com.kairo.app.feature.tasks.alarm.AlarmReceiver.EXTRA_TASK_ATTACHMENT
         const val EXTRA_SNOOZE_MINUTES = com.kairo.app.feature.tasks.alarm.AlarmReceiver.EXTRA_SNOOZE_MINUTES
         const val EXTRA_ALARM_URI = com.kairo.app.feature.tasks.alarm.AlarmReceiver.EXTRA_ALARM_URI
+        const val EXTRA_POSTPONE_MILLIS = com.kairo.app.feature.tasks.alarm.AlarmReceiver.EXTRA_POSTPONE_MILLIS
+        const val EXTRA_POSTPONE_DATE = com.kairo.app.feature.tasks.alarm.AlarmReceiver.EXTRA_POSTPONE_DATE
+        const val EXTRA_POSTPONE_TIME = com.kairo.app.feature.tasks.alarm.AlarmReceiver.EXTRA_POSTPONE_TIME
     }
 }

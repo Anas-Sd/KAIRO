@@ -89,6 +89,7 @@
                 <action android:name="com.kairo.app.ACTION_COMPLETE_ALARM" />
                 <action android:name="com.kairo.app.ACTION_SNOOZE_ALARM" />
                 <action android:name="com.kairo.app.ACTION_DISMISS_ALARM" />
+                <action android:name="com.kairo.app.ACTION_POSTPONE_ALARM" />
             </intent-filter>
         </receiver>
         <receiver
@@ -99,6 +100,7 @@
                 <action android:name="com.kairo.app.ACTION_COMPLETE_ALARM" />
                 <action android:name="com.kairo.app.ACTION_SNOOZE_ALARM" />
                 <action android:name="com.kairo.app.ACTION_DISMISS_ALARM" />
+                <action android:name="com.kairo.app.ACTION_POSTPONE_ALARM" />
             </intent-filter>
         </receiver>
 
