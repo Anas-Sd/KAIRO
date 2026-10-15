@@ -606,6 +606,21 @@ class TaskViewModel(
             targetMillis >= todayStart && targetMillis < todayEnd -> TaskSection.TODAY
             else -> TaskSection.UPCOMING
         }
+
+        val isDateOrTimeChanged = (task.dueDate != normalizedDueDate) ||
+                (task.dueTime != dueTime) ||
+                (task.dueDateMillis != targetMillis)
+
+        val shouldReopen = task.isCompleted && (
+            isDateOrTimeChanged ||
+            (trigger != null && trigger >= System.currentTimeMillis()) ||
+            targetMillis >= todayStart
+        )
+
+        val newIsCompleted = if (shouldReopen) false else task.isCompleted
+        val newCompletedAt = if (shouldReopen) null else task.completedAt
+        val newSection = if (newIsCompleted) TaskSection.COMPLETED else assignedSection
+
         val updated = task.copy(
             title = title.trim(),
             notes = notes,
@@ -621,7 +636,9 @@ class TaskViewModel(
             repeatType = repeatType,
             repeatDays = repeatDays,
             repeatDates = repeatDates,
-            section = assignedSection,
+            isCompleted = newIsCompleted,
+            completedAt = newCompletedAt,
+            section = newSection,
             latitude = latitude,
             longitude = longitude,
             locationRadius = locationRadius,

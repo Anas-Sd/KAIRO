@@ -54,6 +54,8 @@
             android:noHistory="true"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
+            android:showOnLockScreen="true"
+            android:inheritShowWhenLocked="true"
             android:theme="@style/Theme.KAIRO" />
         <activity
             android:name=".ui.screens.alarm.AlarmActivity"
@@ -64,6 +66,8 @@
             android:noHistory="true"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
+            android:showOnLockScreen="true"
+            android:inheritShowWhenLocked="true"
             android:theme="@style/Theme.KAIRO" />
 
         <!-- Foreground Ringing & Audio Service -->

@@ -118,8 +118,8 @@ open class AlarmActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
         wakeAndShowOnLock()
+        super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         val filter = IntentFilter(ACTION_FINISH_ALARM_OVERLAY)
@@ -229,13 +229,8 @@ open class AlarmActivity : ComponentActivity() {
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
             WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
             WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
         )
-        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            keyguardManager?.requestDismissKeyguard(this, null)
-        }
     }
 
     override fun onAttachedToWindow() {
