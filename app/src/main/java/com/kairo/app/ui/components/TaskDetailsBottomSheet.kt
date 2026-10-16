@@ -89,6 +89,7 @@ fun TaskDetailsBottomSheet(
     task: Task,
     onDismiss: () -> Unit,
     onEditClicked: () -> Unit,
+    onReactivateForToday: (() -> Unit)? = null,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 ) {
     val context = LocalContext.current
@@ -439,6 +440,55 @@ fun TaskDetailsBottomSheet(
                             lineHeight = 15.sp,
                             modifier = Modifier.padding(top = 4.dp)
                         )
+
+                        val isUpcomingRecurring = !task.repeatType.isNullOrBlank() &&
+                            !task.repeatType.equals("NONE", ignoreCase = true) &&
+                            task.section == com.kairo.app.data.model.TaskSection.UPCOMING
+                        if (isUpcomingRecurring && onReactivateForToday != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFF0284C7).copy(alpha = 0.12f),
+                                border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.4f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Prematurely completed for today?",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF38BDF8)
+                                        )
+                                        Text(
+                                            text = "Reactivate to bring this task back to Today and re-arm today's alarm.",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFFCBD5E1),
+                                            lineHeight = 14.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Button(
+                                        onClick = {
+                                            onReactivateForToday()
+                                            onDismiss()
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF0284C7),
+                                            contentColor = Color.White
+                                        ),
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Text("Reactivate", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         Text(
                             text = "• This is a single one-time task. It will not re-occur after completion.",
@@ -783,6 +833,39 @@ fun TaskDetailsBottomSheet(
             }
 
             Spacer(modifier = Modifier.height(28.dp))
+
+            val isUpcomingRecurring = !task.repeatType.isNullOrBlank() &&
+                !task.repeatType.equals("NONE", ignoreCase = true) &&
+                task.section == com.kairo.app.data.model.TaskSection.UPCOMING
+            if (isUpcomingRecurring && onReactivateForToday != null) {
+                Button(
+                    onClick = {
+                        onReactivateForToday()
+                        onDismiss()
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF0284C7),
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarToday,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Reactivate for Today",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
 
             // Bottom Action: Edit Task Button
             Button(

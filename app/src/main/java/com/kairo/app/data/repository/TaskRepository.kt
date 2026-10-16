@@ -167,6 +167,9 @@ object TaskRepository {
         val allTasks = _tasks.value
         val target = allTasks.find { it.id == taskId } ?: return
 
+        commitUndo()
+        val previousTasksSnapshot = allTasks.toList()
+
         // 1. Target and all recursive descendants become COMPLETED
         val toComplete = mutableSetOf(taskId)
         toComplete.addAll(getDescendantIds(taskId, allTasks))
@@ -230,9 +233,10 @@ object TaskRepository {
             val (nextDueDateStr, nextDueDateMillis) = nextOccurrence
             val nextSection = determineOpenSection(nextDueDateStr, nextDueDateMillis, target.dueTime)
 
-            // 1. Snapshot completed instance in history
+            // 1. Snapshot completed instance in history with traceable ID
+            val snapshotId = "snapshot_${target.id}_$now"
             val completedSnapshot = target.copy(
-                id = java.util.UUID.randomUUID().toString(),
+                id = snapshotId,
                 isCompleted = true,
                 dueDate = if (target.dueDate.equals("SNOOZED", ignoreCase = true)) {
                     com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, target.dueDateMillis ?: target.createdAt)
@@ -282,6 +286,7 @@ object TaskRepository {
             }
 
             _tasks.value = updatedList
+            _undoAction.value = UndoAction(previousTasksSnapshot, "Completed '${target.title}'")
 
             // Cancel old alarm and schedule next alarm for tomorrow/next recurrence
             AlarmScheduler.cancelAlarm(KairoApplication.instance, target.id)
@@ -309,6 +314,7 @@ object TaskRepository {
                 }
             }
             _tasks.value = updatedList
+            _undoAction.value = UndoAction(previousTasksSnapshot, "Completed '${target.title}'")
 
             // Cancel alarms for auto-completed tasks
             for (id in toComplete) {
@@ -340,6 +346,60 @@ object TaskRepository {
         } else {
             // Reopening (UNTICKING)
             val now = System.currentTimeMillis()
+
+            // Special handling for recurring task completion snapshots:
+            // When unticking a completed snapshot of a recurring task, rewind the master task back to this date!
+            if (task.id.startsWith("snapshot_")) {
+                val originTaskId = task.id.removePrefix("snapshot_").substringBeforeLast("_")
+                val masterTask = currentTasks.find { it.id == originTaskId }
+                if (masterTask != null) {
+                    val targetDueDate = if (task.dueDate.isNotBlank() && !task.dueDate.equals("SNOOZED", ignoreCase = true)) {
+                        task.dueDate
+                    } else "Today"
+                    val targetDueDateMillis = task.dueDateMillis ?: Calendar.getInstance().apply {
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }.timeInMillis
+
+                    val rewoundMaster = masterTask.copy(
+                        dueDate = targetDueDate,
+                        dueDateMillis = targetDueDateMillis,
+                        isCompleted = false,
+                        completedAt = null,
+                        snoozeUntilMillis = null,
+                        section = determineOpenSection(targetDueDate, targetDueDateMillis, masterTask.dueTime),
+                        updatedAt = now
+                    )
+
+                    // Remove snapshot task and update master task
+                    val updatedList = currentTasks.filterNot { it.id == task.id }.map {
+                        if (it.id == masterTask.id) rewoundMaster else it
+                    }
+                    _tasks.value = updatedList
+
+                    val userCode = AuthManager.getUserCode() ?: ""
+                    localDb.deleteTask(task.id)
+                    localDb.enqueueSyncAction(task.id, "DELETE", "", userCode)
+
+                    localDb.saveTask(rewoundMaster, userCode, syncStatus = "PENDING")
+                    localDb.enqueueSyncAction(rewoundMaster.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(rewoundMaster, userCode)), userCode)
+                    localDb.insertAlarmLog(masterTask.id, "RESTORED", "Recurrence rewound back to $targetDueDate")
+
+                    // Reschedule alarm for the rewound date/time
+                    AlarmScheduler.cancelAlarm(KairoApplication.instance, masterTask.id)
+                    val trigger = AlarmScheduler.calculateTriggerMillis(targetDueDate, rewoundMaster.dueTime, targetDueDateMillis)
+                    if (trigger != null && trigger > now) {
+                        AlarmScheduler.scheduleAlarm(KairoApplication.instance, rewoundMaster, trigger)
+                    }
+
+                    SyncManager.triggerSync()
+                    TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
+                    return
+                }
+            }
+
             val toReopen = mutableSetOf(taskId)
 
             // Rule 1: Unticking a parent -> all its subtasks become not done
@@ -794,16 +854,96 @@ object TaskRepository {
     fun performUndo() {
         val action = _undoAction.value ?: return
         val restored = action.previousTasks
+        val currentIds = _tasks.value.map { it.id }.toSet()
+        val restoredIds = restored.map { it.id }.toSet()
+        val toDeleteIds = currentIds - restoredIds
+
         _tasks.value = restored
         _undoAction.value = null
 
         val userCode = AuthManager.getUserCode() ?: ""
+        if (toDeleteIds.isNotEmpty()) {
+            localDb.deleteTasksBatch(toDeleteIds.toList())
+            for (id in toDeleteIds) {
+                localDb.enqueueSyncAction(id, "DELETE", "", userCode)
+            }
+        }
         localDb.saveTasksBatch(restored, userCode, syncStatus = "PENDING")
         for (t in restored) {
             localDb.enqueueSyncAction(t.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(t, userCode)), userCode)
+            if (!t.isCompleted) {
+                val trigger = AlarmScheduler.calculateTriggerMillis(t.dueDate, t.dueTime, t.dueDateMillis)
+                if (trigger != null && trigger > System.currentTimeMillis()) {
+                    AlarmScheduler.scheduleAlarm(KairoApplication.instance, t, trigger)
+                }
+            }
         }
         SyncManager.triggerSync()
         TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
+    }
+
+    fun reactivateRecurringTaskForToday(taskId: String): Boolean {
+        val now = System.currentTimeMillis()
+        val allTasks = _tasks.value
+        val target = allTasks.find { it.id == taskId } ?: return false
+
+        // Must be a recurring task
+        if (target.repeatType.isNullOrBlank() || target.repeatType.equals("NONE", ignoreCase = true)) {
+            return false
+        }
+
+        val todayCal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val todayStartMillis = todayCal.timeInMillis
+
+        // 1. Find and remove any completed snapshots for this recurring task
+        val snapshotPrefix = "snapshot_${target.id}_"
+        val snapshotsToRemove = allTasks.filter { it.id.startsWith(snapshotPrefix) }
+        val toDeleteIds = snapshotsToRemove.map { it.id }
+
+        // 2. Rewind target task back to Today
+        val rewoundTarget = target.copy(
+            dueDate = "Today",
+            dueDateMillis = todayStartMillis,
+            section = TaskSection.TODAY,
+            isCompleted = false,
+            completedAt = null,
+            snoozeUntilMillis = null,
+            updatedAt = now
+        )
+
+        val updatedList = allTasks.filterNot { toDeleteIds.contains(it.id) }.map {
+            if (it.id == target.id) rewoundTarget else it
+        }
+
+        _tasks.value = updatedList
+
+        val userCode = AuthManager.getUserCode() ?: ""
+        if (toDeleteIds.isNotEmpty()) {
+            localDb.deleteTasksBatch(toDeleteIds)
+            for (id in toDeleteIds) {
+                localDb.enqueueSyncAction(id, "DELETE", "", userCode)
+            }
+        }
+
+        localDb.saveTask(rewoundTarget, userCode, syncStatus = "PENDING")
+        localDb.enqueueSyncAction(rewoundTarget.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(rewoundTarget, userCode)), userCode)
+        localDb.insertAlarmLog(target.id, "RESTORED", "Recurring task reactivated for Today")
+
+        // 3. Reschedule alarm for today if dueTime is set
+        AlarmScheduler.cancelAlarm(KairoApplication.instance, target.id)
+        val trigger = AlarmScheduler.calculateTriggerMillis("Today", rewoundTarget.dueTime, todayStartMillis)
+        if (trigger != null && trigger > now) {
+            AlarmScheduler.scheduleAlarm(KairoApplication.instance, rewoundTarget, trigger)
+        }
+
+        SyncManager.triggerSync()
+        TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
+        return true
     }
 
     fun commitUndo() {

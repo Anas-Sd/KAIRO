@@ -682,6 +682,10 @@ fun TasksScreen(
                                 onAdjustParent = { viewModel.openAdjustParent(task) },
                                 onDrillDown = { viewModel.drillDown(task) },
                                 onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
+                                onReactivateForToday = {
+                                    viewModel.reactivateTaskForToday(task.id)
+                                    Toast.makeText(context, "Task reactivated for Today", Toast.LENGTH_SHORT).show()
+                                },
                                 dragHandleModifier = buildDragHandleModifier(task, upcomingList),
                                 isBeingDragged = isBeingDragged,
                                 dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
@@ -735,7 +739,13 @@ fun TasksScreen(
                                 parentTitle = parentTitle,
                                 onToggleCompletion = {
                                     viewModel.toggleTask(task.id)
-                                    val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
+                                    val msg = if (task.id.startsWith("snapshot_")) {
+                                        "Task reactivated for Today"
+                                    } else if (task.isCompleted) {
+                                        "Task marked as active"
+                                    } else {
+                                        "Task completed"
+                                    }
                                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                 },
                                 onDeleteTask = { viewModel.openDeleteConfirm(task) },
@@ -870,7 +880,11 @@ fun TasksScreen(
                 TaskDetailsBottomSheet(
                     task = detailsTask,
                     onDismiss = { viewModel.dismissTaskDetails() },
-                    onEditClicked = { viewModel.showEditTask(detailsTask) }
+                    onEditClicked = { viewModel.showEditTask(detailsTask) },
+                    onReactivateForToday = {
+                        viewModel.reactivateTaskForToday(detailsTask.id)
+                        Toast.makeText(context, "Task reactivated for Today", Toast.LENGTH_SHORT).show()
+                    }
                 )
             }
 

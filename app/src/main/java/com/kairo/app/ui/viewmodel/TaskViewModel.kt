@@ -363,6 +363,12 @@ class TaskViewModel(
         }
     }
 
+    fun reactivateTaskForToday(taskId: String) {
+        viewModelScope.launch {
+            repository.reactivateRecurringTaskForToday(taskId)
+        }
+    }
+
     // Breadcrumbs Navigation
     fun drillDown(task: Task) {
         _uiToggles.update { it.copy(breadcrumbStack = it.breadcrumbStack + task) }

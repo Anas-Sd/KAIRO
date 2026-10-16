@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -118,6 +119,7 @@ fun TaskCard(
     parentTitle: String? = null,
     onDrillDown: () -> Unit = {},
     onNavigateToParent: (parentId: String) -> Unit = {},
+    onReactivateForToday: (() -> Unit)? = null,
     dragHandleModifier: Modifier = Modifier,
     isBeingDragged: Boolean = false,
     dragOffsetY: Float = 0f,
@@ -484,6 +486,26 @@ fun TaskCard(
                             onShowDetails()
                         }
                     )
+                    val isUpcomingRecurring = !task.repeatType.isNullOrBlank() &&
+                        !task.repeatType.equals("NONE", ignoreCase = true) &&
+                        task.section == TaskSection.UPCOMING
+                    if (isUpcomingRecurring && onReactivateForToday != null) {
+                        DropdownMenuItem(
+                            text = { Text("Reactivate for Today", color = Color(0xFF38BDF8), fontWeight = FontWeight.SemiBold) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Today,
+                                    contentDescription = "Reactivate for Today",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onReactivateForToday()
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Edit", color = Color.White) },
                         leadingIcon = {
