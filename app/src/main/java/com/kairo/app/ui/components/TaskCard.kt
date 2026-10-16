@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Snooze
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
@@ -325,19 +326,34 @@ fun TaskCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Snooze Capsule (if task is currently snoozed)
+                    // Snooze & Alarm Countdown Capsules
                     val snoozeMillis = task.snoozeUntilMillis
                     if (snoozeMillis != null && snoozeMillis > System.currentTimeMillis() && !isLocallyCompleted) {
-                        val diffMs = snoozeMillis - System.currentTimeMillis()
-                        val minsLeft = ((diffMs + 59000L) / 60000L).coerceAtLeast(1)
+                        val countdown = com.kairo.app.ui.utils.DateUtils.formatRemainingTime(snoozeMillis)
                         val ringTimeStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(snoozeMillis))
                         TaskCapsule(
                             icon = Icons.Default.Snooze,
                             iconTint = Color(0xFF130067),
-                            text = "Snoozed • $ringTimeStr (in ${minsLeft}m)",
+                            text = if (countdown != null) "Snoozed • in $countdown" else "Snoozed • $ringTimeStr",
                             containerColor = Color(0xFFFFB77D),
                             contentColor = Color(0xFF130067)
                         )
+                    } else if (!isLocallyCompleted) {
+                        // Next Alarm countdown capsule for active tasks
+                        val targetMillis = com.kairo.app.ui.utils.DateUtils.getTaskAlarmTargetMillis(task)
+                        if (targetMillis != null) {
+                            val countdown = com.kairo.app.ui.utils.DateUtils.formatRemainingTime(targetMillis)
+                            if (countdown != null) {
+                                TaskCapsule(
+                                    icon = Icons.Default.Alarm,
+                                    iconTint = Color(0xFF38BDF8),
+                                    text = "In $countdown",
+                                    containerColor = Color(0xFF0F172A),
+                                    contentColor = Color(0xFF38BDF8),
+                                    border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.5f))
+                                )
+                            }
+                        }
                     }
 
                     if (SHOW_PRIORITY_CAPSULE) {
@@ -545,11 +561,13 @@ fun TaskCapsule(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     iconTint: Color? = null,
-    text: String? = null
+    text: String? = null,
+    border: BorderStroke? = null
 ) {
     Row(
         modifier = modifier
             .height(24.dp)
+            .then(if (border != null) Modifier.border(border, RoundedCornerShape(100.dp)) else Modifier)
             .background(containerColor, RoundedCornerShape(100.dp))
             .padding(horizontal = if (text == null) 8.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically,

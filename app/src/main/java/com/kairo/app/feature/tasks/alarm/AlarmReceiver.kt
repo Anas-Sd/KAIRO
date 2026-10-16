@@ -19,6 +19,9 @@ import com.kairo.app.data.repository.TaskRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 open class AlarmReceiver : BroadcastReceiver() {
 
@@ -132,6 +135,14 @@ open class AlarmReceiver : BroadcastReceiver() {
         }
         ContextCompat.startForegroundService(context, serviceIntent)
 
+        if (taskId.isNotBlank()) {
+            try {
+                LocalTaskDatabase.getInstance(context).insertAlarmLog(taskId, "RING", "Alarm triggered and ringing")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to log RING event: ${e.message}")
+            }
+        }
+
         // 2. Always launch full-screen AlarmActivity directly over any screen/lockscreen
         val activityIntent = Intent(context, AlarmActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -193,6 +204,11 @@ open class AlarmReceiver : BroadcastReceiver() {
         notifyAlarmOverlayFinish(context)
 
         if (taskId.isNotBlank()) {
+            try {
+                LocalTaskDatabase.getInstance(context).insertAlarmLog(taskId, "COMPLETED", "Completed via alarm")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to log COMPLETED event: ${e.message}")
+            }
             AlarmScheduler.cancelAlarm(context, taskId)
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
@@ -217,6 +233,12 @@ open class AlarmReceiver : BroadcastReceiver() {
         val snoozeMillis = System.currentTimeMillis() + (snoozeMinutes * 60 * 1000L)
 
         if (taskId.isNotBlank()) {
+            try {
+                val formattedTime = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(snoozeMillis))
+                LocalTaskDatabase.getInstance(context).insertAlarmLog(taskId, "SNOOZED", "Snoozed for $snoozeMinutes min (until $formattedTime)")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to log SNOOZED event: ${e.message}")
+            }
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
@@ -262,6 +284,11 @@ open class AlarmReceiver : BroadcastReceiver() {
         notifyAlarmOverlayFinish(context)
 
         if (taskId.isNotBlank()) {
+            try {
+                LocalTaskDatabase.getInstance(context).insertAlarmLog(taskId, "DISMISSED", "Alarm dismissed (moved to Overdue)")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to log DISMISSED event: ${e.message}")
+            }
             AlarmScheduler.cancelAlarm(context, taskId)
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
@@ -287,6 +314,11 @@ open class AlarmReceiver : BroadcastReceiver() {
         val targetMillis = intent.getLongExtra(EXTRA_POSTPONE_MILLIS, 0L)
 
         if (taskId.isNotBlank() && targetMillis > 0L) {
+            try {
+                LocalTaskDatabase.getInstance(context).insertAlarmLog(taskId, "POSTPONED", "Postponed to $newDateStr at $newTimeStr")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to log POSTPONED event: ${e.message}")
+            }
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {

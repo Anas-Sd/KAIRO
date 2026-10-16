@@ -321,6 +321,7 @@ object TaskRepository {
 
         // Save to local SQLite and queue sync
         val userCode = AuthManager.getUserCode() ?: ""
+        localDb.insertAlarmLog(taskId, "COMPLETED", "Task marked as completed")
         localDb.saveTasksBatch(affected, userCode, syncStatus = "PENDING")
         for (item in affected) {
             localDb.enqueueSyncAction(item.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(item, userCode)), userCode)
@@ -358,6 +359,8 @@ object TaskRepository {
                 } else t
             }
             _tasks.value = updatedList
+
+            localDb.insertAlarmLog(taskId, "RESTORED", "Task marked as active")
 
             // Save to local SQLite and queue sync
             val affected = updatedList.filter { toReopen.contains(it.id) }
@@ -483,6 +486,9 @@ object TaskRepository {
         }
 
         if (updatedTask != null) {
+            val mins = ((snoozeMillis - now + 59000L) / 60000L).coerceAtLeast(1)
+            val formattedTime = SimpleDateFormat("h:mm a", Locale.getDefault()).format(java.util.Date(snoozeMillis))
+            localDb.insertAlarmLog(taskId, "SNOOZED", "Snoozed for $mins min (until $formattedTime)")
             localDb.saveTask(updatedTask!!, userCode, syncStatus = "PENDING")
             localDb.enqueueSyncAction(taskId, "UPDATE", json.encodeToString(TaskDto.fromDomain(updatedTask!!, userCode)), userCode)
             AlarmScheduler.scheduleAlarm(KairoApplication.instance, updatedTask!!, snoozeMillis)

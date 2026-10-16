@@ -179,4 +179,68 @@ object DateUtils {
             }
         }
     }
+
+    /**
+     * Formats the remaining time until targetMillis into:
+     * - "X min" if < 60 minutes
+     * - "X hrs : Y min" (or "1 hr : Y min") if < 24 hours
+     * - "X days : Y hrs : Z min" (or "1 day : ...") if >= 24 hours
+     */
+    fun formatRemainingTime(targetMillis: Long, now: Long = System.currentTimeMillis()): String? {
+        val diffMs = targetMillis - now
+        if (diffMs <= 0) return null
+
+        val totalMinutes = (diffMs + 59999L) / 60000L
+        if (totalMinutes < 60L) {
+            val mins = totalMinutes.coerceAtLeast(1L)
+            return "$mins min"
+        }
+
+        val totalHours = totalMinutes / 60L
+        val remainingMins = totalMinutes % 60L
+
+        if (totalHours < 24L) {
+            val hrUnit = if (totalHours == 1L) "hr" else "hrs"
+            return "$totalHours $hrUnit : $remainingMins min"
+        }
+
+        val days = totalHours / 24L
+        val remainingHours = totalHours % 24L
+        val dayUnit = if (days == 1L) "day" else "days"
+        val hrUnit = if (remainingHours == 1L) "hr" else "hrs"
+
+        return "$days $dayUnit : $remainingHours $hrUnit : $remainingMins min"
+    }
+
+    /**
+     * Computes the next active alarm trigger millis for a task.
+     * Evaluates active snooze time first, then scheduled trigger time.
+     * Returns null if completed or already in the past.
+     */
+    fun getTaskAlarmTargetMillis(task: com.kairo.app.data.model.Task, now: Long = System.currentTimeMillis()): Long? {
+        if (task.isCompleted) return null
+        val snooze = task.snoozeUntilMillis
+        if (snooze != null && snooze > now) {
+            return snooze
+        }
+        val trigger = com.kairo.app.alarm.AlarmScheduler.calculateTriggerMillis(task.dueDate, task.dueTime, task.dueDateMillis)
+        if (trigger != null && trigger > now) {
+            return trigger
+        }
+        return null
+    }
+
+    /**
+     * Finds the active task with the closest upcoming alarm across a list of tasks.
+     */
+    fun getNextUpcomingAlarmTask(tasks: List<com.kairo.app.data.model.Task>, now: Long = System.currentTimeMillis()): Pair<com.kairo.app.data.model.Task, Long>? {
+        return tasks
+            .filter { !it.isCompleted }
+            .mapNotNull { task ->
+                val target = getTaskAlarmTargetMillis(task, now)
+                if (target != null) task to target else null
+            }
+            .minByOrNull { it.second }
+    }
 }
+

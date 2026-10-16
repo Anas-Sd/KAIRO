@@ -36,6 +36,9 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -62,8 +65,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kairo.app.data.local.LocalTaskDatabase
 import com.kairo.app.data.model.Priority
 import com.kairo.app.data.model.Task
+import com.kairo.app.data.model.TaskAlarmLog
 import com.kairo.app.ui.theme.KairoError
 import com.kairo.app.ui.theme.KairoErrorContainer
 import com.kairo.app.ui.theme.KairoOnErrorContainer
@@ -97,6 +102,13 @@ fun TaskDetailsBottomSheet(
     }
     val completedDateFormatted = remember(task.completedAt) {
         task.completedAt?.let { dateTimeFormat.format(Date(it)) }
+    }
+
+    val alarmLogs = remember(task.id) {
+        LocalTaskDatabase.getInstance(context).getAlarmLogsForTask(task.id)
+    }
+    val hasAlarmRang = remember(alarmLogs) {
+        alarmLogs.any { it.action.equals("RING", ignoreCase = true) }
     }
 
     val loadedImageBitmap = rememberImageBitmap(context, task.attachmentUri)
@@ -278,46 +290,18 @@ fun TaskDetailsBottomSheet(
                         value = dueString
                     )
 
-                    // Repeat rule
-                    val repeatSummary = when (task.repeatType) {
-                        "BOTH", "BOTH_MONTHLY" -> {
-                            val days = task.repeatDays?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-                            val daysStr = if (days.size == 7) "Everyday"
-                            else if (days.size == 5 && !days.contains("SAT") && !days.contains("SUN")) "Weekdays"
-                            else if (days.size == 2 && days.contains("SAT") && days.contains("SUN")) "Weekends"
-                            else "Every " + days.joinToString(", ") { it.take(3) }
-
-                            val dates = task.repeatDates?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-                            val datesStr = if (dates.size == 1) {
-                                if (task.repeatType == "BOTH_MONTHLY") "Every month on ${dates.first()}" else "${dates.first()} (only for now)"
-                            } else {
-                                if (task.repeatType == "BOTH_MONTHLY") "Every month on ${dates.size} dates" else "${dates.size} specific dates"
-                            }
-                            "$daysStr + $datesStr"
+                    // Next Alarm Countdown
+                    val targetAlarmMillis = com.kairo.app.ui.utils.DateUtils.getTaskAlarmTargetMillis(task)
+                    if (targetAlarmMillis != null && !task.isCompleted) {
+                        val remainingCountdown = com.kairo.app.ui.utils.DateUtils.formatRemainingTime(targetAlarmMillis)
+                        if (remainingCountdown != null) {
+                            InfoRow(
+                                icon = Icons.Default.Alarm,
+                                label = "Next Alarm",
+                                value = "In $remainingCountdown",
+                                valueColor = Color(0xFF38BDF8)
+                            )
                         }
-                        "DAYS" -> {
-                            val days = task.repeatDays?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-                            if (days.size == 7) "Everyday"
-                            else if (days.size == 5 && !days.contains("SAT") && !days.contains("SUN")) "Weekdays"
-                            else if (days.size == 2 && days.contains("SAT") && days.contains("SUN")) "Weekends"
-                            else "Every " + days.joinToString(", ") { it.take(3) }
-                        }
-                        "DATES" -> {
-                            val dates = task.repeatDates?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-                            if (dates.size == 1) "${dates.first()} (only for now)" else "${dates.size} specific dates (only for now)"
-                        }
-                        "MONTHLY_DATES" -> {
-                            val dates = task.repeatDates?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-                            if (dates.size == 1) "Every month on ${dates.first()}" else "Every month on ${dates.joinToString(", ")}"
-                        }
-                        else -> null
-                    }
-                    if (repeatSummary != null) {
-                        InfoRow(
-                            icon = Icons.Default.Repeat,
-                            label = "Repeat",
-                            value = repeatSummary
-                        )
                     }
 
                     // Reminder Alarm Tone
@@ -334,6 +318,327 @@ fun TaskDetailsBottomSheet(
                             label = "Location",
                             value = task.location
                         )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Section: Repeat Nature
+            Text(
+                text = "REPEAT NATURE",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF918EA2),
+                letterSpacing = 0.8.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = KairoSurfaceContainerHighest.copy(alpha = 0.35f),
+                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.25f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    val repeatTypeStr = task.repeatType?.trim().orEmpty()
+                    val isRepeating = repeatTypeStr.isNotBlank() && !repeatTypeStr.equals("NONE", ignoreCase = true)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Repeat,
+                                contentDescription = null,
+                                tint = if (isRepeating) KairoPrimary else Color(0xFF918EA2),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Pattern",
+                                fontSize = 13.sp,
+                                color = Color(0xFF918EA2)
+                            )
+                        }
+                        Text(
+                            text = when (repeatTypeStr.uppercase(Locale.US)) {
+                                "EVERYDAY", "DAILY" -> "Everyday (Daily)"
+                                "DAYS" -> "Specific Days of Week"
+                                "DATES" -> "Specific Dates"
+                                "MONTHLY_DATES" -> "Monthly on Specific Dates"
+                                "BOTH", "BOTH_MONTHLY" -> "Weekly & Monthly Pattern"
+                                else -> "Does not repeat (One-time)"
+                            },
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isRepeating) KairoPrimary else Color.White
+                        )
+                    }
+
+                    if (isRepeating) {
+                        // Detailed days / dates breakdown
+                        val daysList = task.repeatDays?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                        if (daysList.isNotEmpty()) {
+                            val fullDayNames = mapOf(
+                                "MON" to "Monday", "TUE" to "Tuesday", "WED" to "Wednesday",
+                                "THU" to "Thursday", "FRI" to "Friday", "SAT" to "Saturday", "SUN" to "Sunday"
+                            )
+                            val formattedDays = when {
+                                daysList.size == 7 -> "Every day (Mon to Sun)"
+                                daysList.size == 5 && !daysList.contains("SAT") && !daysList.contains("SUN") -> "Weekdays (Mon to Fri)"
+                                daysList.size == 2 && daysList.contains("SAT") && daysList.contains("SUN") -> "Weekends (Sat & Sun)"
+                                else -> daysList.joinToString(", ") { fullDayNames[it.uppercase(Locale.US)] ?: it }
+                            }
+                            InfoRow(
+                                icon = Icons.Default.CalendarToday,
+                                label = "Scheduled Days",
+                                value = formattedDays
+                            )
+                        }
+
+                        val datesList = task.repeatDates?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                        if (datesList.isNotEmpty()) {
+                            InfoRow(
+                                icon = Icons.Default.CalendarToday,
+                                label = if (repeatTypeStr.contains("MONTHLY")) "Monthly Dates" else "Selected Dates",
+                                value = datesList.joinToString(", ")
+                            )
+                        }
+
+                        // Next Occurrence
+                        val nextOccurrence = com.kairo.app.ui.utils.DateUtils.calculateNextRepeatDueDate(
+                            currentDueDateMillis = task.dueDateMillis,
+                            currentDueDateStr = task.dueDate,
+                            repeatType = task.repeatType,
+                            repeatDays = task.repeatDays,
+                            repeatDates = task.repeatDates
+                        )
+                        if (nextOccurrence != null) {
+                            val nextTimeStr = if (!task.dueTime.isNullOrBlank()) " at ${task.dueTime}" else ""
+                            InfoRow(
+                                icon = Icons.Default.Schedule,
+                                label = "Next Recurrence",
+                                value = "${nextOccurrence.first}$nextTimeStr",
+                                valueColor = Color(0xFF38BDF8)
+                            )
+                        }
+
+                        // Recurrence behavior explanation
+                        Text(
+                            text = "• When marked completed, this task automatically rolls over to the next scheduled date.",
+                            fontSize = 11.sp,
+                            color = Color(0xFF94A3B8),
+                            lineHeight = 15.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "• This is a single one-time task. It will not re-occur after completion.",
+                            fontSize = 11.sp,
+                            color = Color(0xFF918EA2),
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Section: Alarm Activity & History Log
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "ALARM ACTIVITY LOG",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF918EA2),
+                    letterSpacing = 0.8.sp
+                )
+                if (alarmLogs.isNotEmpty()) {
+                    Text(
+                        text = "${alarmLogs.size} recorded",
+                        fontSize = 11.sp,
+                        color = Color(0xFF38BDF8),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = KairoSurfaceContainerHighest.copy(alpha = 0.35f),
+                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.25f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (!hasAlarmRang && alarmLogs.isEmpty()) {
+                    // Not ringed yet state
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(Color(0xFF918EA2).copy(alpha = 0.15f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.NotificationsOff,
+                                contentDescription = null,
+                                tint = Color(0xFF918EA2),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Not ringed yet",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            val targetMillis = com.kairo.app.ui.utils.DateUtils.getTaskAlarmTargetMillis(task)
+                            val countdown = targetMillis?.let { com.kairo.app.ui.utils.DateUtils.formatRemainingTime(it) }
+                            val subtext = if (countdown != null) {
+                                "Alarm is scheduled to ring in $countdown"
+                            } else {
+                                "The alarm for this task has not triggered yet."
+                            }
+                            Text(
+                                text = subtext,
+                                fontSize = 12.sp,
+                                color = Color(0xFF918EA2)
+                            )
+                        }
+                    }
+                } else {
+                    // Chronological audit log of all events
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (!hasAlarmRang) {
+                            // Edge case: task was marked completed manually before alarm rang
+                            Row(
+                                modifier = Modifier.padding(bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.NotificationsOff,
+                                    contentDescription = null,
+                                    tint = Color(0xFF918EA2),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Alarm has not ringed yet",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF918EA2),
+                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                )
+                            }
+                        }
+
+                        alarmLogs.forEachIndexed { index, log ->
+                            val icon = when (log.action.uppercase(Locale.US)) {
+                                "RING" -> Icons.Default.Alarm
+                                "COMPLETED" -> Icons.Default.CheckCircle
+                                "SNOOZED" -> Icons.Default.Snooze
+                                "DISMISSED" -> Icons.Default.Close
+                                "POSTPONED" -> Icons.Default.Schedule
+                                else -> Icons.Default.History
+                            }
+                            val actionColor = when (log.action.uppercase(Locale.US)) {
+                                "RING" -> Color(0xFFF59E0B) // Amber
+                                "COMPLETED" -> Color(0xFF10B981) // Emerald Green
+                                "SNOOZED" -> Color(0xFFFFB77D) // Warm Orange
+                                "DISMISSED" -> Color(0xFFEF4444) // Red
+                                "POSTPONED" -> Color(0xFF38BDF8) // Sky Blue
+                                else -> Color(0xFF818CF8) // Indigo
+                            }
+                            val actionLabel = when (log.action.uppercase(Locale.US)) {
+                                "RING" -> "Alarm Rang"
+                                "COMPLETED" -> "Completed"
+                                "SNOOZED" -> "Snoozed"
+                                "DISMISSED" -> "Dismissed (Overdue)"
+                                "POSTPONED" -> "Postponed"
+                                "RESTORED" -> "Marked Active"
+                                else -> log.action
+                            }
+                            val logTimeFormatted = remember(log.timestamp) {
+                                dateTimeFormat.format(Date(log.timestamp))
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = 2.dp)
+                                        .size(28.dp)
+                                        .background(actionColor.copy(alpha = 0.15f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        tint = actionColor,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = actionLabel,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = actionColor
+                                        )
+                                        Text(
+                                            text = logTimeFormatted,
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF918EA2)
+                                        )
+                                    }
+                                    if (!log.details.isNullOrBlank()) {
+                                        Text(
+                                            text = log.details,
+                                            fontSize = 12.sp,
+                                            color = Color(0xFFC8C4D9),
+                                            modifier = Modifier.padding(top = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            if (index < alarmLogs.lastIndex) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(start = 14.dp)
+                                        .width(1.dp)
+                                        .height(8.dp)
+                                        .background(KairoOutlineVariant.copy(alpha = 0.2f))
+                                )
+                            }
+                        }
                     }
                 }
             }

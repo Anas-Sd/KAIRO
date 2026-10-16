@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
 import com.kairo.app.data.model.Priority
 import com.kairo.app.data.model.Task
+import com.kairo.app.data.model.TaskAlarmLog
 import com.kairo.app.data.model.TaskSection
 
 data class PendingSyncAction(
@@ -32,7 +33,7 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
     companion object {
         private const val TAG = "LocalTaskDatabase"
         private const val DATABASE_NAME = "kairo_local_tasks.db"
-        private const val DATABASE_VERSION = 3
+        private const val DATABASE_VERSION = 4
 
         // Table local_tasks
         const val TABLE_TASKS = "local_tasks"
@@ -73,6 +74,14 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         const val COL_QUEUE_PAYLOAD = "payload"
         const val COL_QUEUE_USER_CODE = "user_code"
         const val COL_QUEUE_CREATED_AT = "created_at"
+
+        // Table task_alarm_logs
+        const val TABLE_ALARM_LOGS = "task_alarm_logs"
+        const val COL_LOG_ID = "log_id"
+        const val COL_LOG_TASK_ID = "task_id"
+        const val COL_LOG_ACTION = "action"
+        const val COL_LOG_DETAILS = "details"
+        const val COL_LOG_TIMESTAMP = "timestamp"
 
         @Volatile
         private var instance: LocalTaskDatabase? = null
@@ -129,13 +138,26 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
             );
         """.trimIndent()
 
+        val createAlarmLogsTable = """
+            CREATE TABLE IF NOT EXISTS $TABLE_ALARM_LOGS (
+                $COL_LOG_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_LOG_TASK_ID TEXT NOT NULL,
+                $COL_LOG_ACTION TEXT NOT NULL,
+                $COL_LOG_DETAILS TEXT,
+                $COL_LOG_TIMESTAMP INTEGER NOT NULL
+            );
+        """.trimIndent()
+
         val indexUserCode = "CREATE INDEX IF NOT EXISTS idx_tasks_user_code ON $TABLE_TASKS ($COL_USER_CODE);"
         val indexParentId = "CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON $TABLE_TASKS ($COL_PARENT_ID);"
+        val indexLogTaskId = "CREATE INDEX IF NOT EXISTS idx_alarm_logs_task_id ON $TABLE_ALARM_LOGS ($COL_LOG_TASK_ID);"
 
         db.execSQL(createTasksTable)
         db.execSQL(createSyncQueueTable)
+        db.execSQL(createAlarmLogsTable)
         db.execSQL(indexUserCode)
         db.execSQL(indexParentId)
+        db.execSQL(indexLogTaskId)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -147,6 +169,103 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         if (oldVersion < 3) {
             try { db.execSQL("ALTER TABLE $TABLE_TASKS ADD COLUMN $COL_SNOOZE_UNTIL_MILLIS INTEGER;") } catch (_: Throwable) {}
         }
+        if (oldVersion < 4) {
+            try {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS $TABLE_ALARM_LOGS (
+                        $COL_LOG_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                        $COL_LOG_TASK_ID TEXT NOT NULL,
+                        $COL_LOG_ACTION TEXT NOT NULL,
+                        $COL_LOG_DETAILS TEXT,
+                        $COL_LOG_TIMESTAMP INTEGER NOT NULL
+                    );
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_alarm_logs_task_id ON $TABLE_ALARM_LOGS ($COL_LOG_TASK_ID);")
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error upgrading to version 4: ${e.message}")
+            }
+        }
+    }
+
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        try {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS $TABLE_ALARM_LOGS (
+                    $COL_LOG_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    $COL_LOG_TASK_ID TEXT NOT NULL,
+                    $COL_LOG_ACTION TEXT NOT NULL,
+                    $COL_LOG_DETAILS TEXT,
+                    $COL_LOG_TIMESTAMP INTEGER NOT NULL
+                );
+            """.trimIndent())
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_alarm_logs_task_id ON $TABLE_ALARM_LOGS ($COL_LOG_TASK_ID);")
+        } catch (_: Throwable) {}
+    }
+
+    // ==========================================
+    // ALARM ACTIVITY & AUDIT LOG OPERATIONS
+    // ==========================================
+
+    @Synchronized
+    fun insertAlarmLog(taskId: String, action: String, details: String?, timestamp: Long = System.currentTimeMillis()): Long {
+        if (taskId.isBlank()) return -1L
+        val db = writableDatabase
+
+        // Deduplication guard: ignore if same action for same task within last 4 seconds
+        try {
+            val query = "SELECT $COL_LOG_TIMESTAMP FROM $TABLE_ALARM_LOGS WHERE $COL_LOG_TASK_ID = ? AND $COL_LOG_ACTION = ? ORDER BY $COL_LOG_TIMESTAMP DESC LIMIT 1"
+            db.rawQuery(query, arrayOf(taskId, action)).use { cursor ->
+                if (cursor.moveToNext()) {
+                    val lastTime = cursor.getLong(0)
+                    if (Math.abs(timestamp - lastTime) < 4000L) {
+                        return -1L
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Deduplication check failed: ${e.message}")
+        }
+
+        val values = ContentValues().apply {
+            put(COL_LOG_TASK_ID, taskId)
+            put(COL_LOG_ACTION, action)
+            put(COL_LOG_DETAILS, details)
+            put(COL_LOG_TIMESTAMP, timestamp)
+        }
+        return db.insert(TABLE_ALARM_LOGS, null, values)
+    }
+
+    @Synchronized
+    fun getAlarmLogsForTask(taskId: String): List<TaskAlarmLog> {
+        if (taskId.isBlank()) return emptyList()
+        val logs = mutableListOf<TaskAlarmLog>()
+        val db = readableDatabase
+        val query = "SELECT * FROM $TABLE_ALARM_LOGS WHERE $COL_LOG_TASK_ID = ? ORDER BY $COL_LOG_TIMESTAMP DESC"
+        try {
+            db.rawQuery(query, arrayOf(taskId)).use { cursor ->
+                val colId = cursor.getColumnIndex(COL_LOG_ID)
+                val colTaskId = cursor.getColumnIndex(COL_LOG_TASK_ID)
+                val colAction = cursor.getColumnIndex(COL_LOG_ACTION)
+                val colDetails = cursor.getColumnIndex(COL_LOG_DETAILS)
+                val colTimestamp = cursor.getColumnIndex(COL_LOG_TIMESTAMP)
+
+                while (cursor.moveToNext()) {
+                    logs.add(
+                        TaskAlarmLog(
+                            id = if (colId >= 0) cursor.getLong(colId) else 0L,
+                            taskId = if (colTaskId >= 0) cursor.getString(colTaskId) else taskId,
+                            action = if (colAction >= 0) cursor.getString(colAction) else "",
+                            details = if (colDetails >= 0 && !cursor.isNull(colDetails)) cursor.getString(colDetails) else null,
+                            timestamp = if (colTimestamp >= 0) cursor.getLong(colTimestamp) else 0L
+                        )
+                    )
+                }
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error reading alarm logs: ${e.message}", e)
+        }
+        return logs
     }
 
     // ==========================================

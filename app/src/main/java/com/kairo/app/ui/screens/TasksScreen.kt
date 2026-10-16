@@ -57,6 +57,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -123,6 +129,18 @@ fun TasksScreen(
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteWarningDialog by remember { mutableStateOf(false) }
     var showCompleteWarningDialog by remember { mutableStateOf(false) }
+
+    var tickerMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30000L) // updates every 30 seconds
+            tickerMillis = System.currentTimeMillis()
+        }
+    }
+
+    val nextAlarmPair = remember(uiState.allTasks, tickerMillis) {
+        com.kairo.app.ui.utils.DateUtils.getNextUpcomingAlarmTask(uiState.allTasks, tickerMillis)
+    }
 
     // Back button handling:
     // 0. If in selection mode, exit selection mode
@@ -320,6 +338,86 @@ fun TasksScreen(
                                 onNavigateBack = { viewModel.popBreadcrumb() },
                                 onNavigateToCrumb = { index -> viewModel.navigateBreadcrumbTo(index) }
                             )
+                        }
+
+                        // Next Upcoming Alarm Indicator (Below Filter Row)
+                        if (nextAlarmPair != null) {
+                            val (nextTask, nextAlarmMillis) = nextAlarmPair
+                            val countdownText = com.kairo.app.ui.utils.DateUtils.formatRemainingTime(nextAlarmMillis, tickerMillis)
+                            val targetTimeFormatted = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(nextAlarmMillis))
+                            val targetDateFormatted = com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, nextAlarmMillis)
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = Color(0xFF0F172A),
+                                border = BorderStroke(1.2.dp, Color(0xFF0284C7).copy(alpha = 0.55f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.showTaskDetails(nextTask)
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .background(Color(0xFF0284C7).copy(alpha = 0.2f), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Alarm,
+                                                contentDescription = "Next Alarm",
+                                                tint = Color(0xFF38BDF8),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Next Alarm in",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = Color(0xFF94A3B8)
+                                                )
+                                                Text(
+                                                    text = countdownText ?: "Soon",
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF38BDF8)
+                                                )
+                                            }
+                                            Text(
+                                                text = "${nextTask.title} • $targetDateFormatted at $targetTimeFormatted",
+                                                fontSize = 12.sp,
+                                                color = Color.White,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = "View Task Details",
+                                        tint = Color(0xFF64748B),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
