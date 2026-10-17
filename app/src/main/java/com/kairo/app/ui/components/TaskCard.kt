@@ -57,7 +57,6 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Today
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -121,7 +120,6 @@ fun TaskCard(
     onDrillDown: () -> Unit = {},
     onNavigateToParent: (parentId: String) -> Unit = {},
     onReactivateForToday: (() -> Unit)? = null,
-    onRescheduleToToday: (() -> Unit)? = null,
     dragHandleModifier: Modifier = Modifier,
     isBeingDragged: Boolean = false,
     dragOffsetY: Float = 0f,
@@ -505,24 +503,6 @@ fun TaskCard(
                             onClick = {
                                 menuExpanded = false
                                 onReactivateForToday()
-                            }
-                        )
-                    }
-                    val isOverdueTask = task.section == TaskSection.OVERDUE || isOverdue
-                    if (isOverdueTask && onRescheduleToToday != null) {
-                        DropdownMenuItem(
-                            text = { Text("Reschedule to Today", color = Color(0xFF38BDF8), fontWeight = FontWeight.SemiBold) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.RestartAlt,
-                                    contentDescription = "Reschedule to Today",
-                                    tint = Color(0xFF38BDF8),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onRescheduleToToday()
                             }
                         )
                     }

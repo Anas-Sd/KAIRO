@@ -369,19 +369,6 @@ class TaskViewModel(
         }
     }
 
-    fun rescheduleTaskToToday(taskId: String) {
-        viewModelScope.launch {
-            repository.rescheduleTaskToToday(taskId)
-        }
-    }
-
-    fun rescheduleAllOverdueToToday() {
-        val overdueIds = uiState.value.overdueTasks.map { it.id }
-        viewModelScope.launch {
-            repository.rescheduleTasksToToday(overdueIds)
-        }
-    }
-
     // Breadcrumbs Navigation
     fun drillDown(task: Task) {
         _uiToggles.update { it.copy(breadcrumbStack = it.breadcrumbStack + task) }

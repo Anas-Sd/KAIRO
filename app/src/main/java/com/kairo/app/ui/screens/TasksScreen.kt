@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.ui.graphics.Color
 import com.kairo.app.data.sync.SyncManager
 import androidx.compose.material3.AlertDialog
@@ -532,51 +531,6 @@ fun TasksScreen(
                     }
 
                     if (uiState.overdueExpanded) {
-                        item(key = "section_overdue_actions") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "${overdueList.size} task${if (overdueList.size > 1) "s" else ""} past due",
-                                    fontSize = 12.sp,
-                                    color = KairoError.copy(alpha = 0.85f),
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Surface(
-                                    onClick = {
-                                        viewModel.rescheduleAllOverdueToToday()
-                                        Toast.makeText(context, "Rescheduled ${overdueList.size} task(s) to Today", Toast.LENGTH_SHORT).show()
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = Color(0xFF0284C7).copy(alpha = 0.18f),
-                                    border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.5f))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.RestartAlt,
-                                            contentDescription = "Reschedule all",
-                                            tint = Color(0xFF38BDF8),
-                                            modifier = Modifier.size(15.dp)
-                                        )
-                                        Text(
-                                            text = "Reschedule All",
-                                            color = Color(0xFF38BDF8),
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
                         items(overdueList, key = { it.id }) { task ->
                             val hasSubtasks = uiState.allTasks.any { it.parentId == task.id }
                             val subtaskProgress = if (hasSubtasks) TaskRepository.getSubtaskProgress(task.id, uiState.allTasks) else null
@@ -602,10 +556,6 @@ fun TasksScreen(
                                 onAdjustParent = { viewModel.openAdjustParent(task) },
                                 onDrillDown = { viewModel.drillDown(task) },
                                 onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
-                                onRescheduleToToday = {
-                                    viewModel.rescheduleTaskToToday(task.id)
-                                    Toast.makeText(context, "Task rescheduled to Today", Toast.LENGTH_SHORT).show()
-                                },
                                 dragHandleModifier = buildDragHandleModifier(task, overdueList),
                                 isBeingDragged = isBeingDragged,
                                 dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
