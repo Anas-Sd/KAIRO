@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.EventBusy
@@ -83,6 +84,7 @@ import com.kairo.app.feature.habits.model.HabitDayState
 import com.kairo.app.feature.habits.model.HabitRepeatType
 import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.feature.habits.model.HabitWithStats
+import com.kairo.app.ui.components.HabitExportBottomSheet
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoError
 import com.kairo.app.ui.theme.KairoPrimary
@@ -124,6 +126,7 @@ fun HabitDetailScreen(
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var showDetailsBottomSheet by remember { mutableStateOf(false) }
+    var showExportBottomSheet by remember { mutableStateOf(false) }
     var activeNoteDialog by remember { mutableStateOf<DetailNoteDialogState?>(null) }
 
     val context = LocalContext.current
@@ -191,17 +194,11 @@ fun HabitDetailScreen(
                     modifier = Modifier.background(KairoSurfaceContainerHigh)
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Share", color = Color.White) },
-                        leadingIcon = { Icon(Icons.Default.Share, null, tint = Color(0xFFC8C4D9)) },
+                        text = { Text("Download", color = Color.White) },
+                        leadingIcon = { Icon(Icons.Default.Download, null, tint = Color(0xFFC8C4D9)) },
                         onClick = {
                             showOverflowMenu = false
-                            val sendIntent = Intent().apply {
-                                action = Intent.ACTION_SEND
-                                putExtra(Intent.EXTRA_TEXT, "I'm tracking \"${currentHabit.title}\" with Kairo! Current streak: ${habitWithStats.streak} $streakUnit.")
-                                type = "text/plain"
-                            }
-                            val shareIntent = Intent.createChooser(sendIntent, "Share Habit")
-                            context.startActivity(shareIntent)
+                            showExportBottomSheet = true
                         }
                     )
                     DropdownMenuItem(
@@ -1119,6 +1116,15 @@ fun HabitDetailScreen(
                 showDetailsBottomSheet = false
                 showEditDialog = true
             }
+        )
+    }
+
+    if (showExportBottomSheet) {
+        val disciplineOverview by HabitRepository.disciplineOverview.collectAsState()
+        HabitExportBottomSheet(
+            habitsToExport = listOf(habitWithStats.copy(habit = currentHabit)),
+            overallStats = disciplineOverview,
+            onDismissRequest = { showExportBottomSheet = false }
         )
     }
 }

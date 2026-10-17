@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Swipe
 import androidx.compose.material3.AlertDialog
@@ -65,6 +66,7 @@ import com.kairo.app.feature.habits.model.HabitRepeatType
 import com.kairo.app.feature.habits.model.HabitType
 import com.kairo.app.feature.habits.model.HabitWithStats
 import com.kairo.app.ui.components.AppHeader
+import com.kairo.app.ui.components.HabitExportBottomSheet
 import com.kairo.app.ui.components.SettingsDialog
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoError
@@ -118,6 +120,7 @@ fun HabitsScreen(
     var selectedHabitIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var showCompleteConfirmDialog by remember { mutableStateOf(false) }
+    var showExportBottomSheet by remember { mutableStateOf(false) }
 
     // Drag-to-reorder state
     var draggingHabitId by remember { mutableStateOf<String?>(null) }
@@ -679,6 +682,41 @@ fun HabitsScreen(
                             }
                         }
 
+                        // Download Button
+                        Surface(
+                            onClick = {
+                                if (selectedHabitIds.isEmpty()) {
+                                    Toast.makeText(context, "No habits selected", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showExportBottomSheet = true
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            color = KairoPrimary.copy(alpha = 0.18f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = null,
+                                    tint = KairoPrimary,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "Download",
+                                    color = KairoPrimary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        }
+
                         // Delete Button
                         Surface(
                             onClick = {
@@ -896,6 +934,18 @@ fun HabitsScreen(
                 )
                 activeTargetPicker = null
             }
+        )
+    }
+
+    // Export Habits Bottom Sheet (Multi-Selection Mode)
+    if (showExportBottomSheet) {
+        val selectedHabits = remember(selectedHabitIds, habitsWithStats) {
+            habitsWithStats.filter { it.habit.id in selectedHabitIds }
+        }
+        HabitExportBottomSheet(
+            habitsToExport = selectedHabits,
+            overallStats = disciplineOverview,
+            onDismissRequest = { showExportBottomSheet = false }
         )
     }
 }

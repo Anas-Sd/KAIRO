@@ -1072,7 +1072,7 @@ object HabitRepository {
         }
     }
 
-    private fun isDayComplete(habit: Habit, record: HabitDayRecord?): Boolean {
+    internal fun isDayComplete(habit: Habit, record: HabitDayRecord?): Boolean {
         if (record == null) return false
         if (record.state == HabitDayState.DONE) return true
         if (habit.type == HabitType.TARGET && record.value >= habit.targetValue && habit.targetValue > 0) return true
