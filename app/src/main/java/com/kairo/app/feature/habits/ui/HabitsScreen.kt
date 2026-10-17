@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
@@ -119,7 +118,6 @@ fun HabitsScreen(
     var isSelectionMode by remember { mutableStateOf(false) }
     var selectedHabitIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
-    var showCompleteConfirmDialog by remember { mutableStateOf(false) }
     var showExportBottomSheet by remember { mutableStateOf(false) }
 
     // Drag-to-reorder state
@@ -642,45 +640,11 @@ fun HabitsScreen(
                         )
                     }
 
-                    // Right: Actions
+                    // Right: Actions (Download & Delete)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Complete Button
-                        Surface(
-                            onClick = {
-                                if (selectedHabitIds.isEmpty()) {
-                                    Toast.makeText(context, "No habits selected", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    showCompleteConfirmDialog = true
-                                }
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            color = KairoSecondary.copy(alpha = 0.18f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.5f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    tint = KairoSecondary,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Text(
-                                    text = "Complete",
-                                    color = KairoSecondary,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                            }
-                        }
 
                         // Download Button
                         Surface(
@@ -775,50 +739,6 @@ fun HabitsScreen(
         }
     }
 
-    // Batch Complete Warning Dialog
-    if (showCompleteConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showCompleteConfirmDialog = false },
-            title = {
-                Text(
-                    text = "Complete ${selectedHabitIds.size} habit${if (selectedHabitIds.size > 1) "s" else ""} today?",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Text(
-                    text = "This will mark all ${selectedHabitIds.size} selected habit(s) as completed for today.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val count = selectedHabitIds.size
-                        HabitRepository.completeHabitsToday(selectedHabitIds)
-                        isSelectionMode = false
-                        selectedHabitIds = emptySet()
-                        showCompleteConfirmDialog = false
-                        Toast.makeText(context, "$count habit(s) completed today", Toast.LENGTH_SHORT).show()
-                    }
-                ) {
-                    Text(
-                        text = "Yes, Complete",
-                        color = KairoSecondary,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCompleteConfirmDialog = false }) {
-                    Text("Cancel", color = MaterialTheme.colorScheme.onSurface)
-                }
-            },
-            containerColor = KairoSurfaceContainerHigh,
-            shape = RoundedCornerShape(20.dp)
-        )
-    }
 
     // Batch Delete Warning Dialog
     if (showDeleteConfirmDialog) {
