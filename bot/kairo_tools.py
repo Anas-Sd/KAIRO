@@ -1453,19 +1453,34 @@ def search_tasks(query: str) -> str:
         lines.append(f"{idx}. {'✅' if t.get('is_completed') else '📌'} {t.get('title')} | Due: {t.get('due_date')} {t.get('due_time') or ''} | Notes: {t.get('notes') or '-'}")
     return "\n".join(lines)
 
-def export_tasks_data(format_type: str = "csv", filter_status: str = "all", filter_category: str = "all") -> str:
+def export_tasks_data(format_type: str = None, filter_status: str = None, filter_category: str = None) -> str:
     """
-    Exports tasks to a downloadable file (CSV, Plain Text TXT, or JSON) and queues it for Telegram transmission.
-    - format_type: 'csv' | 'txt' (or 'plain text') | 'json'
-    - filter_status: 'all' | 'active' | 'completed' | 'overdue' | 'today' | 'upcoming'
+    Exports tasks to a downloadable file (CSV or Plain Text TXT) and queues it for Telegram transmission.
+    
+    CRITICAL PROTOCOL:
+    DO NOT CALL THIS TOOL until the user has explicitly chosen BOTH:
+    1. Scope: 'all' tasks or filtered data ('active', 'completed', 'overdue', 'today', 'upcoming')
+    2. Format: 'csv' or 'txt' (Plain text)
+    
+    If the user has not confirmed whether they want all tasks or filtered data, DO NOT CALL THIS TOOL. Ask them first:
+    "Would you like to export all tasks or filtered data (e.g., active, completed, overdue, today, upcoming)?"
+    
+    If the user has not confirmed whether they want CSV or Plain text, DO NOT CALL THIS TOOL. Ask them first:
+    "Would you like the export in CSV or Plain text (.txt) format?"
     """
-    tasks = fetch_all_tasks_for_user()
-    # Filter out system records
-    tasks = [t for t in tasks if not t.get("id", "").startswith("sys_") and t.get("title") != "__SYSTEM_RECENT_TONES__"]
-
-    status_lower = (filter_status or "all").lower().strip()
-    if status_lower == "all" and filter_category and filter_category.lower().strip() != "all":
+    status_lower = (filter_status or "").lower().strip()
+    if not status_lower and filter_category and filter_category.lower().strip() != "all":
         status_lower = filter_category.lower().strip()
+
+    if not status_lower or status_lower in ("none", "", "unspecified"):
+        return "ERROR: Scope not specified. Please ask the user whether they want all tasks or filtered data (e.g., active, completed, overdue, today, upcoming) before calling this tool."
+
+    clean_fmt = (format_type or "").lower().strip()
+    if not clean_fmt or clean_fmt in ("none", "", "unspecified"):
+        return "ERROR: Format not specified. Please ask the user whether they want CSV or Plain text (.txt) format before calling this tool."
+
+    tasks = fetch_all_tasks_for_user()
+    tasks = [t for t in tasks if not t.get("id", "").startswith("sys_") and t.get("title") != "__SYSTEM_RECENT_TONES__"]
 
     now_dt = datetime.now(DEFAULT_TIMEZONE)
     today_start_dt = now_dt.replace(hour=0, minute=0, second=0, microsecond=0)

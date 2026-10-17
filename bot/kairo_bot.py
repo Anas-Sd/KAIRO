@@ -654,6 +654,37 @@ def build_request():
     }
     return HTTPXRequest(**options)
 
+# ==========================================
+# INTERACTIVE EXPORT FLOW MANAGEMENT
+# ==========================================
+export_flow_state: dict[int, dict] = {}
+
+def parse_export_scope(text: str) -> str | None:
+    t = text.lower()
+    if any(w in t for w in ["all", "everything", "whole"]):
+        return "all"
+    if any(w in t for w in ["active", "pending", "uncompleted", "incomplete", "open"]):
+        return "active"
+    if any(w in t for w in ["completed", "done", "finished"]):
+        return "completed"
+    if any(w in t for w in ["overdue", "late", "missed"]):
+        return "overdue"
+    if "today" in t:
+        return "today"
+    if any(w in t for w in ["upcoming", "tomorrow", "future"]):
+        return "upcoming"
+    return None
+
+def parse_export_format(text: str) -> str | None:
+    t = text.lower()
+    if "csv" in t:
+        return "csv"
+    if any(w in t for w in ["plain text", "plaintext", "plane text", "planetext", "plain", "plane", "txt", "text"]):
+        return "txt"
+    if "json" in t:
+        return "json"
+    return None
+
 AUTH_PROMPT_MESSAGE = (
     "🔒 *Authentication Required*\n\n"
     "Welcome to *KAIRO AI Assistant*!\n"
@@ -818,6 +849,100 @@ async def process_user_turn(message, user_text: str, attachment_paths: list):
         else:
             await safe_reply(message, format_active_rules_response(chat_id))
             return
+
+    # 4. INTERACTIVE EXPORT WORKFLOW (3-STEP DIALOG)
+    is_download_intent = (
+        ("download" in lower_text or "export" in lower_text)
+        and any(w in lower_text for w in ["task", "tasks", "data", "todo", "todos", "file", "csv", "txt", "text", "all"])
+    ) or lower_text in ("download", "export", "download tasks", "export tasks", "download data", "export data")
+
+    if chat_id in export_flow_state or is_download_intent:
+        flow = export_flow_state.get(chat_id, {"scope": None, "format": None})
+
+        # Check if user wants to cancel
+        if any(w == lower_text for w in ["cancel", "stop", "nevermind", "exit", "abort"]):
+            export_flow_state.pop(chat_id, None)
+            await safe_reply(message, "❌ Export cancelled.")
+            return
+
+        # Check if this is an unrelated command/action when in pending export
+        is_unrelated = False
+        if chat_id in export_flow_state and not is_download_intent:
+            action_verbs = ["add", "remind", "delete", "edit", "update", "snooze", "postpone", "mark", "rule", "/"]
+            if any(lower_text.startswith(v) for v in action_verbs):
+                is_unrelated = True
+
+        if not is_unrelated:
+            found_scope = parse_export_scope(lower_text)
+            found_format = parse_export_format(lower_text)
+
+            if found_scope:
+                flow["scope"] = found_scope
+            if found_format:
+                flow["format"] = found_format
+
+            # If user explicitly asked for "filtered" without specifying which filter
+            if "filtered" in lower_text or "filter" in lower_text:
+                if not flow.get("scope") or flow.get("scope") == "all":
+                    spec_filter = parse_export_scope(lower_text.replace("filtered", "").replace("filter", ""))
+                    if spec_filter and spec_filter != "all":
+                        flow["scope"] = spec_filter
+                    else:
+                        flow["scope"] = None
+                        export_flow_state[chat_id] = flow
+                        await safe_reply(
+                            message,
+                            "Which filtered data would you like to download?\n\n"
+                            "• `active` — Active/pending tasks\n"
+                            "• `completed` — Completed tasks\n"
+                            "• `overdue` — Overdue tasks\n"
+                            "• `today` — Tasks due today\n"
+                            "• `upcoming` — Upcoming tasks"
+                        )
+                        return
+
+            # STEP 1: If scope is still unknown, ask whether they need all or filtered data
+            if not flow.get("scope"):
+                export_flow_state[chat_id] = flow
+                await safe_reply(
+                    message,
+                    "Would you like to export **all tasks** or **filtered data** (e.g., active, completed, overdue, today, upcoming)?"
+                )
+                return
+
+            # STEP 2: If format is still unknown, ask whether they need CSV or Plain text
+            if not flow.get("format"):
+                export_flow_state[chat_id] = flow
+                await safe_reply(
+                    message,
+                    "Would you like the export in **CSV** or **Plain text** (`.txt`) format?"
+                )
+                return
+
+            # STEP 3: Both scope and format are known! Execute export immediately!
+            export_flow_state.pop(chat_id, None)
+            user_code = session["user_code"]
+            fcm_token = session.get("fcm_token")
+            kairo_tools.set_context(user_code=user_code, fcm_token=fcm_token, chat_id=chat_id)
+            kairo_tools.outbox.clear()
+
+            export_msg = kairo_tools.export_tasks_data(
+                format_type=flow["format"],
+                filter_status=flow["scope"]
+            )
+            await safe_reply(message, export_msg)
+
+            for file_path in list(kairo_tools.outbox):
+                if os.path.exists(file_path):
+                    await safe_send_document(message, file_path)
+                    try:
+                        os.remove(file_path)
+                    except OSError:
+                        pass
+            kairo_tools.outbox.clear()
+            return
+        else:
+            export_flow_state.pop(chat_id, None)
 
     # Set tool context for this turn
     user_code = session["user_code"]
