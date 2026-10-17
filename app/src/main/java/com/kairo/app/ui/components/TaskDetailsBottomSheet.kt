@@ -280,8 +280,9 @@ fun TaskDetailsBottomSheet(
                 ) {
                     // Due Date & Time
                     val formattedDate = com.kairo.app.ui.utils.DateUtils.formatDisplayDate(task.dueDate, task.dueDateMillis)
-                    val dueString = if (!task.dueTime.isNullOrBlank()) {
-                        "$formattedDate at ${task.dueTime}"
+                    val displayTime = com.kairo.app.ui.utils.DateUtils.formatDisplayTime(task.dueTime)
+                    val dueString = if (!displayTime.isNullOrBlank()) {
+                        "$formattedDate at $displayTime"
                     } else {
                         formattedDate
                     }
@@ -423,7 +424,7 @@ fun TaskDetailsBottomSheet(
                             repeatDates = task.repeatDates
                         )
                         if (nextOccurrence != null) {
-                            val nextTimeStr = if (!task.dueTime.isNullOrBlank()) " at ${task.dueTime}" else ""
+                            val nextTimeStr = com.kairo.app.ui.utils.DateUtils.formatDisplayTime(task.dueTime)?.let { " at $it" } ?: ""
                             InfoRow(
                                 icon = Icons.Default.Schedule,
                                 label = "Next Recurrence",

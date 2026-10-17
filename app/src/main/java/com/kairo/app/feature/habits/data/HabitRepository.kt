@@ -95,7 +95,7 @@ object HabitRepository {
                             repeatDays = parseDays(obj.optString("repeatDays", "1,2,3,4,5,6,7")),
                             weeklyTargetCount = obj.optInt("weeklyTargetCount", 3),
                             reminderEnabled = obj.optBoolean("reminderEnabled", false),
-                            reminderTime = obj.optString("reminderTime").takeIf { it.isNotBlank() },
+                            reminderTime = obj.optString("reminderTime").takeIf { it.isNotBlank() }?.let { com.kairo.app.ui.utils.DateUtils.normalizeTo24HourTime(it) },
                             reminderToneUri = obj.optString("reminderToneUri").takeIf { it.isNotBlank() },
                             reminderToneTitle = obj.optString("reminderToneTitle").takeIf { it.isNotBlank() },
                             position = obj.optInt("position", i),
@@ -233,7 +233,7 @@ object HabitRepository {
                         repeatDays = parseDays(dto.repeatDays),
                         weeklyTargetCount = dto.weeklyTargetCount,
                         reminderEnabled = dto.reminderEnabled,
-                        reminderTime = dto.reminderTime,
+                        reminderTime = com.kairo.app.ui.utils.DateUtils.normalizeTo24HourTime(dto.reminderTime),
                         reminderToneUri = dto.reminderToneUri,
                         reminderToneTitle = dto.reminderToneTitle,
                         position = dto.position,
@@ -297,7 +297,7 @@ object HabitRepository {
             repeatDays = repeatDays,
             weeklyTargetCount = weeklyTargetCount,
             reminderEnabled = reminderEnabled,
-            reminderTime = if (reminderEnabled) reminderTime else null,
+            reminderTime = if (reminderEnabled) com.kairo.app.ui.utils.DateUtils.normalizeTo24HourTime(reminderTime) else null,
             reminderToneUri = if (reminderEnabled) reminderToneUri else null,
             reminderToneTitle = if (reminderEnabled) reminderToneTitle else null,
             position = _habitsList.value.size,
@@ -338,31 +338,34 @@ object HabitRepository {
     }
 
     fun updateHabit(updatedHabit: Habit) {
-        val list = _habitsList.value.map { if (it.id == updatedHabit.id) updatedHabit else it }
+        val normalizedHabit = updatedHabit.copy(
+            reminderTime = if (updatedHabit.reminderEnabled) com.kairo.app.ui.utils.DateUtils.normalizeTo24HourTime(updatedHabit.reminderTime) else null
+        )
+        val list = _habitsList.value.map { if (it.id == normalizedHabit.id) normalizedHabit else it }
         _habitsList.value = list
         persistData()
         recomputeAllStats()
 
         scope.launch {
             val dto = HabitDto(
-                id = updatedHabit.id,
-                userCode = updatedHabit.userCode,
-                title = updatedHabit.title,
-                type = updatedHabit.type.name,
-                targetValue = updatedHabit.targetValue,
-                targetUnit = updatedHabit.targetUnit,
-                repeatType = updatedHabit.repeatType.name,
-                repeatDays = updatedHabit.repeatDays.joinToString(","),
-                weeklyTargetCount = updatedHabit.weeklyTargetCount,
-                reminderEnabled = updatedHabit.reminderEnabled,
-                reminderTime = updatedHabit.reminderTime,
-                reminderToneUri = updatedHabit.reminderToneUri,
-                reminderToneTitle = updatedHabit.reminderToneTitle,
-                position = updatedHabit.position,
-                notePrompt = updatedHabit.notePrompt.name,
-                startDate = updatedHabit.startDate,
-                createdAt = updatedHabit.createdAt,
-                updatedAt = updatedHabit.updatedAt
+                id = normalizedHabit.id,
+                userCode = normalizedHabit.userCode,
+                title = normalizedHabit.title,
+                type = normalizedHabit.type.name,
+                targetValue = normalizedHabit.targetValue,
+                targetUnit = normalizedHabit.targetUnit,
+                repeatType = normalizedHabit.repeatType.name,
+                repeatDays = normalizedHabit.repeatDays.joinToString(","),
+                weeklyTargetCount = normalizedHabit.weeklyTargetCount,
+                reminderEnabled = normalizedHabit.reminderEnabled,
+                reminderTime = normalizedHabit.reminderTime,
+                reminderToneUri = normalizedHabit.reminderToneUri,
+                reminderToneTitle = normalizedHabit.reminderToneTitle,
+                position = normalizedHabit.position,
+                notePrompt = normalizedHabit.notePrompt.name,
+                startDate = normalizedHabit.startDate,
+                createdAt = normalizedHabit.createdAt,
+                updatedAt = normalizedHabit.updatedAt
             )
             SupabaseClient.upsertHabit(dto)
         }

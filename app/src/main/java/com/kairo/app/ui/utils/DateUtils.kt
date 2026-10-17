@@ -250,5 +250,71 @@ object DateUtils {
             }
             .minByOrNull { it.second }
     }
+
+    /**
+     * Normalizes any 12-hour or 24-hour time string into a clean 24-hour format "HH:mm".
+     * Examples:
+     * - "5:30 PM" / "5:30 pm" -> "17:30"
+     * - "5:30 AM" / "5:30 am" -> "05:30"
+     * - "5 PM" / "5 pm" -> "17:00"
+     * - "12 AM" / "12:00 AM" -> "00:00"
+     * - "12 PM" / "12:00 PM" -> "12:00"
+     * - "17:30" -> "17:30"
+     * - "9:15" -> "09:15"
+     */
+    fun normalizeTo24HourTime(timeStr: String?): String? {
+        if (timeStr.isNullOrBlank()) return null
+        val clean = timeStr.trim()
+
+        val formats = listOf(
+            SimpleDateFormat("hh:mm a", Locale.US),
+            SimpleDateFormat("h:mm a", Locale.US),
+            SimpleDateFormat("hh:mma", Locale.US),
+            SimpleDateFormat("h:mma", Locale.US),
+            SimpleDateFormat("h a", Locale.US),
+            SimpleDateFormat("ha", Locale.US),
+            SimpleDateFormat("HH:mm", Locale.US),
+            SimpleDateFormat("H:mm", Locale.US),
+            SimpleDateFormat("HH:mm", Locale.getDefault()),
+            SimpleDateFormat("H:mm", Locale.getDefault()),
+            SimpleDateFormat("hh:mm a", Locale.getDefault()),
+            SimpleDateFormat("h:mm a", Locale.getDefault())
+        )
+
+        for (fmt in formats) {
+            try {
+                val parsed = fmt.parse(clean)
+                if (parsed != null) {
+                    val cal = Calendar.getInstance().apply { time = parsed }
+                    return String.format(Locale.US, "%02d:%02d", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Regex fallback for loose formats
+        try {
+            val upper = clean.uppercase(Locale.US)
+            val isPM = upper.contains("PM")
+            val isAM = upper.contains("AM")
+            val digitsOnly = clean.replace("[^0-9:]".toRegex(), "")
+            val parts = digitsOnly.split(":")
+            if (parts.isNotEmpty()) {
+                var h = parts[0].toIntOrNull() ?: return clean
+                val m = if (parts.size >= 2) parts[1].toIntOrNull() ?: 0 else 0
+                if (isPM && h < 12) h += 12
+                else if (isAM && h == 12) h = 0
+                return String.format(Locale.US, "%02d:%02d", h, m)
+            }
+        } catch (_: Exception) {}
+
+        return clean
+    }
+
+    /**
+     * Formats dueTime for display, always guaranteeing 24-hour format.
+     */
+    fun formatDisplayTime(dueTime: String?): String? {
+        return normalizeTo24HourTime(dueTime)
+    }
 }
 

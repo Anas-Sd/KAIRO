@@ -126,7 +126,7 @@ fun EditTaskDialog(
     var selectedDateMillis by remember { mutableStateOf(task.dueDateMillis) }
     var selectedTimeText by remember {
         mutableStateOf(
-            task.dueTime ?: run {
+            task.dueTime?.let { com.kairo.app.ui.utils.DateUtils.normalizeTo24HourTime(it) } ?: run {
                 val hour = calendar.get(Calendar.HOUR_OF_DAY)
                 val minute = calendar.get(Calendar.MINUTE)
                 String.format(Locale.getDefault(), "%02d:%02d", hour, minute)

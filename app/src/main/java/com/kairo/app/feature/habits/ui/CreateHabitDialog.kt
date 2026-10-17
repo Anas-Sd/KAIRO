@@ -121,7 +121,11 @@ fun CreateHabitDialog(
     var notePrompt by remember { mutableStateOf(initialHabit?.notePrompt ?: HabitNotePrompt.BOTH) }
 
     var reminderEnabled by remember { mutableStateOf(initialHabit?.reminderEnabled ?: false) }
-    var reminderTime by remember { mutableStateOf(initialHabit?.reminderTime ?: "08:00 AM") }
+    var reminderTime by remember {
+        mutableStateOf(
+            com.kairo.app.ui.utils.DateUtils.normalizeTo24HourTime(initialHabit?.reminderTime) ?: "08:00"
+        )
+    }
     var reminderToneUri by remember { mutableStateOf<String?>(initialHabit?.reminderToneUri) }
     var reminderToneTitle by remember { mutableStateOf(initialHabit?.reminderToneTitle ?: "Default Notification Tone") }
     var showTonePicker by remember { mutableStateOf(false) }
@@ -497,14 +501,11 @@ fun CreateHabitDialog(
                                 TimePickerDialog(
                                     context,
                                     { _, hourOfDay, minute ->
-                                        val isPm = hourOfDay >= 12
-                                        val hour12 = if (hourOfDay == 0) 12 else if (hourOfDay > 12) hourOfDay - 12 else hourOfDay
-                                        val amPm = if (isPm) "PM" else "AM"
-                                        reminderTime = String.format(Locale.US, "%02d:%02d %s", hour12, minute, amPm)
+                                        reminderTime = String.format(Locale.US, "%02d:%02d", hourOfDay, minute)
                                     },
                                     cal.get(Calendar.HOUR_OF_DAY),
                                     cal.get(Calendar.MINUTE),
-                                    false
+                                    true
                                 ).show()
                             }
                             .padding(horizontal = 10.dp, vertical = 8.dp),

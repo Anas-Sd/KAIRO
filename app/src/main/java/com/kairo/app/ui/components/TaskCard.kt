@@ -391,7 +391,7 @@ fun TaskCard(
                         TaskCapsule(
                             icon = Icons.Default.Schedule,
                             iconTint = KairoPrimary,
-                            text = task.dueTime,
+                            text = com.kairo.app.ui.utils.DateUtils.formatDisplayTime(task.dueTime) ?: task.dueTime,
                             containerColor = KairoSurfaceContainerHigh,
                             contentColor = Color(0xFFC8C4D9)
                         )

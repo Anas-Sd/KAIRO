@@ -386,6 +386,46 @@ def normalize_date_string(date_str: str) -> str:
 
     return clean
 
+def normalize_time_to_24h(time_str: str) -> str:
+    """
+    Standardizes any time string (12-hour or 24-hour) into 24-hour format 'HH:MM'.
+    Examples:
+      '5:30 pm' -> '17:30'
+      '5:30 PM' -> '17:30'
+      '5 pm' -> '17:00'
+      '5 PM' -> '17:00'
+      '12 am' -> '00:00'
+      '12:00 AM' -> '00:00'
+      '12 pm' -> '12:00'
+      '12:00 PM' -> '12:00'
+      '9:15 am' -> '09:15'
+      '17:30' -> '17:30'
+      '9:00' -> '09:00'
+      '9' -> '09:00'
+    """
+    if not time_str or not str(time_str).strip():
+        return ""
+    clean = str(time_str).strip()
+    for fmt in ["%I:%M %p", "%I:%M%p", "%I %p", "%I%p", "%H:%M", "%H"]:
+        try:
+            t = datetime.strptime(clean.upper(), fmt)
+            return t.strftime("%H:%M")
+        except Exception:
+            pass
+
+    match = re.search(r'(\d{1,2})(?:[:.](\d{1,2}))?\s*(am|pm)?', clean, re.IGNORECASE)
+    if match:
+        h = int(match.group(1))
+        m = int(match.group(2)) if match.group(2) else 0
+        ampm = match.group(3).lower() if match.group(3) else None
+        if ampm == "pm" and h < 12:
+            h += 12
+        elif ampm == "am" and h == 12:
+            h = 0
+        return f"{h:02d}:{m:02d}"
+
+    return clean
+
 def determine_section(due_millis: int, is_completed: bool, due_date_str: str = "", due_time_str: str = None) -> str:
     """
     Determines section matching Android TaskRepository.kt and TaskViewModel.kt:
@@ -652,7 +692,7 @@ def add_task(
     user_code = current_user["user_code"]
     task_id = str(uuid.uuid4())
     eff_due_date = normalize_date_string(due_date)
-    eff_due_time = due_time.strip()
+    eff_due_time = normalize_time_to_24h(due_time)
     due_millis = compute_due_millis(eff_due_date, eff_due_time)
     now_ms = int(time.time() * 1000)
 
@@ -834,7 +874,7 @@ def edit_task(
     if notes is not None: patch_data["notes"] = notes.strip() if notes else None
     if new_priority: patch_data["priority"] = new_priority.strip().upper()
     if new_due_date: patch_data["due_date"] = normalize_date_string(new_due_date)
-    if new_due_time: patch_data["due_time"] = new_due_time.strip()
+    if new_due_time: patch_data["due_time"] = normalize_time_to_24h(new_due_time)
     if new_repeat_type: patch_data["repeat_type"] = new_repeat_type.strip().upper()
     if new_repeat_days is not None: patch_data["repeat_days"] = new_repeat_days.strip() if new_repeat_days else None
     if new_repeat_dates is not None: patch_data["repeat_dates"] = new_repeat_dates.strip() if new_repeat_dates else None
@@ -848,7 +888,7 @@ def edit_task(
     if new_location_radius is not None: patch_data["radius_meters"] = new_location_radius
 
     effective_date = normalize_date_string(new_due_date) if new_due_date else normalize_date_string(task.get("due_date", "Today"))
-    effective_time = new_due_time or task.get("due_time")
+    effective_time = normalize_time_to_24h(new_due_time) if new_due_time else normalize_time_to_24h(task.get("due_time"))
 
     if is_completed is not None:
         patch_data["is_completed"] = is_completed
@@ -897,7 +937,7 @@ def snooze_task(task_query: str, minutes: int = 15) -> str:
     task_id = task["id"]
     now_ms = int(time.time() * 1000)
     snooze_until_ms = now_ms + (minutes * 60 * 1000)
-    snooze_time_str = datetime.fromtimestamp(snooze_until_ms / 1000.0, DEFAULT_TIMEZONE).strftime("%I:%M %p")
+    snooze_time_str = datetime.fromtimestamp(snooze_until_ms / 1000.0, DEFAULT_TIMEZONE).strftime("%H:%M")
 
     patch_data = {
         "due_date": "SNOOZED",
@@ -931,7 +971,7 @@ def reschedule_task(task_query: str, new_due_date: str, new_due_time: str) -> st
     return edit_task(
         task_query=task_query,
         new_due_date=new_due_date,
-        new_due_time=new_due_time,
+        new_due_time=normalize_time_to_24h(new_due_time),
         is_completed=False
     )
 
@@ -966,7 +1006,7 @@ def add_subtask(
         return f"Could not find parent task '{parent_task_query}'."
 
     eff_due_date = normalize_date_string(due_date)
-    eff_due_time = due_time.strip()
+    eff_due_time = normalize_time_to_24h(due_time)
     effective_priority = priority.strip().upper() if priority else (parent.get("priority") or "LOW")
 
     return add_task(
@@ -2088,7 +2128,7 @@ def add_habit(
         clean_note_prompt = "BOTH"
 
     r_enabled = bool(reminder_enabled or reminder_time)
-    r_time = reminder_time.strip() if reminder_time and reminder_time.strip() else None
+    r_time = normalize_time_to_24h(reminder_time) if reminder_time and reminder_time.strip() else None
 
     existing = fetch_all_habits_for_user()
     next_pos = max([h.get("position", 0) for h in existing], default=-1) + 1
@@ -2213,7 +2253,8 @@ def edit_habit(
         changes_desc.append(f"Weekly Target: {new_weekly_target_count}")
 
     if new_reminder_time is not None:
-        updates["reminder_time"] = new_reminder_time.strip() if new_reminder_time.strip() else None
+        clean_time = normalize_time_to_24h(new_reminder_time) if new_reminder_time.strip() else None
+        updates["reminder_time"] = clean_time
         if updates["reminder_time"]:
             updates["reminder_enabled"] = True
         changes_desc.append(f"Reminder: {updates['reminder_time']}")
@@ -2708,7 +2749,7 @@ def _save_cloud_rules(data: dict):
             "title": "__BOT_RULES_DATA__",
             "notes": json.dumps(data),
             "due_date": "2099-01-01",
-            "due_time": "12:00 PM",
+            "due_time": "12:00",
             "is_completed": False,
             "section": "TODAY",
             "user_code": "__BOT_INTERNAL__"

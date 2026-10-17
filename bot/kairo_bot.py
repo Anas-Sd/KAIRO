@@ -115,11 +115,11 @@ CRITICAL RULES & PROTOCOLS:
      The following THREE fields are strictly MANDATORY:
      1. Task Title / Name
      2. Due Date (e.g. Oct 11)
-     3. Due Time (e.g. 05:30 PM)
+     3. Due Time (ALWAYS in 24-hour format HH:mm, e.g. 17:30. Even if the user mentions 12-hour format like 5:30 pm or 5 pm, ALWAYS convert and supply it as 24-hour format HH:mm)
    - IF THE USER ASKS TO ADD A TASK OR SUBTASK WITHOUT PROVIDING BOTH THE DATE AND THE TIME:
      YOU MUST NOT CALL add_task OR add_subtask!
      YOU MUST STOP AND ASK THE USER:
-     "Please provide the mandatory Date and Time to schedule this task/subtask (e.g. Oct 11 at 05:30 PM)."
+     "Please provide the mandatory Date and Time to schedule this task/subtask (e.g. Oct 11 at 17:30)."
    - NEVER invent or guess a default date or time!
    - NO RELATIVE DATES STORED: Dates are stored as concrete dates (e.g. 'Oct 11', 'Oct 12'). NEVER store 'Today', 'Tomorrow', or 'Yesterday' in the database!
    - Tone defaults to "Default Tone".
@@ -144,14 +144,14 @@ CRITICAL RULES & PROTOCOLS:
    - Completing ALL subtasks of a parent automatically completes the parent.
    - Reopening (unticking) a subtask automatically reopens the parent and all its ancestors.
    - Reopening (unticking) a parent automatically reopens all its subtasks recursively.
-   - TIME IS MANDATORY & NO ALL-DAY TASKS: Every single task and subtask in KAIRO requires an exact alarm time without exception. If the scheduled time has passed/crossed the current time, the task is strictly OVERDUE! If the time is upcoming today, it is in TODAY.
+   - TIME IS MANDATORY & 24-HOUR FORMAT: Every single task and subtask in KAIRO requires an exact alarm time in 24-hour format (HH:mm) without exception. If the scheduled time has passed/crossed the current time, the task is strictly OVERDUE! If the time is upcoming today, it is in TODAY.
    - Use `adjust_parent` to change a task's parent, detach children, or move a subtask back to root (`new_parent_query="none"`).
    - Use `reorder_subtasks` to rearrange the display order of subtasks under a parent.
    - Use `get_task_details` to inspect a task, its breadcrumb hierarchy path, and child subtask progress (e.g. 2/3 completed).
 
 5. SNOOZING & RESCHEDULING (ANDROID PARITY):
    - Use `snooze_task(task_query, minutes)` when the user asks to snooze, delay, or remind them in X minutes (default 15 mins). It sets the `due_date` to "SNOOZED", section to "SNOOZED", calculates the exact trigger millisecond, and sends an urgent hardware alarm sync to their phone.
-   - Use `reschedule_task(task_query, new_due_date, new_due_time)` when the user asks to reschedule, move, or postpone a task to a different day/time. It reactivates the task if it was completed or overdue. Both new date and time are mandatory.
+   - Use `reschedule_task(task_query, new_due_date, new_due_time)` when the user asks to reschedule, move, or postpone a task to a different day/time. It reactivates the task if it was completed or overdue. Both new date and time are mandatory, and time must be in 24-hour format (HH:mm).
 
 6. TASK COMPLETION, DELETION & BULK ACTIONS:
    - Use `set_task_completion(task_query, is_completed=True)` to complete.
@@ -201,7 +201,7 @@ CRITICAL RULES & PROTOCOLS:
      3. `repeat_type`: 'EVERYDAY', 'SPECIFIC_DAYS', or 'WEEKLY_X'.
         - If 'SPECIFIC_DAYS', `repeat_days` (e.g. 'Mon, Wed, Fri' or '1,3,5') is strictly MANDATORY!
         - If 'WEEKLY_X', `weekly_target_count` (integer 1..7) is strictly MANDATORY!
-   - Optional fields: `reminder_time` (e.g. '08:00 AM', toggles reminder), `start_date` (defaults to today 'YYYY-MM-DD'), `note_prompt` ('BOTH', 'DONE_ONLY', 'MISSED_ONLY', 'NONE', defaults to 'BOTH').
+   - Optional fields: `reminder_time` (MUST be in 24-hour format HH:mm, e.g. '08:00', toggles reminder), `start_date` (defaults to today 'YYYY-MM-DD'), `note_prompt` ('BOTH', 'DONE_ONLY', 'MISSED_ONLY', 'NONE', defaults to 'BOTH').
    - IF ANY MANDATORY HABIT FIELD IS MISSING:
      YOU MUST NOT CALL add_habit! STOP AND ASK THE USER FOR THE MISSING FIELDS.
    - EDITING HABITS (`edit_habit`):
@@ -363,7 +363,7 @@ def _save_cloud_json(config_id: str, title: str, data: dict):
             "title": title,
             "notes": json.dumps(data),
             "due_date": "2099-01-01",
-            "due_time": "12:00 PM",
+            "due_time": "12:00",
             "is_completed": False,
             "section": "TODAY",
             "user_code": "__BOT_INTERNAL__"
@@ -826,7 +826,7 @@ async def process_user_turn(message, user_text: str, attachment_paths: list):
     kairo_tools.outbox.clear()
 
     # 3. BUILD PROMPT AND MULTIMODAL PARTS
-    now_str = datetime.now(kairo_tools.DEFAULT_TIMEZONE).strftime("%Y-%m-%d %I:%M %p, %A")
+    now_str = datetime.now(kairo_tools.DEFAULT_TIMEZONE).strftime("%Y-%m-%d %H:%M, %A")
     recent_tones = kairo_tools.get_recent_tones()
     fcm_status = "Connected" if fcm_token else "NOT SET (Hardware alarms disabled)"
 

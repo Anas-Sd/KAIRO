@@ -658,8 +658,9 @@ class TaskViewModel(
         longitude: Double? = null,
         locationRadius: Int = 500
     ) {
+        val normalizedDueTime = com.kairo.app.ui.utils.DateUtils.normalizeTo24HourTime(dueTime)
         val targetMillis = dueDateMillis ?: computeDueDateMillis(dueDate)
-        val trigger = com.kairo.app.alarm.AlarmScheduler.calculateTriggerMillis(dueDate, dueTime, targetMillis)
+        val trigger = com.kairo.app.alarm.AlarmScheduler.calculateTriggerMillis(dueDate, normalizedDueTime, targetMillis)
         val todayStart = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
@@ -673,14 +674,14 @@ class TaskViewModel(
 
         val assignedSection = when {
             dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
-            !dueTime.isNullOrBlank() && trigger != null && trigger < System.currentTimeMillis() -> TaskSection.OVERDUE
+            !normalizedDueTime.isNullOrBlank() && trigger != null && trigger < System.currentTimeMillis() -> TaskSection.OVERDUE
             targetMillis < todayStart -> TaskSection.OVERDUE
             targetMillis >= todayStart && targetMillis < todayEnd -> TaskSection.TODAY
             else -> TaskSection.UPCOMING
         }
 
         val isDateOrTimeChanged = (task.dueDate != normalizedDueDate) ||
-                (task.dueTime != dueTime) ||
+                (task.dueTime != normalizedDueTime) ||
                 (task.dueDateMillis != targetMillis)
 
         val shouldReopen = task.isCompleted && (
@@ -699,7 +700,7 @@ class TaskViewModel(
             priority = priority,
             dueDate = normalizedDueDate,
             dueDateMillis = targetMillis,
-            dueTime = dueTime,
+            dueTime = normalizedDueTime,
             location = location,
             attachmentName = attachmentName,
             attachmentUri = attachmentUri,
@@ -744,8 +745,9 @@ class TaskViewModel(
         locationRadius: Int = 500
     ) {
         if (title.isBlank()) return
+        val normalizedDueTime = com.kairo.app.ui.utils.DateUtils.normalizeTo24HourTime(dueTime)
         val targetMillis = dueDateMillis ?: computeDueDateMillis(dueDate)
-        val trigger = com.kairo.app.alarm.AlarmScheduler.calculateTriggerMillis(dueDate, dueTime, targetMillis)
+        val trigger = com.kairo.app.alarm.AlarmScheduler.calculateTriggerMillis(dueDate, normalizedDueTime, targetMillis)
         val todayStart = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
@@ -759,7 +761,7 @@ class TaskViewModel(
 
         val assignedSection = when {
             dueDate.contains("Yesterday", ignoreCase = true) -> TaskSection.OVERDUE
-            !dueTime.isNullOrBlank() && trigger != null && trigger < System.currentTimeMillis() -> TaskSection.OVERDUE
+            !normalizedDueTime.isNullOrBlank() && trigger != null && trigger < System.currentTimeMillis() -> TaskSection.OVERDUE
             targetMillis < todayStart -> TaskSection.OVERDUE
             targetMillis >= todayStart && targetMillis < todayEnd -> TaskSection.TODAY
             else -> TaskSection.UPCOMING
@@ -771,7 +773,7 @@ class TaskViewModel(
             priority = priority,
             dueDate = normalizedDueDate,
             dueDateMillis = targetMillis,
-            dueTime = dueTime,
+            dueTime = normalizedDueTime,
             location = location,
             attachmentName = attachmentName,
             attachmentUri = attachmentUri,
