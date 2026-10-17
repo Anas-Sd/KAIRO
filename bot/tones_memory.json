@@ -19,7 +19,12 @@
     {
       "title": "loudest_alarm.mp3",
       "subtitle": "Custom Audio",
-      "uriString": "file:///data/user/0/com.kairo.app/files/custom_tones/tone_loudest.mp3"
+      "uriString": "file:///data/user/0/com.kairo.app/files/custom_tones/tone_ee1f296527fa5270b6db96048f0e505a.mp3"
+    },
+    {
+      "title": "mixkit-facility-alarm-sound-999",
+      "subtitle": "Downloaded song",
+      "uriString": "file:///data/user/0/com.kairo.app/files/custom_tones/tone_2e8c8db4aa93638ef99491a9193fdc25.mp3"
     }
   ]
 }
