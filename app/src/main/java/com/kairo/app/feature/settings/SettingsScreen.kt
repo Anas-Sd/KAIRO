@@ -2,7 +2,9 @@ package com.kairo.app.feature.settings
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
@@ -42,7 +45,6 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SyncLock
@@ -93,12 +95,13 @@ import com.kairo.app.data.remote.SupabaseClient
 import com.kairo.app.data.repository.TaskRepository
 import com.kairo.app.data.sync.SyncManager
 import com.kairo.app.ui.theme.KairoBackground
-import com.kairo.app.ui.theme.KairoCardSurface
 import com.kairo.app.ui.theme.KairoHighUrgent
 import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoSecondary
 import com.kairo.app.ui.theme.KairoSurfaceContainer
+import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
+import com.kairo.app.ui.theme.KairoSurfaceContainerLow
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -125,12 +128,10 @@ fun SettingsDialog(
         SyncManager.refreshOfflineQueueStatus()
     }
 
-    // Section collapse states (side headings)
-    var isSyncExpanded by remember { mutableStateOf(true) }
-    var isPermissionsExpanded by remember {
-        mutableStateOf(!com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.hasOverlayPermission(context))
-    }
-    var isAccountExpanded by remember { mutableStateOf(true) }
+    // Section collapse states: all sections are collapsed by default per requirements
+    var isAccountExpanded by remember { mutableStateOf(false) }
+    var isSyncExpanded by remember { mutableStateOf(false) }
+    var isPermissionsExpanded by remember { mutableStateOf(false) }
     var isDataExpanded by remember { mutableStateOf(false) }
     var isSessionExpanded by remember { mutableStateOf(false) }
 
@@ -160,7 +161,7 @@ fun SettingsDialog(
                 topBar = {
                     Surface(
                         color = KairoSurfaceContainer,
-                        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.25f))
+                        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f))
                     ) {
                         Row(
                             modifier = Modifier
@@ -190,11 +191,14 @@ fun SettingsDialog(
                             // Network Status Pill
                             Surface(
                                 shape = RoundedCornerShape(100.dp),
-                                color = if (isOnline) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f),
-                                border = BorderStroke(1.dp, if (isOnline) Color(0xFF10B981).copy(alpha = 0.4f) else Color(0xFFF59E0B).copy(alpha = 0.4f))
+                                color = if (isOnline) Color(0xFF10B981).copy(alpha = 0.12f) else Color(0xFFF59E0B).copy(alpha = 0.12f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isOnline) Color(0xFF10B981).copy(alpha = 0.35f) else Color(0xFFF59E0B).copy(alpha = 0.35f)
+                                )
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Box(
@@ -206,7 +210,7 @@ fun SettingsDialog(
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = if (isOnline) "Online" else "Offline",
-                                        fontSize = 12.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B)
                                     )
@@ -223,11 +227,161 @@ fun SettingsDialog(
                         .padding(innerPadding)
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 16.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
 
                     // ==========================================
-                    // 1. COLLAPSIBLE SECTION: OFFLINE TASKS & SYNC
+                    // 1. COLLAPSIBLE SECTION: ACCOUNT & WORKSPACE
+                    // ==========================================
+                    CollapsibleSettingsSection(
+                        title = "Account & Workspace",
+                        subtitle = "$userName • Workspace Code",
+                        icon = Icons.Default.Person,
+                        iconTint = KairoPrimary,
+                        badgeText = "Active",
+                        badgeColor = KairoPrimary,
+                        isExpanded = isAccountExpanded,
+                        onToggle = { isAccountExpanded = !isAccountExpanded }
+                    ) {
+                        // Profile Info Card
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = KairoSurfaceContainerLow,
+                            border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.18f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(KairoPrimary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = userName.take(1).uppercase(),
+                                        color = Color(0xFF1E1F26),
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column {
+                                    Text(
+                                        text = userName,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Personal Workspace",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Confidential Access Code Box
+                        Text(
+                            text = "ACCESS CODE",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = KairoSurfaceContainerLow,
+                            border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.22f))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Key,
+                                        contentDescription = null,
+                                        tint = KairoPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = if (isCodeVisible) userCode else "••••••••••••",
+                                        fontSize = 14.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
+                                Row {
+                                    IconButton(
+                                        onClick = { isCodeVisible = !isCodeVisible },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isCodeVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = if (isCodeVisible) "Hide code" else "Show code",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            clipboardManager.setText(AnnotatedString(userCode))
+                                            Toast.makeText(context, "Code copied to clipboard", Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Copy code",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        SettingsActionRow(
+                            icon = Icons.Default.SyncLock,
+                            iconTint = KairoPrimary,
+                            title = "Change Access Code",
+                            subtitle = "Update your code and sign in again",
+                            onClick = {
+                                newRotateCode = ""
+                                rotateError = null
+                                showRotateDialog = true
+                            }
+                        )
+                    }
+
+                    // ==========================================
+                    // 2. COLLAPSIBLE SECTION: OFFLINE TASKS & SYNC
                     // ==========================================
                     CollapsibleSettingsSection(
                         title = "Sync & Offline",
@@ -240,90 +394,90 @@ fun SettingsDialog(
                         onToggle = { isSyncExpanded = !isSyncExpanded }
                     ) {
                         // Cloud sync control card
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .border(1.dp, KairoOutlineVariant.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = KairoSurfaceContainerLow,
+                            border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.18f))
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = if (isOnline) Icons.Default.CloudDone else Icons.Default.CloudOff,
-                                        contentDescription = null,
-                                        tint = if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = if (isOnline) Icons.Default.CloudDone else Icons.Default.CloudOff,
+                                            contentDescription = null,
+                                            tint = if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isOnline) "Cloud Connected" else "Working Offline",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(3.dp))
                                     Text(
-                                        text = if (isOnline) "Cloud Connected" else "Working Offline",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        text = if (isOnline) "Changes are saved to your account" else "Changes will sync when connected",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Text(
-                                    text = if (isOnline) "Changes are saved to your account" else "Changes will sync when connected",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
 
-                            Spacer(modifier = Modifier.width(8.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
 
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        val result = SyncManager.performSync(forceCheckNetwork = true)
-                                        if (result.isSuccess) {
-                                            val count = result.getOrDefault(0)
-                                            Toast.makeText(
-                                                context,
-                                                if (count > 0) "Successfully synced $count task(s)" else "Everything is up to date",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        } else {
-                                            if (!isOnline) {
-                                                Toast.makeText(context, "Device offline. Changes saved locally.", Toast.LENGTH_SHORT).show()
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            val result = SyncManager.performSync(forceCheckNetwork = true)
+                                            if (result.isSuccess) {
+                                                val count = result.getOrDefault(0)
+                                                Toast.makeText(
+                                                    context,
+                                                    if (count > 0) "Successfully synced $count task(s)" else "Everything is up to date",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
                                             } else {
-                                                Toast.makeText(context, "Sync check completed", Toast.LENGTH_SHORT).show()
+                                                if (!isOnline) {
+                                                    Toast.makeText(context, "Device offline. Changes saved locally.", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(context, "Sync check completed", Toast.LENGTH_SHORT).show()
+                                                }
                                             }
                                         }
+                                    },
+                                    enabled = !isSyncing,
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary, contentColor = Color(0xFF1E1F26)),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    if (isSyncing) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            color = Color(0xFF1E1F26),
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Syncing", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Sync,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Sync Now", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                     }
-                                },
-                                enabled = !isSyncing,
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                if (isSyncing) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(14.dp),
-                                        color = Color.White,
-                                        strokeWidth = 2.dp
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Syncing", fontSize = 12.sp)
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.Sync,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Sync Now", fontSize = 12.sp)
                                 }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         // Real-time Pending Offline Tasks List
                         if (offlineTasks.isEmpty()) {
@@ -332,7 +486,7 @@ fun SettingsDialog(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
                                 color = Color(0xFF10B981).copy(alpha = 0.08f),
-                                border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.25f))
+                                border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.22f))
                             ) {
                                 Row(
                                     modifier = Modifier.padding(14.dp),
@@ -342,7 +496,7 @@ fun SettingsDialog(
                                         imageVector = Icons.Default.CheckCircle,
                                         contentDescription = null,
                                         tint = Color(0xFF10B981),
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
@@ -391,63 +545,63 @@ fun SettingsDialog(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                        // FCM Background Alarm & Device Push Token Card
+                        // Background Push Token Card
                         val fcmToken by com.kairo.app.feature.sync.FcmTokenManager.fcmTokenState.collectAsState()
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .border(1.dp, KairoOutlineVariant.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = KairoSurfaceContainerLow,
+                            border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.18f))
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "DEVICE SYNC",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp,
-                                    color = KairoPrimary
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = if (!fcmToken.isNullOrBlank()) "ID: ${fcmToken!!.take(14)}...${fcmToken!!.takeLast(6)}" else "Connecting...",
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "Syncs alarms instantly across devices and bot",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (!fcmToken.isNullOrBlank()) {
-                                IconButton(
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString(fcmToken!!))
-                                        Toast.makeText(context, "Device ID copied to clipboard", Toast.LENGTH_SHORT).show()
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy Device ID",
-                                        tint = KairoPrimary,
-                                        modifier = Modifier.size(20.dp)
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "DEVICE SYNC",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.8.sp,
+                                        color = KairoPrimary
                                     )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = if (!fcmToken.isNullOrBlank()) "ID: ${fcmToken!!.take(14)}...${fcmToken!!.takeLast(6)}" else "Connecting...",
+                                        fontSize = 12.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Syncs alarms instantly across devices and bot",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (!fcmToken.isNullOrBlank()) {
+                                    IconButton(
+                                        onClick = {
+                                            clipboardManager.setText(AnnotatedString(fcmToken!!))
+                                            Toast.makeText(context, "Device ID copied to clipboard", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Copy Device ID",
+                                            tint = KairoPrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
 
                     // ==========================================
-                    // 2. COLLAPSIBLE SECTION: FULL-SCREEN ALARMS & OVERLAYS
+                    // 3. COLLAPSIBLE SECTION: ALARM PERMISSIONS
                     // ==========================================
                     val hasOverlay = com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.hasOverlayPermission(context)
                     val hasFullScreenIntent = com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.hasFullScreenIntentPermission(context)
@@ -510,151 +664,7 @@ fun SettingsDialog(
                     }
 
                     // ==========================================
-                    // 3. COLLAPSIBLE SECTION: ACCOUNT & ACCESS CODE
-                    // ==========================================
-                    CollapsibleSettingsSection(
-                        title = "Account & Workspace",
-                        subtitle = "$userName • Workspace Code",
-                        icon = Icons.Default.Person,
-                        iconTint = KairoPrimary,
-                        isExpanded = isAccountExpanded,
-                        onToggle = { isAccountExpanded = !isAccountExpanded }
-                    ) {
-                        // Profile Info Card
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(CircleShape)
-                                    .background(KairoPrimary),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = userName.take(1).uppercase(),
-                                    color = Color.White,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Column {
-                                Text(
-                                    text = userName,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Personal Workspace",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Confidential Access Code Box
-                        Text(
-                            text = "ACCESS CODE",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .border(1.dp, KairoOutlineVariant.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 14.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Key,
-                                    contentDescription = null,
-                                    tint = KairoPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = if (isCodeVisible) userCode else "••••••••••••",
-                                    fontSize = 14.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-
-                            Row {
-                                IconButton(
-                                    onClick = { isCodeVisible = !isCodeVisible },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (isCodeVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = if (isCodeVisible) "Hide code" else "Show code",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString(userCode))
-                                        Toast.makeText(context, "Code copied to clipboard", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy code",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        SettingsActionRow(
-                            icon = Icons.Default.SyncLock,
-                            iconTint = KairoPrimary,
-                            title = "Change Access Code",
-                            subtitle = "Update your code and sign in again",
-                            onClick = {
-                                newRotateCode = ""
-                                rotateError = null
-                                showRotateDialog = true
-                            }
-                        )
-                    }
-
-                    // ==========================================
-                    // 3. COLLAPSIBLE SECTION: DATA MANAGEMENT
+                    // 4. COLLAPSIBLE SECTION: DATA MANAGEMENT
                     // ==========================================
                     CollapsibleSettingsSection(
                         title = "Data & Reset",
@@ -672,7 +682,7 @@ fun SettingsDialog(
                             onClick = { showDeleteDataDialog = true }
                         )
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         SettingsActionRow(
                             icon = Icons.Default.DeleteForever,
@@ -684,7 +694,7 @@ fun SettingsDialog(
                     }
 
                     // ==========================================
-                    // 4. COLLAPSIBLE SECTION: SESSION
+                    // 5. COLLAPSIBLE SECTION: SESSION
                     // ==========================================
                     CollapsibleSettingsSection(
                         title = "Session",
@@ -715,8 +725,10 @@ fun SettingsDialog(
     if (showRotateDialog) {
         AlertDialog(
             onDismissRequest = { if (!isRotateLoading) showRotateDialog = false },
+            containerColor = KairoSurfaceContainer,
+            shape = RoundedCornerShape(20.dp),
             title = {
-                Text("Change Access Code", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Change Access Code", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
             },
             text = {
                 Column {
@@ -736,9 +748,11 @@ fun SettingsDialog(
                         placeholder = { Text("e.g. SECURE-5678") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = KairoPrimary,
-                            cursorColor = KairoPrimary
+                            cursorColor = KairoPrimary,
+                            focusedLabelColor = KairoPrimary
                         )
                     )
                     if (rotateError != null) {
@@ -777,19 +791,21 @@ fun SettingsDialog(
                                 }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary, contentColor = Color(0xFF1E1F26)),
                     enabled = !isRotateLoading && newRotateCode.isNotBlank()
                 ) {
                     if (isRotateLoading) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(color = Color(0xFF1E1F26), modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     } else {
-                        Text("Update & Log Out")
+                        Text("Update & Log Out", fontWeight = FontWeight.SemiBold)
                     }
                 }
             },
             dismissButton = {
                 OutlinedButton(
                     onClick = { showRotateDialog = false },
+                    shape = RoundedCornerShape(10.dp),
                     enabled = !isRotateLoading
                 ) {
                     Text("Cancel")
@@ -804,11 +820,13 @@ fun SettingsDialog(
     if (showDeleteDataDialog) {
         AlertDialog(
             onDismissRequest = { if (!isActionLoading) showDeleteDataDialog = false },
+            containerColor = KairoSurfaceContainer,
+            shape = RoundedCornerShape(20.dp),
             icon = {
                 Icon(Icons.Default.WarningAmber, contentDescription = null, tint = Color(0xFFF59E0B))
             },
             title = {
-                Text("Clear All Tasks?", fontWeight = FontWeight.Bold)
+                Text("Clear All Tasks?", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             },
             text = {
                 Text(
@@ -835,6 +853,7 @@ fun SettingsDialog(
                                 }
                         }
                     },
+                    shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
                     enabled = !isActionLoading
                 ) {
@@ -848,6 +867,7 @@ fun SettingsDialog(
             dismissButton = {
                 OutlinedButton(
                     onClick = { showDeleteDataDialog = false },
+                    shape = RoundedCornerShape(10.dp),
                     enabled = !isActionLoading
                 ) {
                     Text("Cancel")
@@ -862,6 +882,8 @@ fun SettingsDialog(
     if (showDeleteCompleteDialog) {
         AlertDialog(
             onDismissRequest = { if (!isActionLoading) showDeleteCompleteDialog = false },
+            containerColor = KairoSurfaceContainer,
+            shape = RoundedCornerShape(20.dp),
             icon = {
                 Icon(Icons.Default.DeleteForever, contentDescription = null, tint = KairoHighUrgent)
             },
@@ -895,6 +917,7 @@ fun SettingsDialog(
                                 }
                         }
                     },
+                    shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = KairoHighUrgent),
                     enabled = !isActionLoading
                 ) {
@@ -908,6 +931,7 @@ fun SettingsDialog(
             dismissButton = {
                 OutlinedButton(
                     onClick = { showDeleteCompleteDialog = false },
+                    shape = RoundedCornerShape(10.dp),
                     enabled = !isActionLoading
                 ) {
                     Text("Cancel")
@@ -922,11 +946,17 @@ fun SettingsDialog(
     if (showLogoutDialog) {
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
+            containerColor = KairoSurfaceContainer,
+            shape = RoundedCornerShape(20.dp),
             title = {
-                Text("Log Out?", fontWeight = FontWeight.Bold)
+                Text("Log Out?", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             },
             text = {
-                Text("Are you sure you want to log out from this device?", fontSize = 13.sp)
+                Text(
+                    "Are you sure you want to log out from this device?",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             },
             confirmButton = {
                 Button(
@@ -936,13 +966,17 @@ fun SettingsDialog(
                         TaskRepository.clearTasksLocally()
                         AuthManager.clearSession()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary)
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary, contentColor = Color(0xFF1E1F26))
                 ) {
-                    Text("Log Out")
+                    Text("Log Out", fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { showLogoutDialog = false }) {
+                OutlinedButton(
+                    onClick = { showLogoutDialog = false },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
                     Text("Cancel")
                 }
             }
@@ -967,14 +1001,15 @@ private fun CollapsibleSettingsSection(
 ) {
     val rotationState by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
+        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
         label = "collapse_chevron"
     )
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = KairoCardSurface,
-        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
+        color = KairoSurfaceContainer,
+        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.22f))
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             // Header Row (Clickable to collapse/expand)
@@ -988,9 +1023,9 @@ private fun CollapsibleSettingsSection(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(iconTint.copy(alpha = 0.15f)),
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(iconTint.copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -1007,14 +1042,17 @@ private fun CollapsibleSettingsSection(
                     Text(
                         text = title,
                         fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    if (subtitle != null) {
+                    if (!subtitle.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = subtitle,
                             fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -1022,16 +1060,16 @@ private fun CollapsibleSettingsSection(
                 if (badgeText != null) {
                     Surface(
                         shape = RoundedCornerShape(100.dp),
-                        color = badgeColor.copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.4f)),
-                        modifier = Modifier.padding(end = 8.dp)
+                        color = badgeColor.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.35f)),
+                        modifier = Modifier.padding(end = 10.dp)
                     ) {
                         Text(
                             text = badgeText,
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.SemiBold,
                             color = badgeColor,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
                 }
@@ -1039,9 +1077,9 @@ private fun CollapsibleSettingsSection(
                 Icon(
                     imageVector = Icons.Default.ExpandMore,
                     contentDescription = if (isExpanded) "Collapse" else "Expand",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     modifier = Modifier
-                        .size(24.dp)
+                        .size(22.dp)
                         .rotate(rotationState)
                 )
             }
@@ -1049,8 +1087,8 @@ private fun CollapsibleSettingsSection(
             // Collapsible Content
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
+                enter = expandVertically(tween(220)) + fadeIn(tween(180)),
+                exit = shrinkVertically(tween(180)) + fadeOut(tween(140))
             ) {
                 Column(
                     modifier = Modifier
@@ -1058,7 +1096,7 @@ private fun CollapsibleSettingsSection(
                         .padding(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 4.dp)
                 ) {
                     HorizontalDivider(
-                        color = KairoOutlineVariant.copy(alpha = 0.25f),
+                        color = KairoOutlineVariant.copy(alpha = 0.18f),
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
                     content()
@@ -1074,65 +1112,67 @@ private fun CollapsibleSettingsSection(
 @Composable
 private fun OfflineTaskCard(item: OfflineTaskItem) {
     val (badgeBg, badgeFg, badgeText) = when {
-        item.action.contains("Created", ignoreCase = true) -> Triple(Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981), "NEW")
-        item.action.contains("Updated", ignoreCase = true) -> Triple(Color(0xFF38BDF8).copy(alpha = 0.15f), Color(0xFF38BDF8), "EDIT")
-        item.action.contains("Deleted", ignoreCase = true) -> Triple(Color(0xFFEF4444).copy(alpha = 0.15f), Color(0xFFEF4444), "DELETE")
-        else -> Triple(Color(0xFFF59E0B).copy(alpha = 0.15f), Color(0xFFF59E0B), "PENDING")
+        item.action.contains("Created", ignoreCase = true) -> Triple(Color(0xFF10B981).copy(alpha = 0.12f), Color(0xFF10B981), "NEW")
+        item.action.contains("Updated", ignoreCase = true) -> Triple(Color(0xFF38BDF8).copy(alpha = 0.12f), Color(0xFF38BDF8), "EDIT")
+        item.action.contains("Deleted", ignoreCase = true) -> Triple(Color(0xFFEF4444).copy(alpha = 0.12f), Color(0xFFEF4444), "DELETE")
+        else -> Triple(Color(0xFFF59E0B).copy(alpha = 0.12f), Color(0xFFF59E0B), "PENDING")
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-                RoundedCornerShape(10.dp)
-            )
-            .border(1.dp, KairoOutlineVariant.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = KairoSurfaceContainerHigh,
+        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f))
     ) {
-        Surface(
-            shape = RoundedCornerShape(6.dp),
-            color = badgeBg
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = badgeText,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = badgeFg,
-                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.title,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            val timeFormat = SimpleDateFormat("h:mm a, MMM d", Locale.getDefault())
-            val timeStr = timeFormat.format(Date(item.timestamp))
-
-            Text(
-                text = "${item.action} • $timeStr",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            if (!item.location.isNullOrBlank()) {
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = badgeBg
+            ) {
                 Text(
-                    text = "Location: ${item.location}",
+                    text = badgeText,
                     fontSize = 10.sp,
-                    color = KairoPrimary.copy(alpha = 0.8f),
+                    fontWeight = FontWeight.Bold,
+                    color = badgeFg,
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.title,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+
+                val timeFormat = SimpleDateFormat("h:mm a, MMM d", Locale.getDefault())
+                val timeStr = timeFormat.format(Date(item.timestamp))
+
+                Text(
+                    text = "${item.action} • $timeStr",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (!item.location.isNullOrBlank()) {
+                    Text(
+                        text = "Location: ${item.location}",
+                        fontSize = 10.sp,
+                        color = KairoPrimary.copy(alpha = 0.8f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }
@@ -1146,42 +1186,58 @@ private fun SettingsActionRow(
     subtitle: String,
     onClick: () -> Unit
 ) {
-    Row(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = KairoSurfaceContainerLow,
+        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.18f))
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(iconTint.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(iconTint.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             Icon(
-                imageVector = icon,
+                imageVector = Icons.Default.ChevronRight,
                 contentDescription = null,
-                tint = iconTint,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier.size(18.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = subtitle,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -1194,52 +1250,71 @@ private fun SettingsStatusRow(
     isGranted: Boolean,
     onClick: () -> Unit
 ) {
-    Row(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .background(
-                if (isGranted) Color(0xFF10B981).copy(alpha = 0.08f)
-                else Color(0xFFF59E0B).copy(alpha = 0.12f),
-                RoundedCornerShape(12.dp)
-            )
-            .border(
-                1.dp,
-                if (isGranted) Color(0xFF10B981).copy(alpha = 0.25f)
-                else Color(0xFFF59E0B).copy(alpha = 0.35f),
-                RoundedCornerShape(12.dp)
-            )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = KairoSurfaceContainerLow,
+        border = BorderStroke(
+            1.dp,
+            if (isGranted) Color(0xFF10B981).copy(alpha = 0.2f)
+            else Color(0xFFF59E0B).copy(alpha = 0.25f)
+        )
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = subtitle,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        Surface(
-            shape = RoundedCornerShape(100.dp),
-            color = if (isGranted) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFF59E0B).copy(alpha = 0.25f)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = if (isGranted) "Granted" else "Enable",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isGranted) Color(0xFF10B981) else Color(0xFFF59E0B),
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Surface(
+                shape = RoundedCornerShape(100.dp),
+                color = if (isGranted) Color(0xFF10B981).copy(alpha = 0.12f) else Color(0xFFF59E0B).copy(alpha = 0.15f),
+                border = BorderStroke(
+                    1.dp,
+                    if (isGranted) Color(0xFF10B981).copy(alpha = 0.35f) else Color(0xFFF59E0B).copy(alpha = 0.4f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isGranted) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+                    Text(
+                        text = if (isGranted) "Granted" else "Enable",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isGranted) Color(0xFF10B981) else Color(0xFFF59E0B)
+                    )
+                }
+            }
         }
     }
 }
