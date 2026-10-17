@@ -435,7 +435,7 @@ fun TaskDetailsBottomSheet(
 
                         // Recurrence behavior explanation
                         Text(
-                            text = "• When marked completed, this task automatically rolls over to the next scheduled date.",
+                            text = "• Repeats automatically after completion.",
                             fontSize = 11.sp,
                             color = Color(0xFF94A3B8),
                             lineHeight = 15.sp,
@@ -460,13 +460,13 @@ fun TaskDetailsBottomSheet(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "Prematurely completed for today?",
+                                            text = "Completed early today?",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = Color(0xFF38BDF8)
                                         )
                                         Text(
-                                            text = "Reactivate to bring this task back to Today and re-arm today's alarm.",
+                                            text = "Mark as active to restore today's alarm.",
                                             fontSize = 11.sp,
                                             color = Color(0xFFCBD5E1),
                                             lineHeight = 14.sp
@@ -492,7 +492,7 @@ fun TaskDetailsBottomSheet(
                         }
                     } else {
                         Text(
-                            text = "• This is a single one-time task. It will not re-occur after completion.",
+                            text = "• One-time task.",
                             fontSize = 11.sp,
                             color = Color(0xFF918EA2),
                             lineHeight = 15.sp
@@ -566,7 +566,7 @@ fun TaskDetailsBottomSheet(
                             val subtext = if (countdown != null) {
                                 "Alarm is scheduled to ring in $countdown"
                             } else {
-                                "The alarm for this task has not triggered yet."
+                                "Alarm scheduled."
                             }
                             Text(
                                 text = subtext,

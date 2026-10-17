@@ -148,7 +148,7 @@ internal fun LoginScreen(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
-                    text = "Enter your access code to enter your workspace",
+                    text = "Enter your access code to sign in",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center

@@ -187,9 +187,9 @@ fun TaskExportBottomSheet(
                         )
                         Text(
                             text = if (isFiltered) {
-                                "Filtered data only based on active filters and search query."
+                                "Only tasks matching your current view will be exported."
                             } else {
-                                "No active filters. Entire task database will be exported."
+                                "All of your tasks will be exported."
                             },
                             fontSize = 12.sp,
                             color = KairoOnSurfaceVariant,
@@ -213,8 +213,8 @@ fun TaskExportBottomSheet(
 
             // Option 1: Human Readable (.txt)
             ExportOptionCard(
-                title = "a. Human readable",
-                subtitle = "Clean checklist text file (.txt) with dates, priorities, notes and nested subtasks",
+                title = "Text File (.txt)",
+                subtitle = "Clean checklist with dates, priorities, and notes",
                 icon = Icons.Default.Description,
                 isSelected = selectedFormat == TaskExportFormat.HUMAN_READABLE,
                 onClick = { selectedFormat = TaskExportFormat.HUMAN_READABLE }
@@ -224,8 +224,8 @@ fun TaskExportBottomSheet(
 
             // Option 2: CSV Spreadsheet (.csv)
             ExportOptionCard(
-                title = "b. CSV",
-                subtitle = "Structured spreadsheet data (.csv) compatible with Excel, Google Sheets and database imports",
+                title = "Spreadsheet (.csv)",
+                subtitle = "Compatible with Excel, Google Sheets, and table viewers",
                 icon = Icons.Default.TableChart,
                 isSelected = selectedFormat == TaskExportFormat.CSV,
                 onClick = { selectedFormat = TaskExportFormat.CSV }
@@ -271,7 +271,7 @@ fun TaskExportBottomSheet(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = if (tasksToExport.isNotEmpty()) {
-                            "Save to Downloads + Share (.${selectedFormat.extension})"
+                            "Export & Share"
                         } else {
                             "No Tasks to Export"
                         },

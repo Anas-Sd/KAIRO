@@ -753,7 +753,7 @@ fun HabitsScreen(
             },
             text = {
                 Text(
-                    text = "You are deleting ${selectedHabitIds.size} habit${if (selectedHabitIds.size > 1) "s" else ""}. Are you sure you want to delete them permanently from Supabase?",
+                    text = "You are deleting ${selectedHabitIds.size} habit${if (selectedHabitIds.size > 1) "s" else ""}. Are you sure you want to delete them permanently?",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },

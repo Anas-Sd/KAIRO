@@ -94,14 +94,14 @@ class MainActivity : ComponentActivity() {
                         },
                         title = {
                             Text(
-                                text = "Full-Screen Lock Screen Alarms",
+                                text = "Alarm Permissions",
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         },
                         text = {
                             Text(
-                                text = "To wake the screen and ring in full screen over the lock screen (like your phone's built-in alarm app), please allow Full-Screen Alarm Intent and Display Over Other Apps.",
+                                text = "Allow KAIRO to ring alarms when your screen is locked so you never miss a reminder.",
                                 fontSize = 14.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -121,12 +121,12 @@ class MainActivity : ComponentActivity() {
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary)
                             ) {
-                                Text("Allow Now")
+                                Text("Turn On")
                             }
                         },
                         dismissButton = {
                             OutlinedButton(onClick = { showOverlayPrompt = false }) {
-                                Text("Later")
+                                Text("Not Now")
                             }
                         }
                     )

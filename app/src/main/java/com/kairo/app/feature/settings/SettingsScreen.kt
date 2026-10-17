@@ -230,8 +230,8 @@ fun SettingsDialog(
                     // 1. COLLAPSIBLE SECTION: OFFLINE TASKS & SYNC
                     // ==========================================
                     CollapsibleSettingsSection(
-                        title = "Offline Tasks & Cloud Sync",
-                        subtitle = if (pendingCount > 0) "$pendingCount offline change(s) waiting for sync" else "Database is synchronized",
+                        title = "Sync & Offline",
+                        subtitle = if (pendingCount > 0) "$pendingCount change(s) pending sync" else "All changes synced",
                         icon = Icons.Default.CloudSync,
                         iconTint = if (pendingCount > 0) Color(0xFFF59E0B) else KairoSecondary,
                         badgeText = if (pendingCount > 0) "$pendingCount Pending" else "All Synced",
@@ -262,7 +262,7 @@ fun SettingsDialog(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = if (isOnline) "Connected to Database" else "Offline Mode Active",
+                                        text = if (isOnline) "Cloud Connected" else "Working Offline",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -270,7 +270,7 @@ fun SettingsDialog(
                                 }
                                 Spacer(modifier = Modifier.height(3.dp))
                                 Text(
-                                    text = if (isOnline) "Sync updates directly with Supabase" else "Changes saved safely on this device",
+                                    text = if (isOnline) "Changes are saved to your account" else "Changes will sync when connected",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -286,12 +286,12 @@ fun SettingsDialog(
                                             val count = result.getOrDefault(0)
                                             Toast.makeText(
                                                 context,
-                                                if (count > 0) "Successfully synced $count tasks with database!" else "Database is already fully up to date",
+                                                if (count > 0) "Successfully synced $count task(s)" else "Everything is up to date",
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         } else {
                                             if (!isOnline) {
-                                                Toast.makeText(context, "Device offline. Tasks stored safely in local database.", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Device offline. Changes saved locally.", Toast.LENGTH_SHORT).show()
                                             } else {
                                                 Toast.makeText(context, "Sync check completed", Toast.LENGTH_SHORT).show()
                                             }
@@ -353,7 +353,7 @@ fun SettingsDialog(
                                             color = Color(0xFF10B981)
                                         )
                                         Text(
-                                            text = "No offline changes pending. All tasks are present and up to date in the cloud database.",
+                                            text = "Everything is up to date.",
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -368,7 +368,7 @@ fun SettingsDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "TASKS WAITING TO SYNC (${offlineTasks.size})",
+                                    text = "PENDING SYNC (${offlineTasks.size})",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.8.sp,
@@ -376,7 +376,7 @@ fun SettingsDialog(
                                 )
 
                                 Text(
-                                    text = "Auto-clears once synced",
+                                    text = "Syncs automatically",
                                     fontSize = 10.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 )
@@ -408,7 +408,7 @@ fun SettingsDialog(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "FIREBASE PUSH & ALARM WAKE",
+                                    text = "DEVICE SYNC",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 1.sp,
@@ -416,14 +416,14 @@ fun SettingsDialog(
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = if (!fcmToken.isNullOrBlank()) "Token: ${fcmToken!!.take(14)}...${fcmToken!!.takeLast(6)}" else "Retrieving Push Token...",
+                                    text = if (!fcmToken.isNullOrBlank()) "ID: ${fcmToken!!.take(14)}...${fcmToken!!.takeLast(6)}" else "Connecting...",
                                     fontSize = 12.sp,
                                     fontFamily = FontFamily.Monospace,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Wakes phone & schedules hardware alarms when tasks added externally",
+                                    text = "Syncs alarms instantly across devices and bot",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -432,12 +432,12 @@ fun SettingsDialog(
                                 IconButton(
                                     onClick = {
                                         clipboardManager.setText(AnnotatedString(fcmToken!!))
-                                        Toast.makeText(context, "FCM Device Token copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Device ID copied to clipboard", Toast.LENGTH_SHORT).show()
                                     }
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy FCM Token",
+                                        contentDescription = "Copy Device ID",
                                         tint = KairoPrimary,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -456,8 +456,8 @@ fun SettingsDialog(
                     val allPermsGranted = hasOverlay && hasFullScreenIntent && hasExactAlarm
 
                     CollapsibleSettingsSection(
-                        title = "Full-Screen Alarms & Overlays",
-                        subtitle = if (allPermsGranted) "Direct full-screen takeover active" else "Action required for direct full-screen",
+                        title = "Alarm Permissions",
+                        subtitle = if (allPermsGranted) "Full-screen alerts enabled" else "Action needed for full-screen alerts",
                         icon = Icons.Default.WarningAmber,
                         iconTint = if (allPermsGranted) Color(0xFF10B981) else Color(0xFFF59E0B),
                         badgeText = if (allPermsGranted) "Ready" else "Action Needed",
@@ -466,7 +466,7 @@ fun SettingsDialog(
                         onToggle = { isPermissionsExpanded = !isPermissionsExpanded }
                     ) {
                         Text(
-                            text = "To show alarms directly in full screen (without a notification banner) when using other apps or when locked, allow 'Display over other apps'.",
+                            text = "Allow full-screen alarms to ring over your apps and lock screen.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 16.sp
@@ -475,8 +475,8 @@ fun SettingsDialog(
                         Spacer(modifier = Modifier.height(10.dp))
 
                         SettingsStatusRow(
-                            title = "Display Over Other Apps",
-                            subtitle = "Direct full-screen alarm over active apps & lock screen",
+                            title = "Show Over Apps",
+                            subtitle = "Displays alarm even when using other apps",
                             isGranted = hasOverlay,
                             onClick = { com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.openOverlaySettings(context) }
                         )
@@ -484,8 +484,8 @@ fun SettingsDialog(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         SettingsStatusRow(
-                            title = "Full-Screen Alarm Intent",
-                            subtitle = "Wakes phone & launches full-screen UI on Android 14+",
+                            title = "Lock Screen Alarms",
+                            subtitle = "Wakes screen when an alarm rings",
                             isGranted = hasFullScreenIntent,
                             onClick = { com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.openFullScreenIntentSettings(context) }
                         )
@@ -493,8 +493,8 @@ fun SettingsDialog(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         SettingsStatusRow(
-                            title = "Schedule Exact Alarms",
-                            subtitle = "Guarantees alarm rings at the exact specified minute",
+                            title = "Precise Timing",
+                            subtitle = "Rings at the exact scheduled time",
                             isGranted = hasExactAlarm,
                             onClick = { com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.openExactAlarmSettings(context) }
                         )
@@ -502,8 +502,8 @@ fun SettingsDialog(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         SettingsStatusRow(
-                            title = "Unrestricted Battery",
-                            subtitle = "Prevents OS battery saver from delaying background alarms",
+                            title = "Background Activity",
+                            subtitle = "Prevents battery saver from delaying alarms",
                             isGranted = isBatteryIgnored,
                             onClick = { com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager.requestIgnoreBatteryOptimizations(context) }
                         )
@@ -643,8 +643,8 @@ fun SettingsDialog(
                         SettingsActionRow(
                             icon = Icons.Default.SyncLock,
                             iconTint = KairoPrimary,
-                            title = "Rotate Access Code",
-                            subtitle = "Update code in database & re-login",
+                            title = "Change Access Code",
+                            subtitle = "Update your code and sign in again",
                             onClick = {
                                 newRotateCode = ""
                                 rotateError = null
@@ -657,8 +657,8 @@ fun SettingsDialog(
                     // 3. COLLAPSIBLE SECTION: DATA MANAGEMENT
                     // ==========================================
                     CollapsibleSettingsSection(
-                        title = "Data Management",
-                        subtitle = "Database wipe and reset options",
+                        title = "Data & Reset",
+                        subtitle = "Reset and account deletion options",
                         icon = Icons.Default.Storage,
                         iconTint = Color(0xFFF59E0B),
                         isExpanded = isDataExpanded,
@@ -667,8 +667,8 @@ fun SettingsDialog(
                         SettingsActionRow(
                             icon = Icons.Default.DeleteSweep,
                             iconTint = Color(0xFFF59E0B),
-                            title = "Delete All Data",
-                            subtitle = "Clear all tasks from database while keeping your access code",
+                            title = "Clear All Tasks",
+                            subtitle = "Delete all your tasks while keeping your account",
                             onClick = { showDeleteDataDialog = true }
                         )
 
@@ -677,8 +677,8 @@ fun SettingsDialog(
                         SettingsActionRow(
                             icon = Icons.Default.DeleteForever,
                             iconTint = KairoHighUrgent,
-                            title = "Delete Complete Code",
-                            subtitle = "Permanently delete access code & all tasks from database",
+                            title = "Delete Account",
+                            subtitle = "Permanently delete your account and all data",
                             onClick = { showDeleteCompleteDialog = true }
                         )
                     }
@@ -716,12 +716,12 @@ fun SettingsDialog(
         AlertDialog(
             onDismissRequest = { if (!isRotateLoading) showRotateDialog = false },
             title = {
-                Text("Rotate Access Code", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Change Access Code", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             },
             text = {
                 Column {
                     Text(
-                        "Enter your new access code. Your existing tasks will be migrated to the new code, and you will be logged out automatically.",
+                        "Enter your new access code. Your tasks will be transferred to your new code.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -767,13 +767,13 @@ fun SettingsDialog(
                                     isRotateLoading = false
                                     showRotateDialog = false
                                     onDismissRequest()
-                                    Toast.makeText(context, "Code rotated! Please log in with new code.", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Code changed! Please sign in with your new code.", Toast.LENGTH_LONG).show()
                                     TaskRepository.clearTasksLocally()
                                     AuthManager.clearSession()
                                 }
                                 .onFailure { error ->
                                     isRotateLoading = false
-                                    rotateError = error.localizedMessage ?: "Failed to rotate code"
+                                    rotateError = error.localizedMessage ?: "Failed to change code"
                                 }
                         }
                     },
@@ -808,11 +808,11 @@ fun SettingsDialog(
                 Icon(Icons.Default.WarningAmber, contentDescription = null, tint = Color(0xFFF59E0B))
             },
             title = {
-                Text("Delete All Data?", fontWeight = FontWeight.Bold)
+                Text("Clear All Tasks?", fontWeight = FontWeight.Bold)
             },
             text = {
                 Text(
-                    "Are you sure you want to delete all tasks? This will permanently delete your tasks from the database. Your access code will remain valid.",
+                    "Are you sure you want to delete all tasks? This action cannot be undone. Your access code will remain active.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -841,7 +841,7 @@ fun SettingsDialog(
                     if (isActionLoading) {
                         CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     } else {
-                        Text("Delete Tasks")
+                        Text("Clear Tasks")
                     }
                 }
             },
@@ -866,11 +866,11 @@ fun SettingsDialog(
                 Icon(Icons.Default.DeleteForever, contentDescription = null, tint = KairoHighUrgent)
             },
             title = {
-                Text("Delete Code & All Data?", fontWeight = FontWeight.Bold, color = KairoHighUrgent)
+                Text("Delete Account?", fontWeight = FontWeight.Bold, color = KairoHighUrgent)
             },
             text = {
                 Text(
-                    "This action is permanent and cannot be undone! Your access code and all tasks will be deleted immediately. You will be logged out and will lose all access.",
+                    "This action is permanent and cannot be undone. Your account and all tasks will be deleted immediately.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -885,7 +885,7 @@ fun SettingsDialog(
                                     isActionLoading = false
                                     showDeleteCompleteDialog = false
                                     onDismissRequest()
-                                    Toast.makeText(context, "Code and data permanently deleted", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Account permanently deleted", Toast.LENGTH_LONG).show()
                                     TaskRepository.clearTasksLocally()
                                     AuthManager.clearSession()
                                 }

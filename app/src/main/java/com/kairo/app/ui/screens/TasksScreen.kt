@@ -868,7 +868,7 @@ fun TasksScreen(
                             longitude = longitude,
                             locationRadius = locationRadius
                         )
-                        val msg = if (isOnline) "Task created successfully" else "Task saved offline • Stored in Settings > Offline Tasks"
+                        val msg = if (isOnline) "Task created" else "Saved offline"
                         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 )
@@ -915,7 +915,7 @@ fun TasksScreen(
                             longitude = longitude,
                             locationRadius = locationRadius
                         )
-                        val msg = if (isOnline) "Task updated successfully" else "Task updated offline • Stored in Settings > Offline Tasks"
+                        val msg = if (isOnline) "Task updated" else "Saved offline"
                         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 )
@@ -930,7 +930,7 @@ fun TasksScreen(
                     onDismiss = { viewModel.dismissAdjustParent() },
                     onMoveConfirmed = { newParentId, moveSubtasks ->
                         viewModel.moveTask(taskForAdjust.id, newParentId, moveSubtasks)
-                        val msg = if (isOnline) "Task moved successfully" else "Task moved offline • Stored in Settings > Offline Tasks"
+                        val msg = if (isOnline) "Task moved" else "Moved offline"
                         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 )
@@ -946,7 +946,7 @@ fun TasksScreen(
                     onDismiss = { viewModel.dismissDeleteConfirm() },
                     onConfirmDelete = { deleteSubtasks ->
                         viewModel.confirmDelete(taskForDelete, deleteSubtasks)
-                        val msg = if (isOnline) "Task deleted" else "Task deleted offline • Stored in Settings > Offline Tasks"
+                        val msg = if (isOnline) "Task deleted" else "Deleted offline"
                         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 )
@@ -972,7 +972,7 @@ fun TasksScreen(
                     },
                     text = {
                         Text(
-                            text = "You are deleting ${selectedTaskIds.size} task${if (selectedTaskIds.size > 1) "s" else ""}. Are you sure you want to delete them permanently from the database?",
+                            text = "You are deleting ${selectedTaskIds.size} task${if (selectedTaskIds.size > 1) "s" else ""}. Are you sure you want to delete them permanently?",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },

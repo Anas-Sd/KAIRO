@@ -198,7 +198,7 @@ fun HabitExportBottomSheet(
                                 val h = habitsToExport.first()
                                 "Current Streak: ${h.streak} | Adherence: ${h.adherenceRate.toInt()}% | Full logs & notes"
                             } else {
-                                "${habitsToExport.size} selected habits with deep dive logs, notes, streaks, and discipline stats."
+                                "${habitsToExport.size} habit(s) with streaks, logs, and notes."
                             },
                             fontSize = 12.sp,
                             color = KairoOnSurfaceVariant,
@@ -358,8 +358,8 @@ fun HabitExportBottomSheet(
 
             // Option 1: Human Readable (.txt)
             HabitExportOptionCard(
-                title = "a. Human readable (.txt)",
-                subtitle = "Complete report with executive discipline stats, habit cards, and day-by-day logs with notes",
+                title = "Detailed Report (.txt)",
+                subtitle = "Overview report with streaks, logs, and notes",
                 icon = Icons.Default.Description,
                 isSelected = selectedFormat == HabitExportFormat.HUMAN_READABLE,
                 onClick = { selectedFormat = HabitExportFormat.HUMAN_READABLE }
@@ -369,8 +369,8 @@ fun HabitExportBottomSheet(
 
             // Option 2: CSV Spreadsheet (.csv)
             HabitExportOptionCard(
-                title = "b. CSV Spreadsheet (.csv)",
-                subtitle = "Structured tabular spreadsheet data compatible with Excel, Google Sheets, and data imports",
+                title = "Spreadsheet (.csv)",
+                subtitle = "Compatible with Excel and Google Sheets",
                 icon = Icons.Default.TableChart,
                 isSelected = selectedFormat == HabitExportFormat.CSV,
                 onClick = { selectedFormat = HabitExportFormat.CSV }
@@ -418,7 +418,7 @@ fun HabitExportBottomSheet(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = if (habitsToExport.isNotEmpty()) {
-                            "Save to Downloads + Share (.${selectedFormat.extension})"
+                            "Export & Share"
                         } else {
                             "No Habits to Export"
                         },

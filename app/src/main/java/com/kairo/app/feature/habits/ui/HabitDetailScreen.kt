@@ -1060,7 +1060,7 @@ fun HabitDetailScreen(
             },
             text = {
                 Text(
-                    text = "Are you sure you want to delete \"${currentHabit.title}\"? All habit history and streak data will be permanently deleted from Supabase.",
+                    text = "Are you sure you want to delete \"${currentHabit.title}\"? All habit history and streak data will be permanently deleted.",
                     color = Color(0xFFC8C4D9),
                     fontSize = 14.sp
                 )
@@ -1610,7 +1610,7 @@ fun MonthlyHeatmapSection(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Text(
-                                        text = "Future date — habit actions are locked until this day arrives.",
+                                        text = "Future dates cannot be checked in yet.",
                                         fontSize = 12.sp,
                                         color = Color(0xFF94A3B8)
                                     )
@@ -1618,7 +1618,7 @@ fun MonthlyHeatmapSection(
                             }
                         } else if (habit.type == HabitType.TARGET) {
                             Text(
-                                text = "Adjust count for $formattedSelectedDate (syncs to Supabase):",
+                                text = "Adjust count for $formattedSelectedDate:",
                                 fontSize = 11.sp,
                                 color = Color(0xFF94A3B8),
                                 fontWeight = FontWeight.Medium
@@ -1778,7 +1778,7 @@ fun MonthlyHeatmapSection(
                         } else {
                             // Yes/No Status action chips
                             Text(
-                                text = "Set Status (syncs to Supabase):",
+                                text = "Set Status:",
                                 fontSize = 11.sp,
                                 color = Color(0xFF94A3B8),
                                 fontWeight = FontWeight.Medium
