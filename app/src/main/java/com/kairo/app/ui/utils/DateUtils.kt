@@ -181,10 +181,10 @@ object DateUtils {
     }
 
     /**
-     * Formats the remaining time until targetMillis into:
+     * Formats the remaining time until targetMillis with a maximum of 2 units:
      * - "X min" if < 60 minutes
-     * - "X hrs : Y min" (or "1 hr : Y min") if < 24 hours
-     * - "X days : Y hrs : Z min" (or "1 day : ...") if >= 24 hours
+     * - "X hrs : Y min" (or "X hrs") if < 24 hours
+     * - "X days : Y hrs" (or "X days") if >= 24 hours (no minutes when days are present)
      */
     fun formatRemainingTime(targetMillis: Long, now: Long = System.currentTimeMillis()): String? {
         val diffMs = targetMillis - now
@@ -201,7 +201,11 @@ object DateUtils {
 
         if (totalHours < 24L) {
             val hrUnit = if (totalHours == 1L) "hr" else "hrs"
-            return "$totalHours $hrUnit : $remainingMins min"
+            return if (remainingMins > 0L) {
+                "$totalHours $hrUnit : $remainingMins min"
+            } else {
+                "$totalHours $hrUnit"
+            }
         }
 
         val days = totalHours / 24L
@@ -209,7 +213,11 @@ object DateUtils {
         val dayUnit = if (days == 1L) "day" else "days"
         val hrUnit = if (remainingHours == 1L) "hr" else "hrs"
 
-        return "$days $dayUnit : $remainingHours $hrUnit : $remainingMins min"
+        return if (remainingHours > 0L) {
+            "$days $dayUnit : $remainingHours $hrUnit"
+        } else {
+            "$days $dayUnit"
+        }
     }
 
     /**

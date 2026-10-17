@@ -639,8 +639,8 @@ object TaskRepository {
         val positionMap = orderedTaskIds.mapIndexed { index, id -> id to index }.toMap()
         val updated = current.map { task ->
             val newPos = positionMap[task.id]
-            if (newPos != null && newPos != task.position) {
-                task.copy(position = newPos, updatedAt = now)
+            if (newPos != null) {
+                task.copy(position = newPos, updatedAt = now - (newPos * 1000L))
             } else task
         }
         _tasks.value = updated
@@ -944,6 +944,99 @@ object TaskRepository {
         SyncManager.triggerSync()
         TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
         return true
+    }
+
+    fun rescheduleTaskToToday(taskId: String): Boolean {
+        val now = System.currentTimeMillis()
+        val allTasks = _tasks.value
+        val target = allTasks.find { it.id == taskId } ?: return false
+
+        val todayCal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val todayStartMillis = todayCal.timeInMillis
+
+        val rescheduled = target.copy(
+            dueDate = "Today",
+            dueDateMillis = todayStartMillis,
+            section = TaskSection.TODAY,
+            snoozeUntilMillis = null,
+            updatedAt = now
+        )
+
+        _tasks.update { current ->
+            current.map { if (it.id == taskId) rescheduled else it }
+        }
+
+        val userCode = AuthManager.getUserCode() ?: ""
+        localDb.saveTask(rescheduled, userCode, syncStatus = "PENDING")
+        localDb.enqueueSyncAction(rescheduled.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(rescheduled, userCode)), userCode)
+        localDb.insertAlarmLog(taskId, "POSTPONED", "Rescheduled to Today")
+
+        val trigger = AlarmScheduler.calculateTriggerMillis("Today", rescheduled.dueTime, todayStartMillis)
+        if (trigger != null && trigger > now) {
+            AlarmScheduler.scheduleAlarm(KairoApplication.instance, rescheduled, trigger)
+        } else {
+            AlarmScheduler.cancelAlarm(KairoApplication.instance, taskId)
+        }
+
+        SyncManager.triggerSync()
+        TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
+        return true
+    }
+
+    fun rescheduleTasksToToday(taskIds: Collection<String>): Int {
+        if (taskIds.isEmpty()) return 0
+        val now = System.currentTimeMillis()
+        val allTasks = _tasks.value
+        val idSet = taskIds.toSet()
+
+        val todayCal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val todayStartMillis = todayCal.timeInMillis
+
+        val affected = mutableListOf<Task>()
+        val updatedList = allTasks.map { task ->
+            if (idSet.contains(task.id)) {
+                val rescheduled = task.copy(
+                    dueDate = "Today",
+                    dueDateMillis = todayStartMillis,
+                    section = TaskSection.TODAY,
+                    snoozeUntilMillis = null,
+                    updatedAt = now
+                )
+                affected.add(rescheduled)
+                rescheduled
+            } else task
+        }
+
+        if (affected.isEmpty()) return 0
+
+        _tasks.value = updatedList
+
+        val userCode = AuthManager.getUserCode() ?: ""
+        localDb.saveTasksBatch(affected, userCode, syncStatus = "PENDING")
+        for (item in affected) {
+            localDb.enqueueSyncAction(item.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(item, userCode)), userCode)
+            localDb.insertAlarmLog(item.id, "POSTPONED", "Rescheduled to Today")
+            val trigger = AlarmScheduler.calculateTriggerMillis("Today", item.dueTime, todayStartMillis)
+            if (trigger != null && trigger > now) {
+                AlarmScheduler.scheduleAlarm(KairoApplication.instance, item, trigger)
+            } else {
+                AlarmScheduler.cancelAlarm(KairoApplication.instance, item.id)
+            }
+        }
+
+        SyncManager.triggerSync()
+        TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
+        return affected.size
     }
 
     fun commitUndo() {

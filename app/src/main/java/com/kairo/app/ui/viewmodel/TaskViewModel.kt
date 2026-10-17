@@ -230,7 +230,7 @@ class TaskViewModel(
 
     private fun sortTasks(list: List<Task>, sort: TaskSort): List<Task> {
         return when (sort) {
-            TaskSort.DATE_NEAR -> list.sortedWith(compareBy({ it.position }, { getEffectiveDueDateMillis(it) }))
+            TaskSort.DATE_NEAR -> list.sortedByDescending { maxOf(it.updatedAt, it.createdAt) }
             TaskSort.DATE_LATE -> list.sortedByDescending { getEffectiveDueDateMillis(it) }
             TaskSort.PRIORITY_HIGH -> list.sortedByDescending { it.priority.ordinal }
             TaskSort.PRIORITY_LOW -> list.sortedBy { it.priority.ordinal }
@@ -308,12 +308,12 @@ class TaskViewModel(
             }
         }
 
-        // 5. Partition into Snoozed and other Categories
-        val snoozed = list.filter { isSnoozed(it) }.sortedBy { it.snoozeUntilMillis }
+        // 5. Partition into Snoozed and other Categories (recent tasks on top)
+        val snoozed = list.filter { isSnoozed(it) }.sortedByDescending { maxOf(it.updatedAt, it.createdAt) }
         val overdue = sortTasks(list.filter { isOverdue(it) }, sort)
         val today = sortTasks(list.filter { isToday(it) }, sort)
         val upcoming = sortTasks(list.filter { isUpcoming(it) }, sort)
-        val completed = list.filter { it.isCompleted }.sortedByDescending { it.completedAt ?: it.updatedAt }
+        val completed = list.filter { it.isCompleted }.sortedByDescending { maxOf(it.completedAt ?: 0L, it.updatedAt, it.createdAt) }
 
         TasksUiState(
             snoozedTasks = snoozed,
@@ -366,6 +366,19 @@ class TaskViewModel(
     fun reactivateTaskForToday(taskId: String) {
         viewModelScope.launch {
             repository.reactivateRecurringTaskForToday(taskId)
+        }
+    }
+
+    fun rescheduleTaskToToday(taskId: String) {
+        viewModelScope.launch {
+            repository.rescheduleTaskToToday(taskId)
+        }
+    }
+
+    fun rescheduleAllOverdueToToday() {
+        val overdueIds = uiState.value.overdueTasks.map { it.id }
+        viewModelScope.launch {
+            repository.rescheduleTasksToToday(overdueIds)
         }
     }
 
@@ -512,23 +525,88 @@ class TaskViewModel(
     }
 
     fun toggleSnoozed() {
-        _uiToggles.update { it.copy(snoozedExpanded = !it.snoozedExpanded) }
+        _uiToggles.update {
+            val willExpand = !it.snoozedExpanded
+            if (willExpand) {
+                it.copy(
+                    snoozedExpanded = true,
+                    overdueExpanded = false,
+                    todayExpanded = false,
+                    upcomingExpanded = false,
+                    completedExpanded = false
+                )
+            } else {
+                it.copy(snoozedExpanded = false)
+            }
+        }
     }
 
     fun toggleOverdue() {
-        _uiToggles.update { it.copy(overdueExpanded = !it.overdueExpanded) }
+        _uiToggles.update {
+            val willExpand = !it.overdueExpanded
+            if (willExpand) {
+                it.copy(
+                    overdueExpanded = true,
+                    snoozedExpanded = false,
+                    todayExpanded = false,
+                    upcomingExpanded = false,
+                    completedExpanded = false
+                )
+            } else {
+                it.copy(overdueExpanded = false)
+            }
+        }
     }
 
     fun toggleToday() {
-        _uiToggles.update { it.copy(todayExpanded = !it.todayExpanded) }
+        _uiToggles.update {
+            val willExpand = !it.todayExpanded
+            if (willExpand) {
+                it.copy(
+                    todayExpanded = true,
+                    snoozedExpanded = false,
+                    overdueExpanded = false,
+                    upcomingExpanded = false,
+                    completedExpanded = false
+                )
+            } else {
+                it.copy(todayExpanded = false)
+            }
+        }
     }
 
     fun toggleUpcoming() {
-        _uiToggles.update { it.copy(upcomingExpanded = !it.upcomingExpanded) }
+        _uiToggles.update {
+            val willExpand = !it.upcomingExpanded
+            if (willExpand) {
+                it.copy(
+                    upcomingExpanded = true,
+                    snoozedExpanded = false,
+                    overdueExpanded = false,
+                    todayExpanded = false,
+                    completedExpanded = false
+                )
+            } else {
+                it.copy(upcomingExpanded = false)
+            }
+        }
     }
 
     fun toggleCompleted() {
-        _uiToggles.update { it.copy(completedExpanded = !it.completedExpanded) }
+        _uiToggles.update {
+            val willExpand = !it.completedExpanded
+            if (willExpand) {
+                it.copy(
+                    completedExpanded = true,
+                    snoozedExpanded = false,
+                    overdueExpanded = false,
+                    todayExpanded = false,
+                    upcomingExpanded = false
+                )
+            } else {
+                it.copy(completedExpanded = false)
+            }
+        }
     }
 
     fun updateSearch(query: String) {

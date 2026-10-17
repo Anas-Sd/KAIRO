@@ -151,4 +151,40 @@ class DateUtilsTest {
         )
         assertNull(result)
     }
+
+    @Test
+    fun testFormatRemainingTime_maxTwoUnits() {
+        val baseNow = 1000000000000L
+
+        // 1. Under 60 mins -> only min
+        val mins25 = baseNow + 25 * 60 * 1000L
+        assertEquals("25 min", DateUtils.formatRemainingTime(mins25, baseNow))
+
+        // 2. Under 24 hrs -> hrs : min (or only hrs if remainingMins == 0)
+        val hrs2Mins15 = baseNow + (2 * 3600 + 15 * 60) * 1000L
+        assertEquals("2 hrs : 15 min", DateUtils.formatRemainingTime(hrs2Mins15, baseNow))
+
+        val hr1Min1 = baseNow + (1 * 3600 + 1 * 60) * 1000L
+        assertEquals("1 hr : 1 min", DateUtils.formatRemainingTime(hr1Min1, baseNow))
+
+        val exactly2Hrs = baseNow + 2 * 3600 * 1000L
+        assertEquals("2 hrs", DateUtils.formatRemainingTime(exactly2Hrs, baseNow))
+
+        val exactly1Hr = baseNow + 1 * 3600 * 1000L
+        assertEquals("1 hr", DateUtils.formatRemainingTime(exactly1Hr, baseNow))
+
+        // 3. >= 24 hrs -> days : hrs (or only days if remainingHours == 0, no minutes)
+        val days3Hrs4Min30 = baseNow + (3 * 86400 + 4 * 3600 + 30 * 60) * 1000L
+        assertEquals("3 days : 4 hrs", DateUtils.formatRemainingTime(days3Hrs4Min30, baseNow))
+
+        val day1Hr1 = baseNow + (1 * 86400 + 1 * 3600) * 1000L
+        assertEquals("1 day : 1 hr", DateUtils.formatRemainingTime(day1Hr1, baseNow))
+
+        val exactly2Days = baseNow + 2 * 86400 * 1000L
+        assertEquals("2 days", DateUtils.formatRemainingTime(exactly2Days, baseNow))
+
+        // 4. Past or zero
+        assertNull(DateUtils.formatRemainingTime(baseNow, baseNow))
+        assertNull(DateUtils.formatRemainingTime(baseNow - 1000L, baseNow))
+    }
 }
