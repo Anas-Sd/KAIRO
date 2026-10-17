@@ -16,6 +16,11 @@ import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import kotlin.math.absoluteValue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -91,7 +96,7 @@ data class ToneItem(
     val isDeviceAudio: Boolean = false
 )
 
-private object RecentTonesManager {
+internal object RecentTonesManager {
     private const val PREFS_NAME = "kairo_tone_prefs"
     private const val KEY_RECENT = "recent_tones_v2"
 
@@ -109,6 +114,40 @@ private object RecentTonesManager {
         }
     }
 
+    fun syncToCloud(context: Context) {
+        val userCode = com.kairo.app.data.auth.AuthManager.getUserCode() ?: return
+        if (userCode.isBlank()) return
+        val tones = getRecentTones(context)
+        val jsonArray = JSONArray()
+        for (t in tones) {
+            val obj = JSONObject().apply {
+                put("title", t.title)
+                put("subtitle", t.subtitle ?: "")
+                put("uriString", t.uriString ?: "")
+            }
+            jsonArray.put(obj)
+        }
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val taskDto = com.kairo.app.feature.sync.TaskDto(
+                    id = "sys_kairo_tones_$userCode",
+                    userCode = userCode,
+                    title = "__SYSTEM_RECENT_TONES__",
+                    notes = jsonArray.toString(),
+                    section = "SYSTEM",
+                    priority = "LOW",
+                    dueDate = "NONE",
+                    isCompleted = false,
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis()
+                )
+                com.kairo.app.feature.sync.SupabaseClient.insertTask(taskDto)
+            } catch (e: Exception) {
+                Log.e("RecentTonesManager", "Failed syncing tones to cloud: ${e.message}")
+            }
+        }
+    }
+
     fun saveRecentTone(context: Context, tone: ToneItem) {
         if (tone.uriString == null || tone.uriString == "NONE") return
         val current = getRecentTones(context).filter { it.uriString != tone.uriString }
@@ -120,6 +159,7 @@ private object RecentTonesManager {
             .edit()
             .putString(KEY_RECENT, serialized)
             .apply()
+        syncToCloud(context)
     }
 
     fun removeRecentTone(context: Context, uriString: String?) {
@@ -132,6 +172,7 @@ private object RecentTonesManager {
             .edit()
             .putString(KEY_RECENT, serialized)
             .apply()
+        syncToCloud(context)
     }
 }
 
@@ -304,6 +345,7 @@ fun TonePickerDialog(
         recentTones.clear()
         val loadedRecents = RecentTonesManager.getRecentTones(context)
         recentTones.addAll(loadedRecents)
+        RecentTonesManager.syncToCloud(context)
 
         // Query MediaStore Audio files (Downloaded songs & Recordings)
         try {

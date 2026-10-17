@@ -166,8 +166,21 @@ CRITICAL RULES & PROTOCOLS:
    - Use `filter_tasks` for complex filters (status: active/completed/all, date: today/tomorrow/range).
    - If the user asks for a date range without specifying start and end dates, MANDATORILY ask the user for the range before filtering!
 
-8. DOWNLOADABLE DATA EXPORTS:
-   - Use `export_tasks_data(format_type="csv"|"json", filter_status, filter_category)` when the user asks to download or export their tasks. The file will automatically be delivered to their Telegram chat!
+8. DOWNLOADABLE DATA EXPORTS (STRICT MULTI-TURN STEP PROTOCOL):
+   When the user asks to download or export their tasks (e.g. "download tasks", "export my tasks", "download data"):
+   - STEP 1 (CHECK SCOPE):
+     If the user has NOT specified whether they want all tasks or filtered data (e.g. active, completed, overdue, today, upcoming),
+     YOU MUST NOT CALL export_tasks_data!
+     YOU MUST STOP AND ASK THE USER:
+     "Would you like to export **all tasks** or **filtered data** (e.g., active, completed, overdue, today, upcoming)?"
+   - STEP 2 (CHECK FORMAT):
+     Once the scope/filter is determined, if the user has NOT specified the format (CSV or Plain Text),
+     YOU MUST STOP AND ASK THE USER:
+     "Would you like the export in **CSV** or **Plain text** (`.txt`) format?"
+   - STEP 3 (EXECUTE EXPORT):
+     Once BOTH scope and format are known (or if the user provided BOTH upfront, e.g. "download all tasks as csv" or "export completed tasks as plain text"):
+     Call `export_tasks_data(format_type="csv"|"txt", filter_status="all"|"active"|"completed"|"overdue"|"today"|"upcoming")`.
+     The tool generates the file and delivers it directly to their Telegram chat!
 
 9. SEARCHING:
    - Use `search_tasks(query)` to find tasks by keyword in title or notes.
@@ -270,6 +283,23 @@ CRITICAL RULES & PROTOCOLS:
      YOU MUST NOT GUESS OR UPDATE THE OTHER ITEM!
      STOP AND ASK THE USER:
      "I couldn't find a habit or task named '<requested name>'. Did you mean '<closest match>' or would you like to create it?"
+
+16. ALARM TONES & PERMANENT TONE MEMORY:
+   - When the user asks about available alarm tones (e.g., "get me the tones you have for alarm", "what alarm tones do you have?", "show tones", "list alarm tones"):
+     Call `get_recent_tones()`.
+     Present the exact list of available tones:
+     • Default: Default (ringtone_008) [Active by default]
+     • None [Silent / No sound]
+     • Recently Used from Mobile (e.g. mixkit-facility-alarm-sound, loudest_alarm.mp3, and any custom audio from phone)
+   - When creating or editing tasks:
+     - By default, if the user does not mention a tone, tone is "Default Tone".
+     - If the user explicitly mentions a tone (e.g., "with tone loudest_alarm.mp3", "set tone to mixkit", "silent alarm"), set the tone accordingly.
+     - The tool automatically resolves the tone title and matching hardware audio URI for the mobile alarm wakeup.
+   - PERMANENT MEMORY GUARANTEE:
+     - The bot continuously syncs and remembers recently used tones from the user's mobile app.
+     - If a tone is deleted or removed on the mobile phone, IT IS NEVER REMOVED FROM BOT MEMORY!
+     - The bot stores all recent tones permanently for all time.
+     - A tone can ONLY be deleted if the user explicitly instructs the bot to delete it from memory (e.g. "delete tone loudest_alarm from memory" -> call `delete_tone_from_memory(tone_query)`).
 
 Keep replies concise, professional, helpful, and formatted in clean Markdown."""
 
@@ -941,7 +971,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• `/rules` — View your active custom formatting rules\n"
         f"• `/delrule <number>` — Delete a specific custom rule\n"
         f"• `/clearrules` — Reset all custom rules\n"
-        f"• `/export` — Download your tasks as CSV or JSON\n"
+        f"• `/export` — Download your tasks as CSV, Plain Text (.txt), or JSON\n"
         f"• `/logout` — Disconnect this session\n\n"
         f"✨ *Custom Rules:* \n"
         f"Set rules anytime by saying `rule - <your rule>`!\n"
@@ -953,7 +983,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• _\"What are my urgent tasks for today?\"_\n"
         f"• _\"Mark team sync as completed\"_\n"
         f"• _\"Make groceries a subtask of weekly chores\"_\n"
-        f"• _\"Download all my active tasks as CSV\"_"
+        f"• _\"Download all my active tasks as CSV\"_\n"
+        f"• _\"Get me the tones you have for alarm\"_"
     )
     await safe_reply(message, help_msg)
 
@@ -1064,10 +1095,16 @@ async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     kairo_tools.set_context(user_code=session["user_code"], fcm_token=session.get("fcm_token"), chat_id=chat_id)
     format_type = "csv"
-    if context.args and context.args[0].lower() in ("json", "csv"):
-        format_type = context.args[0].lower()
+    filter_status = "all"
+    if context.args:
+        for arg in context.args:
+            arg_lower = arg.lower().strip()
+            if arg_lower in ("json", "csv", "txt", "text"):
+                format_type = "txt" if arg_lower in ("txt", "text") else arg_lower
+            elif arg_lower in ("all", "active", "completed", "overdue", "today", "upcoming"):
+                filter_status = arg_lower
 
-    res = kairo_tools.export_tasks_data(format_type=format_type)
+    res = kairo_tools.export_tasks_data(format_type=format_type, filter_status=filter_status)
     await safe_reply(message, res)
 
     for file_path in list(kairo_tools.outbox):

@@ -58,12 +58,16 @@ object SupabaseClient {
                     val fallbackResp = client.newCall(fallbackReq).execute()
                     val fallbackBody = fallbackResp.body?.string().orEmpty()
                     if (fallbackResp.isSuccessful) {
-                        return@runCatching json.decodeFromString<List<TaskDto>>(fallbackBody)
+                        return@runCatching json.decodeFromString<List<TaskDto>>(fallbackBody).filter {
+                            !it.id.startsWith("sys_") && it.title != "__SYSTEM_RECENT_TONES__"
+                        }
                     }
                 }
                 error("Failed to fetch tasks: HTTP ${response.code} $body")
             }
-            json.decodeFromString<List<TaskDto>>(body)
+            json.decodeFromString<List<TaskDto>>(body).filter {
+                !it.id.startsWith("sys_") && it.title != "__SYSTEM_RECENT_TONES__"
+            }
         }
     }
 

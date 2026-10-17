@@ -196,6 +196,11 @@ object SyncManager {
                 Log.e(TAG, "Failed to pull remote tasks: ${error.message}")
             }
 
+            // Sync recent alarm tones to cloud so bot is always updated with latest tones
+            try {
+                com.kairo.app.feature.tasks.alarm.RecentTonesManager.syncToCloud(KairoApplication.instance)
+            } catch (_: Exception) {}
+
             refreshOfflineQueueStatus()
             Result.success(syncedActionsCount)
         } catch (e: Exception) {

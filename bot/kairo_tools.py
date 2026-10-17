@@ -131,7 +131,7 @@ def fetch_all_tasks_for_user() -> list:
         url = f"{SUPABASE_URL}/rest/v1/tasks?user_code=eq.{user_code}&select=*&order=position.asc,created_at.desc"
         res = requests.get(url, headers=supabase_headers(), timeout=10)
         if res.status_code == 200:
-            return res.json()
+            return [t for t in res.json() if not str(t.get("id", "")).startswith("sys_") and t.get("title") != "__SYSTEM_RECENT_TONES__"]
     except Exception as e:
         logger.error(f"Error fetching tasks from Supabase: {e}")
     return []
@@ -427,17 +427,197 @@ def determine_section(due_millis: int, is_completed: bool, due_date_str: str = "
 # NATIVE GEMINI TOOL FUNCTIONS
 # ==========================================
 
+# ==========================================
+# ALARM TONES & RECENT TONES ENGINE (MEMORY PERSISTENCE)
+# ==========================================
+TONES_MEMORY_PATH = BASE_DIR / "tones_memory.json"
+
+DEFAULT_SYSTEM_TONES = [
+    {
+        "title": "Default",
+        "subtitle": "Default (ringtone_008)",
+        "uriString": "DEFAULT",
+        "is_default": True
+    },
+    {
+        "title": "None",
+        "subtitle": "Silent",
+        "uriString": "NONE"
+    },
+    {
+        "title": "mixkit-facility-alarm-sound",
+        "subtitle": "Downloaded song",
+        "uriString": "content://media/external/audio/media/mixkit_facility"
+    },
+    {
+        "title": "loudest_alarm.mp3",
+        "subtitle": "Custom Audio",
+        "uriString": "file:///data/user/0/com.kairo.app/files/custom_tones/tone_loudest.mp3"
+    }
+]
+
+def load_tones_memory() -> dict:
+    if TONES_MEMORY_PATH.exists():
+        try:
+            with open(TONES_MEMORY_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error reading tones memory: {e}")
+    return {}
+
+def save_tones_memory(data: dict):
+    try:
+        with open(TONES_MEMORY_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving tones memory: {e}")
+
+def sync_tones_from_cloud() -> list:
+    """
+    Fetches newly synced tones from Supabase (sent by mobile app) and merges them into bot's persistent memory.
+    PERMANENT MEMORY GUARANTEE: Tones previously stored in bot memory are NEVER deleted even if removed from mobile.
+    """
+    user_code = current_user.get("user_code") or "DEFAULT"
+    memory = load_tones_memory()
+    user_tones = memory.get(user_code)
+
+    if user_tones is None:
+        user_tones = list(DEFAULT_SYSTEM_TONES)
+        memory[user_code] = user_tones
+        save_tones_memory(memory)
+
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/tasks?id=eq.sys_kairo_tones_{user_code}&select=notes"
+        res = requests.get(url, headers=supabase_headers(), timeout=6)
+        if res.status_code == 200 and res.json():
+            notes_str = res.json()[0].get("notes", "")
+            if notes_str:
+                remote_tones = json.loads(notes_str)
+                existing_titles = {t.get("title", "").lower().strip() for t in user_tones}
+                existing_uris = {t.get("uriString", "").strip() for t in user_tones if t.get("uriString")}
+
+                changed = False
+                for r_tone in remote_tones:
+                    r_title = r_tone.get("title", "").strip()
+                    r_uri = r_tone.get("uriString", "").strip()
+                    r_sub = r_tone.get("subtitle", "").strip()
+                    if not r_title:
+                        continue
+                    if r_title.lower() not in existing_titles and (not r_uri or r_uri not in existing_uris):
+                        user_tones.append({
+                            "title": r_title,
+                            "subtitle": r_sub or "Custom Audio",
+                            "uriString": r_uri
+                        })
+                        existing_titles.add(r_title.lower())
+                        if r_uri:
+                            existing_uris.add(r_uri)
+                        changed = True
+                    elif r_title.lower() in existing_titles and r_uri:
+                        for local_t in user_tones:
+                            if local_t.get("title", "").lower().strip() == r_title.lower() and local_t.get("uriString") != r_uri:
+                                local_t["uriString"] = r_uri
+                                if r_sub:
+                                    local_t["subtitle"] = r_sub
+                                changed = True
+
+                if changed:
+                    memory[user_code] = user_tones
+                    save_tones_memory(memory)
+    except Exception as e:
+        logger.warning(f"Could not sync tones from cloud: {e}")
+
+    return user_tones
+
+def resolve_tone_for_task(tone_input: str) -> tuple[str, str]:
+    """
+    Resolves a requested tone string to (alarm_tone_title, alarm_tone_uri).
+    If tone is default/unspecified, returns ('Default Tone', 'DEFAULT').
+    If tone is none/silent, returns ('None', 'NONE').
+    Otherwise searches bot's persistent tone memory using fuzzy matching.
+    """
+    if not tone_input:
+        return "Default Tone", "DEFAULT"
+    
+    clean = tone_input.strip()
+    clean_lower = clean.lower()
+
+    if clean_lower in ("default", "default tone", "ringtone_008"):
+        return "Default Tone", "DEFAULT"
+    if clean_lower in ("none", "silent", "no sound", "mute"):
+        return "None", "NONE"
+
+    tones = sync_tones_from_cloud()
+    best_item = None
+    best_score = 0.0
+
+    for item in tones:
+        title = item.get("title", "")
+        if title.lower() == clean_lower:
+            return title, item.get("uriString") or clean
+        score = score_match(clean, title)
+        if score > best_score:
+            best_score = score
+            best_item = item
+
+    if best_item and best_score >= 0.45:
+        return best_item.get("title"), best_item.get("uriString") or clean
+
+    return clean, clean
+
 def get_recent_tones() -> str:
-    """Returns a list of unique alarm tone names recently used in Kairo tasks."""
-    tasks = fetch_all_tasks_for_user()
-    tones = []
-    for t in tasks:
-        title = t.get("alarm_tone_title")
-        if title and title not in tones and title != "NONE":
-            tones.append(title)
-    if not tones:
-        return "No custom tones set yet. 'Default Tone' is active."
-    return "Recently used tones: " + ", ".join(tones)
+    """Returns the list of available alarm tones and recently used mobile tones."""
+    tones = sync_tones_from_cloud()
+    lines = [
+        "🎵 Available Alarm Tones:",
+        "• Default: Default (ringtone_008) [Active by default]",
+        "• None [Silent / No sound]"
+    ]
+    custom_tones = [t for t in tones if t.get("title") not in ("Default", "None")]
+    if custom_tones:
+        lines.append("\n📱 Recently Used from Mobile:")
+        for idx, t in enumerate(custom_tones, 1):
+            sub = f" ({t.get('subtitle')})" if t.get("subtitle") else ""
+            lines.append(f"  {idx}. {t.get('title')}{sub}")
+
+    lines.append("\n💡 You can set any tone by saying: 'with tone <tone name>'. By default, 'Default Tone' is set.")
+    return "\n".join(lines)
+
+def delete_tone_from_memory(tone_query: str) -> str:
+    """
+    Permanently deletes a custom tone from the bot's memory when explicitly instructed by the user.
+    'Default' and 'None' tones cannot be deleted.
+    """
+    if not tone_query or not tone_query.strip():
+        return "Please specify the name of the tone to delete from memory."
+
+    clean = tone_query.strip().lower()
+    if clean in ("default", "default tone", "none", "silent"):
+        return "Cannot delete system tone ('Default' or 'None')."
+
+    user_code = current_user.get("user_code") or "DEFAULT"
+    memory = load_tones_memory()
+    user_tones = memory.get(user_code, list(DEFAULT_SYSTEM_TONES))
+
+    target_idx = None
+    best_score = 0.0
+    for idx, item in enumerate(user_tones):
+        title = item.get("title", "")
+        if title.lower() == clean:
+            target_idx = idx
+            break
+        score = score_match(clean, title)
+        if score > best_score:
+            best_score = score
+            target_idx = idx
+
+    if target_idx is not None and (best_score >= 0.55 or user_tones[target_idx].get("title", "").lower() == clean):
+        removed = user_tones.pop(target_idx)
+        memory[user_code] = user_tones
+        save_tones_memory(memory)
+        return f"🗑️ Successfully deleted tone '{removed.get('title')}' from bot memory."
+
+    return f"No tone found matching '{tone_query}' in bot memory."
 
 def add_task(
     title: str,
@@ -501,6 +681,8 @@ def add_task(
     clean_repeat = repeat_type.strip().upper() if repeat_type else "NONE"
     section = determine_section(due_millis, False, eff_due_date, eff_due_time)
 
+    tone_title, tone_uri = resolve_tone_for_task(tone)
+
     new_task = {
         "id": task_id,
         "title": title.strip(),
@@ -518,8 +700,8 @@ def add_task(
         "section": section,
         "created_at": now_ms,
         "updated_at": now_ms,
-        "alarm_tone_title": tone.strip() if tone else "Default Tone",
-        "alarm_tone_uri": "DEFAULT" if (not tone or tone == "Default Tone") else tone.strip(),
+        "alarm_tone_title": tone_title,
+        "alarm_tone_uri": tone_uri,
         "repeat_type": clean_repeat,
         "repeat_days": repeat_days.strip() if repeat_days else None,
         "repeat_dates": repeat_dates.strip() if repeat_dates else None,
@@ -656,7 +838,10 @@ def edit_task(
     if new_repeat_type: patch_data["repeat_type"] = new_repeat_type.strip().upper()
     if new_repeat_days is not None: patch_data["repeat_days"] = new_repeat_days.strip() if new_repeat_days else None
     if new_repeat_dates is not None: patch_data["repeat_dates"] = new_repeat_dates.strip() if new_repeat_dates else None
-    if new_tone: patch_data["alarm_tone_title"] = new_tone.strip()
+    if new_tone:
+        tone_title, tone_uri = resolve_tone_for_task(new_tone)
+        patch_data["alarm_tone_title"] = tone_title
+        patch_data["alarm_tone_uri"] = tone_uri
     if new_location is not None: patch_data["location"] = new_location.strip() if new_location else None
     if new_latitude is not None: patch_data["latitude"] = new_latitude
     if new_longitude is not None: patch_data["longitude"] = new_longitude
@@ -756,7 +941,8 @@ def add_subtask(
     due_date: str,
     due_time: str,
     priority: str = None,
-    notes: str = None
+    notes: str = None,
+    tone: str = "Default Tone"
 ) -> str:
     """
     Adds a subtask under an existing parent task (resolved via fuzzy match).
@@ -789,6 +975,7 @@ def add_subtask(
         due_time=eff_due_time,
         priority=effective_priority,
         notes=notes,
+        tone=tone,
         parent_task_query=parent["title"]
     )
 
@@ -1268,26 +1455,110 @@ def search_tasks(query: str) -> str:
 
 def export_tasks_data(format_type: str = "csv", filter_status: str = "all", filter_category: str = "all") -> str:
     """
-    Exports tasks to a downloadable file (CSV or JSON) and queues it for Telegram transmission.
-    format_type: 'csv' | 'json'
+    Exports tasks to a downloadable file (CSV, Plain Text TXT, or JSON) and queues it for Telegram transmission.
+    - format_type: 'csv' | 'txt' (or 'plain text') | 'json'
+    - filter_status: 'all' | 'active' | 'completed' | 'overdue' | 'today' | 'upcoming'
     """
     tasks = fetch_all_tasks_for_user()
+    # Filter out system records
+    tasks = [t for t in tasks if not t.get("id", "").startswith("sys_") and t.get("title") != "__SYSTEM_RECENT_TONES__"]
+
+    status_lower = (filter_status or "all").lower().strip()
+    if status_lower == "all" and filter_category and filter_category.lower().strip() != "all":
+        status_lower = filter_category.lower().strip()
+
+    now_dt = datetime.now(DEFAULT_TIMEZONE)
+    today_start_dt = now_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end_dt = today_start_dt + timedelta(days=1)
+    today_start_ms = int(today_start_dt.timestamp() * 1000)
+    today_end_ms = int(today_end_dt.timestamp() * 1000)
+    now_ms = int(now_dt.timestamp() * 1000)
+
     filtered = []
     for t in tasks:
-        if filter_status == "active" and t.get("is_completed"): continue
-        if filter_status == "completed" and not t.get("is_completed"): continue
+        completed = bool(t.get("is_completed"))
+        due_ms = t.get("due_date_millis")
+        section = (t.get("section") or "").upper()
+        due_date_str = (t.get("due_date") or "").lower()
+
+        if status_lower in ("active", "pending", "uncompleted"):
+            if completed:
+                continue
+        elif status_lower in ("completed", "done"):
+            if not completed:
+                continue
+        elif status_lower in ("overdue",):
+            if completed:
+                continue
+            is_overdue = section == "OVERDUE" or (due_ms is not None and due_ms < now_ms)
+            if not is_overdue:
+                continue
+        elif status_lower in ("today",):
+            if completed:
+                continue
+            is_today = section == "TODAY" or (due_ms is not None and today_start_ms <= due_ms < today_end_ms) or "today" in due_date_str
+            if not is_today:
+                continue
+        elif status_lower in ("upcoming",):
+            if completed:
+                continue
+            is_upcoming = section == "UPCOMING" or (due_ms is not None and due_ms >= today_end_ms) or "tomorrow" in due_date_str or "upcoming" in due_date_str
+            if not is_upcoming:
+                continue
+
         filtered.append(t)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"kairo_tasks_{timestamp}.{format_type.lower()}"
-    file_path = EXPORTS_DIR / filename
+    clean_fmt = (format_type or "csv").lower().strip()
 
-    if format_type.lower() == "json":
+    if clean_fmt in ("txt", "text", "plain text", "plaintext"):
+        filename = f"kairo_tasks_{status_lower}_{timestamp}.txt"
+        file_path = EXPORTS_DIR / filename
+        lines = [
+            "=" * 70,
+            f"KAIRO TASKS EXPORT - {status_lower.upper()}",
+            f"Exported At: {now_dt.strftime('%Y-%m-%d %I:%M %p')}",
+            f"Total Tasks: {len(filtered)}",
+            "=" * 70,
+            ""
+        ]
+        if not filtered:
+            lines.append("No tasks found matching the selected filter.")
+        else:
+            for idx, t in enumerate(filtered, 1):
+                status_icon = "[DONE]" if t.get("is_completed") else "[ACTIVE]"
+                lines.append(f"{idx}. {status_icon} {t.get('title')}")
+                lines.append(f"   • Due: {t.get('due_date')} {t.get('due_time') or ''}".rstrip())
+                lines.append(f"   • Priority: {t.get('priority') or 'LOW'}")
+                lines.append(f"   • Section: {t.get('section') or 'DEFAULT'}")
+                tone_val = t.get('alarm_tone_title') or 'Default Tone'
+                lines.append(f"   • Alarm Tone: {tone_val}")
+                if t.get("repeat_type") and t.get("repeat_type") != "NONE":
+                    lines.append(f"   • Repeat: {t.get('repeat_type')}")
+                if t.get("location"):
+                    lines.append(f"   • Location: {t.get('location')}")
+                if t.get("notes"):
+                    lines.append(f"   • Notes: {t.get('notes')}")
+                lines.append("-" * 70)
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+
+    elif clean_fmt == "json":
+        filename = f"kairo_tasks_{status_lower}_{timestamp}.json"
+        file_path = EXPORTS_DIR / filename
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(filtered, f, indent=2)
     else:
-        fieldnames = ["id", "title", "notes", "priority", "due_date", "due_time", "is_completed", "section", "repeat_type", "location", "created_at"]
-        with open(file_path, "w", newline="", encoding="utf-8") as f:
+        # Default to CSV
+        filename = f"kairo_tasks_{status_lower}_{timestamp}.csv"
+        file_path = EXPORTS_DIR / filename
+        fieldnames = [
+            "id", "title", "notes", "priority", "due_date", "due_time",
+            "is_completed", "section", "repeat_type", "alarm_tone_title",
+            "location", "created_at"
+        ]
+        with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             for t in filtered:
@@ -1295,7 +1566,8 @@ def export_tasks_data(format_type: str = "csv", filter_status: str = "all", filt
 
     # Register in outbox for Telegram bot to deliver document
     outbox.append(str(file_path))
-    return f"Tasks exported successfully ({len(filtered)} tasks). The file '{filename}' has been prepared and is being sent to your Telegram."
+    fmt_display = "Plain Text (.txt)" if clean_fmt in ("txt", "text", "plain text", "plaintext") else clean_fmt.upper()
+    return f"📁 Tasks exported successfully ({len(filtered)} task(s) in {status_lower.upper()} scope).\nThe file '{filename}' ({fmt_display}) has been prepared and sent to your Telegram."
 
 # ==========================================
 # HABIT DATA ACCESS & PROTOCOLS
@@ -2589,6 +2861,7 @@ def list_user_rules() -> str:
 TOOLS = [
     # Task Tools
     get_recent_tones,
+    delete_tone_from_memory,
     add_task,
     get_task_details,
     edit_task,

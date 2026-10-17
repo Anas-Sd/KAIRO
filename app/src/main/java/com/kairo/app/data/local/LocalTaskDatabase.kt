@@ -277,9 +277,9 @@ class LocalTaskDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         val tasks = mutableListOf<Task>()
         val db = readableDatabase
         val query = if (userCode.isNullOrBlank()) {
-            "SELECT * FROM $TABLE_TASKS WHERE $COL_USER_CODE IS NULL OR $COL_USER_CODE = '' ORDER BY $COL_POSITION ASC, $COL_CREATED_AT DESC"
+            "SELECT * FROM $TABLE_TASKS WHERE ($COL_USER_CODE IS NULL OR $COL_USER_CODE = '') AND $COL_ID NOT LIKE 'sys_%' ORDER BY $COL_POSITION ASC, $COL_CREATED_AT DESC"
         } else {
-            "SELECT * FROM $TABLE_TASKS WHERE $COL_USER_CODE = ? ORDER BY $COL_POSITION ASC, $COL_CREATED_AT DESC"
+            "SELECT * FROM $TABLE_TASKS WHERE $COL_USER_CODE = ? AND $COL_ID NOT LIKE 'sys_%' ORDER BY $COL_POSITION ASC, $COL_CREATED_AT DESC"
         }
         val args = if (userCode.isNullOrBlank()) null else arrayOf(userCode)
 

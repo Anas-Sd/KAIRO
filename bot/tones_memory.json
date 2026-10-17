@@ -1,0 +1,25 @@
+{
+  "SDANAS": [
+    {
+      "title": "Default",
+      "subtitle": "Default (ringtone_008)",
+      "uriString": "DEFAULT",
+      "is_default": true
+    },
+    {
+      "title": "None",
+      "subtitle": "Silent",
+      "uriString": "NONE"
+    },
+    {
+      "title": "mixkit-facility-alarm-sound",
+      "subtitle": "Downloaded song",
+      "uriString": "content://media/external/audio/media/1001"
+    },
+    {
+      "title": "loudest_alarm.mp3",
+      "subtitle": "Custom Audio",
+      "uriString": "file:///data/user/0/com.kairo.app/files/custom_tones/tone_loudest.mp3"
+    }
+  ]
+}
