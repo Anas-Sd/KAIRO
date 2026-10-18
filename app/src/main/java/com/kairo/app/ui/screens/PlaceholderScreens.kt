@@ -23,43 +23,6 @@ import com.kairo.app.ui.components.AppHeader
 import com.kairo.app.ui.components.SettingsDialog
 import com.kairo.app.ui.theme.KairoBackground
 
-@Composable
-fun ListsScreen(modifier: Modifier = Modifier) {
-    var searchQuery by remember { mutableStateOf("") }
-    var isSearchActive by remember { mutableStateOf(false) }
-    var showSettingsDialog by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(KairoBackground)
-    ) {
-        AppHeader(
-            searchQuery = searchQuery,
-            isSearchActive = isSearchActive,
-            onSearchQueryChange = { searchQuery = it },
-            onToggleSearch = {
-                isSearchActive = !isSearchActive
-                if (!isSearchActive) searchQuery = ""
-            },
-            onCloseSearch = {
-                isSearchActive = false
-                searchQuery = ""
-            },
-            searchPlaceholder = "Search lists...",
-            onSettingsClick = { showSettingsDialog = true }
-        )
-
-        PlaceholderContent(
-            title = "Lists",
-            subtitle = if (searchQuery.isNotBlank()) "Searching lists for \"$searchQuery\"..." else "Organize tasks into flexible projects, shopping, and to-do lists."
-        )
-    }
-
-    if (showSettingsDialog) {
-        SettingsDialog(onDismissRequest = { showSettingsDialog = false })
-    }
-}
 
 
 @Composable
