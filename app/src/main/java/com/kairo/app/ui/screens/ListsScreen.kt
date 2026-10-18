@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kairo.app.feature.lists.data.ListRepository
 import com.kairo.app.feature.lists.model.ListIconCatalog
+import com.kairo.app.feature.lists.model.ListIconDisplay
 import com.kairo.app.feature.lists.model.ListWithStats
 import com.kairo.app.feature.lists.model.TaskList
 import com.kairo.app.feature.lists.ui.CreateListDialog
@@ -333,11 +334,11 @@ private fun ListOverviewCard(
                         .background(KairoPrimary.copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = ListIconCatalog.getIcon(stats.list.iconName),
-                        contentDescription = null,
+                    ListIconDisplay(
+                        iconKey = stats.list.iconName,
                         tint = KairoPrimary,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(22.dp),
+                        emojiSize = 20.sp
                     )
                 }
 

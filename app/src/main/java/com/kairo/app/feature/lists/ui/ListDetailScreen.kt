@@ -81,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kairo.app.feature.lists.data.ListRepository
 import com.kairo.app.feature.lists.model.ListIconCatalog
+import com.kairo.app.feature.lists.model.ListIconDisplay
 import com.kairo.app.feature.lists.model.ListItem
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoHighUrgent
@@ -184,11 +185,11 @@ fun ListDetailScreen(
                             .background(KairoPrimary.copy(alpha = 0.12f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = ListIconCatalog.getIcon(currentList.iconName),
-                            contentDescription = null,
+                        ListIconDisplay(
+                            iconKey = currentList.iconName,
                             tint = KairoPrimary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
+                            emojiSize = 18.sp
                         )
                     }
 

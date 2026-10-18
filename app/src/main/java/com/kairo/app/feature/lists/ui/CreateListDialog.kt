@@ -17,16 +17,19 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddReaction
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FormatListBulleted
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -50,11 +53,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.kairo.app.feature.lists.model.ListIconCatalog
+import com.kairo.app.feature.lists.model.ListIconDisplay
 import com.kairo.app.feature.lists.model.TaskList
 import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
@@ -76,6 +81,8 @@ fun CreateListDialog(
     val subtasks = remember { mutableStateListOf<String>() }
 
     var nameError by remember { mutableStateOf<String?>(null) }
+    var showCustomEmojiDialog by remember { mutableStateOf(false) }
+    var customEmojiInput by remember { mutableStateOf("") }
 
     fun commitSubtask() {
         val trimmed = subtaskInput.trim()
@@ -113,14 +120,14 @@ fun CreateListDialog(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(KairoPrimary.copy(alpha = 0.12f)),
+                                .background(KairoPrimary.copy(alpha = 0.14f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = ListIconCatalog.getIcon(selectedIcon),
-                                contentDescription = null,
+                            ListIconDisplay(
+                                iconKey = selectedIcon,
                                 tint = KairoPrimary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(20.dp),
+                                emojiSize = 18.sp
                             )
                         }
                         Text(
@@ -176,46 +183,101 @@ fun CreateListDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Icon Picker
-                Text(
-                    text = "Choose Icon",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                FlowRow(
+                // 1. Swiping Icons & Emoji Row below the list name
+                LazyRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ListIconCatalog.icons.forEach { iconOption ->
-                        val isSelected = selectedIcon.equals(iconOption.key, ignoreCase = true)
-                        Box(
+                    // Custom Emoji Input Button (+ Emoji)
+                    item {
+                        val isCustomActive = selectedIcon.startsWith("emoji:") &&
+                                !ListIconCatalog.popularEmojis.contains(selectedIcon.removePrefix("emoji:"))
+
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isCustomActive) KairoPrimary else KairoSurfaceContainerLow,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isCustomActive) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.25f)
+                            ),
                             modifier = Modifier
                                 .size(38.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    if (isSelected) KairoPrimary else KairoSurfaceContainerLow
-                                )
-                                .border(
-                                    1.dp,
-                                    if (isSelected) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.2f),
-                                    RoundedCornerShape(10.dp)
-                                )
-                                .clickable { selectedIcon = iconOption.key },
-                            contentAlignment = Alignment.Center
+                                .clickable {
+                                    customEmojiInput = if (isCustomActive) selectedIcon.removePrefix("emoji:") else ""
+                                    showCustomEmojiDialog = true
+                                }
                         ) {
-                            Icon(
-                                imageVector = iconOption.icon,
-                                contentDescription = iconOption.label,
-                                tint = if (isSelected) Color(0xFF1E1F26) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                if (isCustomActive) {
+                                    Text(
+                                        text = selectedIcon.removePrefix("emoji:"),
+                                        fontSize = 18.sp,
+                                        textAlign = TextAlign.Center
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.AddReaction,
+                                        contentDescription = "Custom Emoji",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Popular Emojis
+                    items(ListIconCatalog.popularEmojis) { emoji ->
+                        val emojiKey = "emoji:$emoji"
+                        val isSelected = selectedIcon == emojiKey || selectedIcon == emoji
+
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isSelected) KairoPrimary else KairoSurfaceContainerLow,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSelected) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.2f)
+                            ),
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clickable { selectedIcon = emojiKey }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = emoji,
+                                    fontSize = 18.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+
+                    // Material Curated Icons
+                    items(ListIconCatalog.icons) { iconOption ->
+                        val isSelected = selectedIcon.equals(iconOption.key, ignoreCase = true)
+
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isSelected) KairoPrimary else KairoSurfaceContainerLow,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSelected) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.2f)
+                            ),
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clickable { selectedIcon = iconOption.key }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = iconOption.icon,
+                                    contentDescription = iconOption.label,
+                                    tint = if (isSelected) Color(0xFF1E1F26) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -292,44 +354,49 @@ fun CreateListDialog(
                         }
                     }
 
-                    // Added items list
+                    // 2. Added items rendered as capsules side by side (FlowRow), not swiping, see all at once
                     if (subtasks.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(10.dp))
-                        LazyColumn(
+
+                        FlowRow(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 140.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                .heightIn(max = 140.dp)
+                                .verticalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            itemsIndexed(subtasks) { index, itemText ->
+                            subtasks.forEachIndexed { index, itemText ->
                                 Surface(
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = CircleShape,
                                     color = KairoSurfaceContainerLow,
-                                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.18f)),
-                                    modifier = Modifier.fillMaxWidth()
+                                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.25f))
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         Text(
                                             text = itemText,
                                             fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.weight(1f),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
-                                        IconButton(
-                                            onClick = { subtasks.removeAt(index) },
-                                            modifier = Modifier.size(20.dp)
+                                        Box(
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .clip(CircleShape)
+                                                .background(KairoOutlineVariant.copy(alpha = 0.2f))
+                                                .clickable { subtasks.removeAt(index) },
+                                            contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Close,
                                                 contentDescription = "Remove item",
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(14.dp)
+                                                modifier = Modifier.size(11.dp)
                                             )
                                         }
                                     }
@@ -364,7 +431,6 @@ fun CreateListDialog(
                                 nameError = "Please enter a list name"
                                 return@Button
                             }
-                            // Also commit any uncommitted text in subtask input
                             commitSubtask()
                             onConfirm(cleanName, selectedIcon, subtasks.toList())
                         },
@@ -386,5 +452,68 @@ fun CreateListDialog(
                 }
             }
         }
+    }
+
+    // Dialog for entering a custom emoji
+    if (showCustomEmojiDialog) {
+        AlertDialog(
+            onDismissRequest = { showCustomEmojiDialog = false },
+            title = {
+                Text(
+                    text = "Custom Emoji",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Type or paste any emoji from your keyboard to use as the list icon:",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = customEmojiInput,
+                        onValueChange = { customEmojiInput = it },
+                        placeholder = { Text("e.g. 🎯, 🚀, 💡, 🔥") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = KairoPrimary,
+                            cursorColor = KairoPrimary,
+                            unfocusedContainerColor = KairoSurfaceContainerLow,
+                            focusedContainerColor = KairoSurfaceContainerLow
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmed = customEmojiInput.trim()
+                        if (trimmed.isNotBlank()) {
+                            selectedIcon = "emoji:$trimmed"
+                        }
+                        showCustomEmojiDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary, contentColor = Color(0xFF1E1F26)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Use Emoji", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showCustomEmojiDialog = false },
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
+                ) {
+                    Text("Cancel", fontSize = 13.sp)
+                }
+            }
+        )
     }
 }

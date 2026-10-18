@@ -14,7 +14,16 @@ import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Work
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.sp
+import com.kairo.app.ui.theme.KairoPrimary
 import java.util.UUID
 
 data class TaskList(
@@ -72,7 +81,44 @@ object ListIconCatalog {
         ListIconOption("favorite", "Wishlist", Icons.Default.Favorite)
     )
 
+    val popularEmojis: List<String> = listOf(
+        "📝", "🛒", "🎯", "🚀", "💡", "💼", "📚", "🏋️", "✈️", "🏠", "⭐", "📦", "💻", "❤️", "🔥", "✅", "🎉", "🎨", "🍔", "💰"
+    )
+
+    fun isEmoji(iconKey: String): Boolean {
+        if (iconKey.startsWith("emoji:")) return true
+        return iconKey.any { Character.isSurrogate(it) || Character.getType(it) == Character.OTHER_SYMBOL.toInt() }
+    }
+
+    fun extractEmoji(iconKey: String): String {
+        return if (iconKey.startsWith("emoji:")) iconKey.removePrefix("emoji:") else iconKey
+    }
+
     fun getIcon(key: String): ImageVector {
         return icons.firstOrNull { it.key.equals(key, ignoreCase = true) }?.icon ?: Icons.AutoMirrored.Filled.FormatListBulleted
+    }
+}
+
+@Composable
+fun ListIconDisplay(
+    iconKey: String,
+    modifier: Modifier = Modifier,
+    tint: Color = KairoPrimary,
+    emojiSize: TextUnit = 18.sp
+) {
+    if (ListIconCatalog.isEmoji(iconKey)) {
+        val emoji = ListIconCatalog.extractEmoji(iconKey)
+        Text(
+            text = emoji,
+            fontSize = emojiSize,
+            textAlign = TextAlign.Center
+        )
+    } else {
+        Icon(
+            imageVector = ListIconCatalog.getIcon(iconKey),
+            contentDescription = null,
+            tint = tint,
+            modifier = modifier
+        )
     }
 }
