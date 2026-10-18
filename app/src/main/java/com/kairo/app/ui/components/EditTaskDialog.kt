@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -404,21 +406,25 @@ fun EditTaskDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
+                        .clip(RoundedCornerShape(14.dp))
                         .clickable { showRepeatPicker = true },
                     shape = RoundedCornerShape(14.dp),
-                    color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
-                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
+                    color = if (repeatType != null) KairoPrimary.copy(alpha = 0.12f) else KairoSurfaceContainerHighest.copy(alpha = 0.35f),
+                    border = BorderStroke(
+                        1.dp,
+                        if (repeatType != null) KairoPrimary.copy(alpha = 0.45f) else KairoOutlineVariant.copy(alpha = 0.3f)
+                    )
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp),
+                            .padding(horizontal = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
                             Icon(
@@ -437,9 +443,9 @@ fun EditTaskDialog(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.ExpandMore,
+                            imageVector = Icons.Default.ChevronRight,
                             contentDescription = null,
-                            tint = Color(0xFFC8C4D9),
+                            tint = if (repeatType != null) KairoPrimary else Color(0xFFC8C4D9),
                             modifier = Modifier.size(18.dp)
                         )
                     }

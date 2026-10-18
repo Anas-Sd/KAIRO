@@ -3,6 +3,7 @@ package com.kairo.app.ui.components
 import android.app.DatePickerDialog
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -28,12 +28,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -54,9 +52,10 @@ import androidx.compose.ui.window.Dialog
 import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoSecondary
+import com.kairo.app.ui.theme.KairoSurfaceContainer
 import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import com.kairo.app.ui.theme.KairoSurfaceContainerHighest
-import com.kairo.app.ui.theme.KairoSurfaceContainerLowest
+import com.kairo.app.ui.theme.KairoSurfaceContainerLow
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -160,9 +159,9 @@ fun RepeatPickerDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = KairoSurfaceContainerLowest,
-            border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f)),
+            shape = RoundedCornerShape(22.dp),
+            color = KairoSurfaceContainer,
+            border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.22f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -178,12 +177,13 @@ fun RepeatPickerDialog(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(32.dp)
-                                .background(KairoPrimary.copy(alpha = 0.2f), CircleShape),
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(KairoPrimary.copy(alpha = 0.12f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -197,70 +197,92 @@ fun RepeatPickerDialog(
                             text = "Repeat Task",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
 
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Close",
-                            tint = Color(0xFFC8C4D9)
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Tabs: Days of Week vs Specific Dates (Both can be configured together!)
-                TabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
-                    contentColor = KairoPrimary,
-                    indicator = { tabPositions ->
-                        TabRowDefaults.SecondaryIndicator(
-                            Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                            color = KairoPrimary
-                        )
-                    }
+                // Segmented Tab Switcher (Days of Week vs Specific Dates)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = KairoSurfaceContainerLow,
+                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f))
                 ) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = {
-                            val badge = if (selectedDays.isNotEmpty()) " (${selectedDays.size})" else ""
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        val daysBadge = if (selectedDays.isNotEmpty()) " (${selectedDays.size})" else ""
+                        val datesBadge = if (selectedDates.isNotEmpty()) " (${selectedDates.size})" else ""
+
+                        // Tab 0: Days of Week
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(
+                                    if (selectedTab == 0) KairoPrimary.copy(alpha = 0.15f)
+                                    else Color.Transparent
+                                )
+                                .clickable { selectedTab = 0 },
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text(
-                                "Days of Week$badge",
-                                fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal,
-                                color = if (selectedTab == 0) Color.White else Color(0xFF918EA2)
+                                text = "Days of Week$daysBadge",
+                                fontSize = 13.sp,
+                                fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium,
+                                color = if (selectedTab == 0) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = {
-                            val badge = if (selectedDates.isNotEmpty()) " (${selectedDates.size})" else ""
+
+                        // Tab 1: Specific Dates
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(
+                                    if (selectedTab == 1) KairoPrimary.copy(alpha = 0.15f)
+                                    else Color.Transparent
+                                )
+                                .clickable { selectedTab = 1 },
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text(
-                                "Specific Dates$badge",
-                                fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal,
-                                color = if (selectedTab == 1) Color.White else Color(0xFF918EA2)
+                                text = "Specific Dates$datesBadge",
+                                fontSize = 13.sp,
+                                fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium,
+                                color = if (selectedTab == 1) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 if (selectedTab == 0) {
                     // TAB 1: DAYS OF WEEK
                     Text(
                         text = "Repeat on specific days:",
-                        fontSize = 13.sp,
-                        color = Color(0xFFC8C4D9),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Medium
                     )
 
@@ -275,9 +297,14 @@ fun RepeatPickerDialog(
                             val isSelected = selectedDays.contains(dayKey)
                             Box(
                                 modifier = Modifier
-                                    .size(38.dp)
+                                    .size(40.dp)
+                                    .clip(CircleShape)
                                     .background(
-                                        if (isSelected) KairoPrimary else KairoSurfaceContainerHighest.copy(alpha = 0.4f),
+                                        if (isSelected) KairoPrimary else KairoSurfaceContainerLow
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.25f),
                                         CircleShape
                                     )
                                     .clickable {
@@ -290,15 +317,15 @@ fun RepeatPickerDialog(
                                     text = DAY_LABELS[dayKey] ?: dayKey.take(1),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) Color(0xFF130067) else Color.White
+                                    color = if (isSelected) Color(0xFF1E1F26) else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // 4 Quick Preset Buttons with balanced, comfortable padding
+                    // Quick Preset Buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -346,67 +373,80 @@ fun RepeatPickerDialog(
                     // TAB 2: SPECIFIC DATES
                     Text(
                         text = "Recurrence mode on specified dates:",
-                        fontSize = 13.sp,
-                        color = Color(0xFFC8C4D9),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Medium
                     )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // 2 selectable options on top: Every specified date vs Only for now
+                    // 2 selectable options: Every specified date vs Only for now
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(KairoSurfaceContainerHighest.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
-                            .padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Option 1: Every specified date
-                        Box(
+                        val isEverySelected = dateRepeatMode == "EVERY"
+                        Surface(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(if (dateRepeatMode == "EVERY") KairoPrimary else Color.Transparent)
-                                .clickable { dateRepeatMode = "EVERY" }
-                                .padding(vertical = 10.dp, horizontal = 4.dp),
-                            contentAlignment = Alignment.Center
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { dateRepeatMode = "EVERY" },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isEverySelected) KairoPrimary.copy(alpha = 0.12f) else KairoSurfaceContainerLow,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isEverySelected) KairoPrimary.copy(alpha = 0.5f)
+                                else KairoOutlineVariant.copy(alpha = 0.2f)
+                            )
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
                                 Text(
                                     text = "Every specified date",
                                     fontSize = 12.sp,
-                                    fontWeight = if (dateRepeatMode == "EVERY") FontWeight.Bold else FontWeight.Medium,
-                                    color = if (dateRepeatMode == "EVERY") Color(0xFF130067) else Color.White
+                                    fontWeight = if (isEverySelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isEverySelected) KairoPrimary else MaterialTheme.colorScheme.onSurface
                                 )
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "Repeats every month",
                                     fontSize = 10.sp,
-                                    color = if (dateRepeatMode == "EVERY") Color(0xFF130067).copy(alpha = 0.85f) else Color(0xFF918EA2)
+                                    color = if (isEverySelected) KairoPrimary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
 
-                        // Option 2: Only for now
-                        Box(
+                        val isOnlyNowSelected = dateRepeatMode == "ONLY_NOW"
+                        Surface(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(if (dateRepeatMode == "ONLY_NOW") KairoPrimary else Color.Transparent)
-                                .clickable { dateRepeatMode = "ONLY_NOW" }
-                                .padding(vertical = 10.dp, horizontal = 4.dp),
-                            contentAlignment = Alignment.Center
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { dateRepeatMode = "ONLY_NOW" },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isOnlyNowSelected) KairoPrimary.copy(alpha = 0.12f) else KairoSurfaceContainerLow,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isOnlyNowSelected) KairoPrimary.copy(alpha = 0.5f)
+                                else KairoOutlineVariant.copy(alpha = 0.2f)
+                            )
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
                                 Text(
                                     text = "Only for now",
                                     fontSize = 12.sp,
-                                    fontWeight = if (dateRepeatMode == "ONLY_NOW") FontWeight.Bold else FontWeight.Medium,
-                                    color = if (dateRepeatMode == "ONLY_NOW") Color(0xFF130067) else Color.White
+                                    fontWeight = if (isOnlyNowSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isOnlyNowSelected) KairoPrimary else MaterialTheme.colorScheme.onSurface
                                 )
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "One-time execution",
                                     fontSize = 10.sp,
-                                    color = if (dateRepeatMode == "ONLY_NOW") Color(0xFF130067).copy(alpha = 0.85f) else Color(0xFF918EA2)
+                                    color = if (isOnlyNowSelected) KairoPrimary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -416,12 +456,12 @@ fun RepeatPickerDialog(
 
                     Text(
                         text = if (dateRepeatMode == "EVERY") "Select date(s) of month:" else "Pick specific dates to alert:",
-                        fontSize = 13.sp,
-                        color = Color(0xFFC8C4D9),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Medium
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
@@ -431,8 +471,8 @@ fun RepeatPickerDialog(
                         selectedDates.forEach { dateStr ->
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = KairoPrimary.copy(alpha = 0.15f),
-                                border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.6f))
+                                color = KairoPrimary.copy(alpha = 0.12f),
+                                border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.35f))
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -449,12 +489,12 @@ fun RepeatPickerDialog(
                                         text = dateStr,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color.White
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "Remove",
-                                        tint = Color(0xFFC8C4D9),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier
                                             .size(14.dp)
                                             .clickable { selectedDates.remove(dateStr) }
@@ -466,9 +506,11 @@ fun RepeatPickerDialog(
                         // "+ Add Date" Button
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = KairoSurfaceContainerHighest.copy(alpha = 0.4f),
-                            border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.4f)),
-                            modifier = Modifier.clickable { openDatePicker() }
+                            color = KairoSurfaceContainerLow,
+                            border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.4f)),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { openDatePicker() }
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
@@ -484,7 +526,7 @@ fun RepeatPickerDialog(
                                 Text(
                                     text = "Add Date",
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
+                                    fontWeight = FontWeight.SemiBold,
                                     color = KairoPrimary
                                 )
                             }
@@ -492,26 +534,26 @@ fun RepeatPickerDialog(
                     }
 
                     if (selectedDates.isEmpty()) {
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "No dates added yet. Tap 'Add Date' to select specific reminder dates.",
-                            fontSize = 12.sp,
-                            color = Color(0xFF6B687C)
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Active Schedule Live Indicator (combines both days & specific dates)
+                // Active Schedule Live Indicator
                 Surface(
                     shape = RoundedCornerShape(10.dp),
-                    color = KairoSurfaceContainerHighest.copy(alpha = 0.35f),
-                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.3f)),
+                    color = KairoSurfaceContainerLow,
+                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -524,7 +566,7 @@ fun RepeatPickerDialog(
                         Text(
                             text = "Schedule: $currentSummary",
                             fontSize = 12.sp,
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -534,7 +576,7 @@ fun RepeatPickerDialog(
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // Actions: Reset & Confirm
+                // Actions: No Repeat & Confirm
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -545,11 +587,20 @@ fun RepeatPickerDialog(
                             selectedDates.clear()
                             onConfirm(null, null, null, "Does not repeat")
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp),
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.5f))
+                        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     ) {
-                        Text("No Repeat", color = Color(0xFFC8C4D9))
+                        Text(
+                            text = "No Repeat",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
 
                     Button(
@@ -587,11 +638,20 @@ fun RepeatPickerDialog(
                             }
                             onConfirm(result.type, result.days, result.dates, result.summary)
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = KairoPrimary,
+                            contentColor = Color(0xFF1E1F26)
+                        )
                     ) {
-                        Text("Confirm", color = Color(0xFF130067), fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Confirm",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -608,12 +668,14 @@ private fun PresetChip(
 ) {
     Surface(
         shape = RoundedCornerShape(10.dp),
-        color = KairoSurfaceContainerHighest.copy(alpha = 0.5f),
+        color = KairoSurfaceContainerLow,
         border = BorderStroke(1.dp, color.copy(alpha = 0.35f)),
-        modifier = modifier.clickable { onClick() }
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable { onClick() }
     ) {
         Box(
-            modifier = Modifier.padding(vertical = 9.dp),
+            modifier = Modifier.padding(vertical = 8.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
