@@ -82,6 +82,7 @@ object ListRepository {
                             listId = obj.getString("list_id"),
                             parentId = if (obj.has("parent_id") && !obj.isNull("parent_id")) obj.getString("parent_id") else null,
                             title = obj.getString("title"),
+                            iconName = obj.optString("icon_name", "list"),
                             notes = if (obj.has("notes") && !obj.isNull("notes")) obj.getString("notes") else null,
                             targetDate = if (obj.has("target_date") && !obj.isNull("target_date")) obj.getString("target_date") else null,
                             targetDateMillis = if (obj.has("target_date_millis") && !obj.isNull("target_date_millis")) obj.getLong("target_date_millis") else null,
@@ -130,6 +131,7 @@ object ListRepository {
                             put("list_id", item.listId)
                             put("parent_id", item.parentId)
                             put("title", item.title)
+                            put("icon_name", item.iconName)
                             put("notes", item.notes)
                             put("target_date", item.targetDate)
                             put("target_date_millis", item.targetDateMillis)
@@ -260,6 +262,7 @@ object ListRepository {
             listId = targetListId,
             parentId = null,
             title = sourceList.name,
+            iconName = sourceList.iconName,
             position = targetItems.size,
             createdAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis()
@@ -295,6 +298,7 @@ object ListRepository {
     fun addListItem(
         listId: String,
         title: String,
+        iconName: String = "list",
         notes: String? = null,
         targetDate: String? = null,
         targetDateMillis: Long? = null,
@@ -307,6 +311,7 @@ object ListRepository {
             listId = listId,
             parentId = parentId,
             title = cleanTitle,
+            iconName = iconName,
             notes = notes?.trim()?.takeIf { it.isNotBlank() },
             targetDate = targetDate,
             targetDateMillis = targetDateMillis,
@@ -364,21 +369,70 @@ object ListRepository {
     }
 
     fun toggleItemCompleted(itemId: String) {
-        val target = _items.value.find { it.id == itemId } ?: return
-        val newCompleted = !target.isCompleted
-        val completedAt = if (newCompleted) System.currentTimeMillis() else null
+        val allItems = _items.value
+        val target = allItems.find { it.id == itemId } ?: return
+        val listId = target.listId
+        val itemsInList = allItems.filter { it.listId == listId }
+        val now = System.currentTimeMillis()
 
-        val updated = _items.value.map {
-            if (it.id == itemId) {
-                it.copy(
-                    isCompleted = newCompleted,
-                    completedAt = completedAt,
-                    updatedAt = System.currentTimeMillis()
-                )
-            } else it
+        if (!target.isCompleted) {
+            // 1. Target and all recursive descendants become COMPLETED
+            val toComplete = mutableSetOf(itemId)
+            toComplete.addAll(getDescendantIds(itemId, itemsInList))
+
+            // 2. Cascade upward: A parent becomes completed if ALL its direct children are completed
+            val byId = itemsInList.associateBy { it.id }.toMutableMap()
+            for (id in toComplete) {
+                byId[id]?.let {
+                    byId[id] = it.copy(isCompleted = true, completedAt = now, updatedAt = now)
+                }
+            }
+
+            var currentParentId = target.parentId
+            val visited = mutableSetOf<String>()
+            while (currentParentId != null && visited.add(currentParentId)) {
+                val parentItem = byId[currentParentId] ?: break
+                val siblings = byId.values.filter { it.parentId == currentParentId }
+                val allSiblingsDone = siblings.isNotEmpty() && siblings.all { it.isCompleted || toComplete.contains(it.id) }
+                if (allSiblingsDone) {
+                    toComplete.add(currentParentId)
+                    byId[currentParentId] = parentItem.copy(
+                        isCompleted = true,
+                        completedAt = now,
+                        updatedAt = now
+                    )
+                    currentParentId = parentItem.parentId
+                } else {
+                    break
+                }
+            }
+
+            _items.value = allItems.map {
+                if (toComplete.contains(it.id)) {
+                    it.copy(isCompleted = true, completedAt = now, updatedAt = now)
+                } else it
+            }
+        } else {
+            // Reopening (UNTICKING)
+            val toReopen = mutableSetOf(itemId)
+
+            // Rule 1: Unticking a parent -> all its recursive descendants become not done
+            toReopen.addAll(getDescendantIds(itemId, itemsInList))
+
+            // Rule 2: Unticking a subtask -> parent & all done ancestors become not done
+            toReopen.addAll(getAncestorIds(itemId, itemsInList))
+
+            _items.value = allItems.map {
+                if (toReopen.contains(it.id)) {
+                    it.copy(
+                        isCompleted = false,
+                        completedAt = null,
+                        updatedAt = now
+                    )
+                } else it
+            }
         }
 
-        _items.value = updated
         recalculateStats()
         saveToDisk()
     }

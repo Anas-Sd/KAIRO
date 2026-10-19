@@ -349,8 +349,14 @@ fun ListDetailScreen(
 
             // 2. Parent Header Card (shown when drilled into a parent task)
             if (currentParent != null) {
+                val directChildren = listItems.filter { it.parentId == currentParent.id }
+                val completedChildren = directChildren.count { it.isCompleted }
+                val totalChildren = directChildren.size
+                val percentage = if (totalChildren > 0) (completedChildren * 100) / totalChildren else 0
+                val progressFloat = if (totalChildren > 0) completedChildren.toFloat() / totalChildren.toFloat() else 0f
+
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(16.dp),
                     color = KairoSurfaceContainer,
                     border = BorderStroke(1.2.dp, KairoPrimary.copy(alpha = 0.45f)),
                     modifier = Modifier.fillMaxWidth()
@@ -358,39 +364,82 @@ fun ListDetailScreen(
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(100.dp),
-                                color = KairoPrimary.copy(alpha = 0.15f),
-                                border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.35f))
+                            // Checkbox to complete parent & all its subtasks
+                            IconButton(
+                                onClick = { ListRepository.toggleItemCompleted(currentParent.id) },
+                                modifier = Modifier.size(32.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AccountTree,
-                                        contentDescription = null,
-                                        tint = KairoPrimary,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Text(
-                                        text = "Parent Item",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = KairoPrimary
-                                    )
-                                }
+                                Icon(
+                                    imageVector = if (currentParent.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                    contentDescription = "Toggle Complete",
+                                    tint = if (currentParent.isCompleted) Color(0xFF10B981) else KairoOutlineVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
                             }
 
-                            // 3-dots Menu for Current Parent (Adjust Parent & Add Subtask directly available!)
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // 42.dp Icon container Box
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(KairoPrimary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                ListIconDisplay(
+                                    iconKey = currentParent.iconName,
+                                    tint = KairoPrimary,
+                                    modifier = Modifier.size(22.dp),
+                                    emojiSize = 20.sp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = currentParent.title,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    textDecoration = if (currentParent.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "$completedChildren of $totalChildren completed",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            // Progress percentage pill
+                            Surface(
+                                shape = RoundedCornerShape(100.dp),
+                                color = if (percentage == 100) Color(0xFF10B981).copy(alpha = 0.15f) else KairoPrimary.copy(alpha = 0.12f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (percentage == 100) Color(0xFF10B981).copy(alpha = 0.4f) else KairoPrimary.copy(alpha = 0.35f)
+                                )
+                            ) {
+                                Text(
+                                    text = "$percentage%",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (percentage == 100) Color(0xFF10B981) else KairoPrimary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+
+                            // 3-dots Menu for Current Parent
                             Box {
                                 IconButton(
                                     onClick = { parentCardMenuExpanded = true },
-                                    modifier = Modifier.size(28.dp)
+                                    modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.MoreVert,
@@ -456,84 +505,28 @@ fun ListDetailScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Parent title with complete checkbox
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(
-                                onClick = { ListRepository.toggleItemCompleted(currentParent.id) },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (currentParent.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                                    contentDescription = "Toggle Complete",
-                                    tint = if (currentParent.isCompleted) Color(0xFF10B981) else KairoOutlineVariant,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(6.dp))
-
-                            Text(
-                                text = currentParent.title,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                textDecoration = if (currentParent.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
                         if (!currentParent.notes.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = currentParent.notes,
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 34.dp)
+                                modifier = Modifier.padding(start = 38.dp)
                             )
                         }
 
-                        // Subtasks count & progress for current parent
-                        val directChildren = listItems.filter { it.parentId == currentParent.id }
-                        val completedChildren = directChildren.count { it.isCompleted }
-                        if (directChildren.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 34.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "$completedChildren of ${directChildren.size} subtasks completed",
-                                    fontSize = 11.sp,
-                                    color = KairoPrimary,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "${if (directChildren.isNotEmpty()) (completedChildren * 100 / directChildren.size) else 0}%",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = KairoPrimary
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            LinearProgressIndicator(
-                                progress = { if (directChildren.isNotEmpty()) completedChildren.toFloat() / directChildren.size.toFloat() else 0f },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 34.dp)
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp)),
-                                color = KairoPrimary,
-                                trackColor = KairoSurfaceContainerLow
-                            )
-                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // 6.dp linear progress indicator matching Pic 1
+                        LinearProgressIndicator(
+                            progress = { progressFloat },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = if (percentage == 100) Color(0xFF10B981) else KairoPrimary,
+                            trackColor = KairoSurfaceContainerLow
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(12.dp))
@@ -638,21 +631,36 @@ fun ListDetailScreen(
                         val hasSubtasks = childSubtasks.isNotEmpty()
                         val completedSubtasks = childSubtasks.count { it.isCompleted }
 
-                        ListItemCard(
-                            item = item,
-                            hasSubtasks = hasSubtasks,
-                            subtaskProgressText = if (hasSubtasks) "$completedSubtasks/${childSubtasks.size} done" else null,
-                            onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
-                            onDrillDown = { breadcrumbStack.add(item) },
-                            onShowDetails = { selectedItemForDetails = item },
-                            onAddSubtask = { parentId ->
-                                targetParentForMultiAdd = listItems.find { it.id == parentId }
-                                showMultiAddDialog = true
-                            },
-                            onAdjustParent = { selectedItemForAdjustParent = it },
-                            onEdit = { selectedItemForEdit = it },
-                            onDelete = { selectedItemForDelete = it }
-                        )
+                        if (hasSubtasks) {
+                            ParentListItemCard(
+                                item = item,
+                                completedSubtasks = completedSubtasks,
+                                totalSubtasks = childSubtasks.size,
+                                onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
+                                onDrillDown = { breadcrumbStack.add(item) },
+                                onShowDetails = { selectedItemForDetails = item },
+                                onAddSubtask = { parentId ->
+                                    targetParentForMultiAdd = listItems.find { it.id == parentId }
+                                    showMultiAddDialog = true
+                                },
+                                onAdjustParent = { selectedItemForAdjustParent = it },
+                                onEdit = { selectedItemForEdit = it },
+                                onDelete = { selectedItemForDelete = it }
+                            )
+                        } else {
+                            LeafListItemCard(
+                                item = item,
+                                onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
+                                onShowDetails = { selectedItemForDetails = item },
+                                onAddSubtask = { parentId ->
+                                    targetParentForMultiAdd = listItems.find { it.id == parentId }
+                                    showMultiAddDialog = true
+                                },
+                                onAdjustParent = { selectedItemForAdjustParent = it },
+                                onEdit = { selectedItemForEdit = it },
+                                onDelete = { selectedItemForDelete = it }
+                            )
+                        }
                     }
 
                     // 5. COMPLETED ITEMS SECTION (Collapsed by default)
@@ -719,21 +727,36 @@ fun ListDetailScreen(
                                 val hasSubtasks = childSubtasks.isNotEmpty()
                                 val completedCount = childSubtasks.count { it.isCompleted }
 
-                                ListItemCard(
-                                    item = completedItem,
-                                    hasSubtasks = hasSubtasks,
-                                    subtaskProgressText = if (hasSubtasks) "$completedCount/${childSubtasks.size} done" else null,
-                                    onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
-                                    onDrillDown = { breadcrumbStack.add(completedItem) },
-                                    onShowDetails = { selectedItemForDetails = completedItem },
-                                    onAddSubtask = { parentId ->
-                                        targetParentForMultiAdd = listItems.find { it.id == parentId }
-                                        showMultiAddDialog = true
-                                    },
-                                    onAdjustParent = { selectedItemForAdjustParent = it },
-                                    onEdit = { selectedItemForEdit = it },
-                                    onDelete = { selectedItemForDelete = it }
-                                )
+                                if (hasSubtasks) {
+                                    ParentListItemCard(
+                                        item = completedItem,
+                                        completedSubtasks = completedCount,
+                                        totalSubtasks = childSubtasks.size,
+                                        onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
+                                        onDrillDown = { breadcrumbStack.add(completedItem) },
+                                        onShowDetails = { selectedItemForDetails = completedItem },
+                                        onAddSubtask = { parentId ->
+                                            targetParentForMultiAdd = listItems.find { it.id == parentId }
+                                            showMultiAddDialog = true
+                                        },
+                                        onAdjustParent = { selectedItemForAdjustParent = it },
+                                        onEdit = { selectedItemForEdit = it },
+                                        onDelete = { selectedItemForDelete = it }
+                                    )
+                                } else {
+                                    LeafListItemCard(
+                                        item = completedItem,
+                                        onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
+                                        onShowDetails = { selectedItemForDetails = completedItem },
+                                        onAddSubtask = { parentId ->
+                                            targetParentForMultiAdd = listItems.find { it.id == parentId }
+                                            showMultiAddDialog = true
+                                        },
+                                        onAdjustParent = { selectedItemForAdjustParent = it },
+                                        onEdit = { selectedItemForEdit = it },
+                                        onDelete = { selectedItemForDelete = it }
+                                    )
+                                }
                             }
                         }
                     }
@@ -857,10 +880,11 @@ fun ListDetailScreen(
         EditListItemDialog(
             item = itemToEdit,
             onDismiss = { selectedItemForEdit = null },
-            onConfirm = { updatedTitle, updatedNotes, updatedTargetDate, updatedTargetDateMillis ->
+            onConfirm = { updatedTitle, updatedIconName, updatedNotes, updatedTargetDate, updatedTargetDateMillis ->
                 ListRepository.updateListItem(
                     itemToEdit.copy(
                         title = updatedTitle,
+                        iconName = updatedIconName,
                         notes = updatedNotes,
                         targetDate = updatedTargetDate,
                         targetDateMillis = updatedTargetDateMillis
@@ -1040,18 +1064,212 @@ fun ListBreadcrumbBar(
 }
 
 /**
- * Individual List Item Card:
- * - Functions as a parent or leaf
- * - Tapping drills down if it has subtasks (or shows details)
- * - 3-dots Menu includes: Add Subtask, Adjust Parent, Details, Edit, Delete
+ * Parent List Item Card (Matches Pic 1 List Overview Card):
+ * - 42.dp Icon container Box
+ * - Checkbox to toggle parent and all subtasks
+ * - Bold title (16.sp)
+ * - Subtitle: "X of Y completed"
+ * - Progress percentage pill badge
+ * - 3-dots menu: Add Subtask, Adjust Parent, Details, Edit, Delete
+ * - 6.dp linear progress indicator
+ * - Clicking the card drills down into its subtasks
  */
 @Composable
-private fun ListItemCard(
+private fun ParentListItemCard(
     item: ListItem,
-    hasSubtasks: Boolean,
-    subtaskProgressText: String?,
+    completedSubtasks: Int,
+    totalSubtasks: Int,
     onToggleCompleted: (id: String) -> Unit,
     onDrillDown: () -> Unit,
+    onShowDetails: () -> Unit,
+    onAddSubtask: (parentId: String) -> Unit,
+    onAdjustParent: (item: ListItem) -> Unit,
+    onEdit: (item: ListItem) -> Unit,
+    onDelete: (item: ListItem) -> Unit
+) {
+    var itemMenuExpanded by remember { mutableStateOf(false) }
+    val percentage = if (totalSubtasks > 0) (completedSubtasks * 100) / totalSubtasks else 0
+    val progressFloat = if (totalSubtasks > 0) completedSubtasks.toFloat() / totalSubtasks.toFloat() else 0f
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = KairoSurfaceContainer,
+        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.22f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onDrillDown)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Checkbox to complete parent and all subtasks
+                IconButton(
+                    onClick = { onToggleCompleted(item.id) },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = if (item.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        contentDescription = "Toggle Complete",
+                        tint = if (item.isCompleted) Color(0xFF10B981) else KairoOutlineVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // 42.dp Icon container matching Pic 1
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(KairoPrimary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    ListIconDisplay(
+                        iconKey = item.iconName,
+                        tint = KairoPrimary,
+                        modifier = Modifier.size(22.dp),
+                        emojiSize = 20.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.title,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "$completedSubtasks of $totalSubtasks completed",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Progress Badge Pill
+                Surface(
+                    shape = RoundedCornerShape(100.dp),
+                    color = if (percentage == 100) Color(0xFF10B981).copy(alpha = 0.15f) else KairoPrimary.copy(alpha = 0.12f),
+                    border = BorderStroke(
+                        1.dp,
+                        if (percentage == 100) Color(0xFF10B981).copy(alpha = 0.4f) else KairoPrimary.copy(alpha = 0.35f)
+                    )
+                ) {
+                    Text(
+                        text = "$percentage%",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (percentage == 100) Color(0xFF10B981) else KairoPrimary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+
+                // 3-dots Menu
+                Box {
+                    IconButton(
+                        onClick = { itemMenuExpanded = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = itemMenuExpanded,
+                        onDismissRequest = { itemMenuExpanded = false },
+                        modifier = Modifier.background(KairoSurfaceContainerHigh)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Add Subtask") },
+                            leadingIcon = { Icon(Icons.Default.Add, null, tint = KairoPrimary) },
+                            onClick = {
+                                itemMenuExpanded = false
+                                onAddSubtask(item.id)
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Adjust Parent") },
+                            leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
+                            onClick = {
+                                itemMenuExpanded = false
+                                onAdjustParent(item)
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Details") },
+                            leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
+                            onClick = {
+                                itemMenuExpanded = false
+                                onShowDetails()
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
+                            onClick = {
+                                itemMenuExpanded = false
+                                onEdit(item)
+                            }
+                        )
+
+                        HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
+
+                        DropdownMenuItem(
+                            text = { Text("Delete", color = KairoHighUrgent) },
+                            leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
+                            onClick = {
+                                itemMenuExpanded = false
+                                onDelete(item)
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 6.dp linear progress indicator matching Pic 1
+            LinearProgressIndicator(
+                progress = { progressFloat },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = if (percentage == 100) Color(0xFF10B981) else KairoPrimary,
+                trackColor = KairoSurfaceContainerLow
+            )
+        }
+    }
+}
+
+/**
+ * Leaf List Item Card (For items with no subtasks):
+ * - Clean row layout
+ * - Checkbox + Title + Notes/Date
+ * - 3-dots Menu: Details, Add Subtask, Adjust Parent, Edit, Delete
+ * - Clicking the card opens details
+ */
+@Composable
+private fun LeafListItemCard(
+    item: ListItem,
+    onToggleCompleted: (id: String) -> Unit,
     onShowDetails: () -> Unit,
     onAddSubtask: (parentId: String) -> Unit,
     onAdjustParent: (item: ListItem) -> Unit,
@@ -1067,9 +1285,7 @@ private fun ListItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable {
-                if (hasSubtasks) onDrillDown() else onShowDetails()
-            }
+            .clickable(onClick = onShowDetails)
     ) {
         Row(
             modifier = Modifier
@@ -1133,44 +1349,7 @@ private fun ListItemCard(
                 }
             }
 
-            // Subtask count & drill-down badge if this item has children
-            if (hasSubtasks) {
-                Surface(
-                    shape = RoundedCornerShape(100.dp),
-                    color = KairoPrimary.copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.3f)),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(100.dp))
-                        .clickable { onDrillDown() }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AccountTree,
-                            contentDescription = null,
-                            tint = KairoPrimary,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = subtaskProgressText ?: "subtasks",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = KairoPrimary
-                        )
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = "Drill into subtasks",
-                            tint = KairoPrimary,
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
-            }
-
-            // 3-dots Menu for each and every item
+            // 3-dots Menu for every leaf item
             Box {
                 IconButton(
                     onClick = { itemMenuExpanded = true },

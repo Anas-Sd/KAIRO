@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kairo.app.feature.lists.model.ListIconDisplay
 import com.kairo.app.feature.lists.model.ListItem
 import com.kairo.app.ui.theme.KairoHighUrgent
 import com.kairo.app.ui.theme.KairoOutlineVariant
@@ -144,7 +145,7 @@ fun ListItemDetailsBottomSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Title & Checkbox
+            // Title, Icon & Checkbox
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -161,7 +162,24 @@ fun ListItemDetailsBottomSheet(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(KairoPrimary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    ListIconDisplay(
+                        iconKey = item.iconName,
+                        tint = KairoPrimary,
+                        modifier = Modifier.size(18.dp),
+                        emojiSize = 16.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
 
                 Text(
                     text = item.title,

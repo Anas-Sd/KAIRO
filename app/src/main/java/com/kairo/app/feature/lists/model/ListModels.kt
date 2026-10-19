@@ -40,6 +40,7 @@ data class ListItem(
     val listId: String,
     val parentId: String? = null,
     val title: String,
+    val iconName: String = "list",
     val notes: String? = null,
     val targetDate: String? = null,
     val targetDateMillis: Long? = null,

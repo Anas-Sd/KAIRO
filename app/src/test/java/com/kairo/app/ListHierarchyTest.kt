@@ -180,4 +180,86 @@ class ListHierarchyTest {
         val descendantsOfDmart = ListRepository.getDescendantIds(newParentItem.id, finalItems)
         assertEquals(setOf("item-apples", "item-fuji", "item-bread"), descendantsOfDmart)
     }
+
+    @Test
+    fun testCascadingCompletion_completesAllDescendants() {
+        // Hierarchy: Parent -> Child1, Child2 -> Grandchild
+        val p = createItem("P", isCompleted = false)
+        val c1 = createItem("C1", parentId = "P", isCompleted = false)
+        val c2 = createItem("C2", parentId = "P", isCompleted = false)
+        val gc = createItem("GC", parentId = "C2", isCompleted = false)
+        val other = createItem("OTHER", isCompleted = false)
+
+        val items = listOf(p, c1, c2, gc, other)
+
+        // Complete P: P, C1, C2, GC must all become completed; OTHER remains uncompleted
+        val toComplete = mutableSetOf("P")
+        toComplete.addAll(ListRepository.getDescendantIds("P", items))
+
+        assertEquals(setOf("P", "C1", "C2", "GC"), toComplete)
+
+        val updated = items.map { if (toComplete.contains(it.id)) it.copy(isCompleted = true) else it }
+        assertTrue(updated.find { it.id == "P" }!!.isCompleted)
+        assertTrue(updated.find { it.id == "C1" }!!.isCompleted)
+        assertTrue(updated.find { it.id == "C2" }!!.isCompleted)
+        assertTrue(updated.find { it.id == "GC" }!!.isCompleted)
+        org.junit.Assert.assertFalse(updated.find { it.id == "OTHER" }!!.isCompleted)
+    }
+
+    @Test
+    fun testCascadingCompletion_upwardCascadeWhenAllSiblingsDone() {
+        // Hierarchy: Parent P -> C1 (already true), C2 (about to complete)
+        val p = createItem("P", isCompleted = false)
+        val c1 = createItem("C1", parentId = "P", isCompleted = true)
+        val c2 = createItem("C2", parentId = "P", isCompleted = false)
+
+        val items = listOf(p, c1, c2)
+
+        // Complete C2
+        val toComplete = mutableSetOf("C2")
+        toComplete.addAll(ListRepository.getDescendantIds("C2", items))
+
+        val byId = items.associateBy { it.id }.toMutableMap()
+        for (id in toComplete) {
+            byId[id]?.let { byId[id] = it.copy(isCompleted = true) }
+        }
+
+        var currentParentId = byId["C2"]?.parentId
+        val visited = mutableSetOf<String>()
+        while (currentParentId != null && visited.add(currentParentId)) {
+            val parentItem = byId[currentParentId] ?: break
+            val siblings = byId.values.filter { it.parentId == currentParentId }
+            val allSiblingsDone = siblings.isNotEmpty() && siblings.all { it.isCompleted || toComplete.contains(it.id) }
+            if (allSiblingsDone) {
+                toComplete.add(currentParentId)
+                byId[currentParentId] = parentItem.copy(isCompleted = true)
+                currentParentId = parentItem.parentId
+            } else break
+        }
+
+        // P should now be auto-completed because all its direct children (C1, C2) are completed!
+        assertTrue(toComplete.contains("P"))
+        assertTrue(toComplete.contains("C2"))
+    }
+
+    @Test
+    fun testCascadingUntick_reopensAllDescendantsAndAncestors() {
+        // Hierarchy: Grandparent -> Parent -> Child
+        val gp = createItem("GP", isCompleted = true)
+        val p = createItem("P", parentId = "GP", isCompleted = true)
+        val c = createItem("C", parentId = "P", isCompleted = true)
+        val items = listOf(gp, p, c)
+
+        // Case 1: Unticking Grandparent reopens all descendants
+        val toReopenGP = mutableSetOf("GP")
+        toReopenGP.addAll(ListRepository.getDescendantIds("GP", items))
+        toReopenGP.addAll(ListRepository.getAncestorIds("GP", items))
+        assertEquals(setOf("GP", "P", "C"), toReopenGP)
+
+        // Case 2: Unticking Child reopens Child and all ancestor parents (Parent and Grandparent)
+        val toReopenC = mutableSetOf("C")
+        toReopenC.addAll(ListRepository.getDescendantIds("C", items))
+        toReopenC.addAll(ListRepository.getAncestorIds("C", items))
+        assertEquals(setOf("C", "P", "GP"), toReopenC)
+    }
 }
