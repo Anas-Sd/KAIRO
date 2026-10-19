@@ -27,6 +27,9 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -37,6 +40,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,7 +75,12 @@ fun ListItemDetailsBottomSheet(
     onEditClicked: () -> Unit,
     onAddSubtaskClicked: () -> Unit,
     onAdjustParentClicked: () -> Unit,
-    onDeleteClicked: () -> Unit
+    onDeleteClicked: () -> Unit,
+    onSelectSubtask: ((ListItem) -> Unit)? = null,
+    onSubtaskAddSubtask: ((ListItem) -> Unit)? = null,
+    onSubtaskAdjustParent: ((ListItem) -> Unit)? = null,
+    onSubtaskEdit: ((ListItem) -> Unit)? = null,
+    onSubtaskDelete: ((ListItem) -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -274,39 +286,15 @@ fun ListItemDetailsBottomSheet(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     directSubtasks.forEach { sub ->
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = KairoSurfaceContainerLow,
-                            border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.15f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                IconButton(
-                                    onClick = { onToggleCompleted(sub.id) },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (sub.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                                        contentDescription = null,
-                                        tint = if (sub.isCompleted) Color(0xFF10B981) else KairoOutlineVariant,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = sub.title,
-                                    fontSize = 12.sp,
-                                    color = if (sub.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                                    textDecoration = if (sub.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
+                        SubtaskItemRow(
+                            sub = sub,
+                            onToggleCompleted = onToggleCompleted,
+                            onSubtaskClick = onSelectSubtask,
+                            onAddSubtask = onSubtaskAddSubtask,
+                            onAdjustParent = onSubtaskAdjustParent,
+                            onEdit = onSubtaskEdit,
+                            onDelete = onSubtaskDelete
+                        )
                     }
                 }
             }
@@ -434,6 +422,115 @@ fun ListItemDetailsBottomSheet(
             }
 
             Spacer(modifier = Modifier.height(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun SubtaskItemRow(
+    sub: ListItem,
+    onToggleCompleted: (String) -> Unit,
+    onSubtaskClick: ((ListItem) -> Unit)?,
+    onAddSubtask: ((ListItem) -> Unit)?,
+    onAdjustParent: ((ListItem) -> Unit)?,
+    onEdit: ((ListItem) -> Unit)?,
+    onDelete: ((ListItem) -> Unit)?
+) {
+    var subMenuExpanded by remember { mutableStateOf(false) }
+
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = KairoSurfaceContainerLow,
+        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.15f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = onSubtaskClick != null) { onSubtaskClick?.invoke(sub) }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = { onToggleCompleted(sub.id) },
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = if (sub.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                    contentDescription = null,
+                    tint = if (sub.isCompleted) Color(0xFF10B981) else KairoOutlineVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = sub.title,
+                fontSize = 12.sp,
+                color = if (sub.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                textDecoration = if (sub.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // 3-dots Menu for this subtask
+            Box {
+                IconButton(
+                    onClick = { subMenuExpanded = true },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Subtask Options",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = subMenuExpanded,
+                    onDismissRequest = { subMenuExpanded = false },
+                    modifier = Modifier.background(KairoSurfaceContainerHigh)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Add Subtask") },
+                        leadingIcon = { Icon(Icons.Default.Add, null, tint = KairoPrimary, modifier = Modifier.size(16.dp)) },
+                        onClick = {
+                            subMenuExpanded = false
+                            onAddSubtask?.invoke(sub)
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("Adjust Parent") },
+                        leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary, modifier = Modifier.size(16.dp)) },
+                        onClick = {
+                            subMenuExpanded = false
+                            onAdjustParent?.invoke(sub)
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("Edit") },
+                        leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary, modifier = Modifier.size(16.dp)) },
+                        onClick = {
+                            subMenuExpanded = false
+                            onEdit?.invoke(sub)
+                        }
+                    )
+
+                    HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
+
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = KairoHighUrgent) },
+                        leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent, modifier = Modifier.size(16.dp)) },
+                        onClick = {
+                            subMenuExpanded = false
+                            onDelete?.invoke(sub)
+                        }
+                    )
+                }
+            }
         }
     }
 }
