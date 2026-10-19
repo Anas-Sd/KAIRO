@@ -81,6 +81,8 @@ import com.kairo.app.feature.lists.data.ListRepository
 import com.kairo.app.feature.lists.model.ListIconCatalog
 import com.kairo.app.feature.lists.model.ListIconDisplay
 import com.kairo.app.feature.lists.model.ListItem
+import com.kairo.app.feature.lists.ui.AddMultipleItemsDialog
+import com.kairo.app.feature.lists.ui.AdjustParentListDialog
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoHighUrgent
 import com.kairo.app.ui.theme.KairoOutlineVariant
@@ -155,47 +157,23 @@ fun ListDetailScreen(
     // Two sections: Active (expanded) and Completed (collapsed by default)
     var isCompletedSectionExpanded by remember { mutableStateOf(false) }
 
-    // Quick add inline
-    var inlineInputText by remember { mutableStateOf("") }
-
     // Menus & Dialog states
     var menuExpanded by remember { mutableStateOf(false) }
     var parentCardMenuExpanded by remember { mutableStateOf(false) }
     var showEditListDialog by remember { mutableStateOf(false) }
+    var showAdjustParentListDialog by remember { mutableStateOf(false) }
     var showDeleteListDialog by remember { mutableStateOf(false) }
 
     var selectedItemForDetails by remember { mutableStateOf<ListItem?>(null) }
     var selectedItemForEdit by remember { mutableStateOf<ListItem?>(null) }
     var selectedItemForAdjustParent by remember { mutableStateOf<ListItem?>(null) }
     var selectedItemForDelete by remember { mutableStateOf<ListItem?>(null) }
-    var parentIdForNewSubtask by remember { mutableStateOf<String?>(null) }
-    var showNewSubtaskDialog by remember { mutableStateOf(false) }
+    var targetParentForMultiAdd by remember { mutableStateOf<ListItem?>(null) }
+    var showMultiAddDialog by remember { mutableStateOf(false) }
 
     // Back handling: If inside breadcrumbs, pop one level; else exit list
     BackHandler(enabled = breadcrumbStack.isNotEmpty()) {
         breadcrumbStack.removeLast()
-    }
-
-    fun commitInlineItem() {
-        val clean = inlineInputText.trim()
-        if (clean.isNotBlank()) {
-            val lines = clean.split("\n", "\r").map { it.trim() }.filter { it.isNotBlank() }
-            val targetParentId = currentParent?.id
-            if (lines.size == 1) {
-                ListRepository.addListItem(
-                    listId = listId,
-                    title = lines.first(),
-                    parentId = targetParentId
-                )
-            } else {
-                ListRepository.addMultipleListItems(
-                    listId = listId,
-                    titles = lines,
-                    parentId = targetParentId
-                )
-            }
-            inlineInputText = ""
-        }
     }
 
     Scaffold(
@@ -252,6 +230,18 @@ fun ListDetailScreen(
                         modifier = Modifier.weight(1f)
                     )
 
+                    // Plus (+) button on left of 3 dots to add multiple items at once
+                    IconButton(onClick = {
+                        targetParentForMultiAdd = currentParent
+                        showMultiAddDialog = true
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add Items",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
                     // 3-dots Menu for List
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
@@ -275,6 +265,17 @@ fun ListDetailScreen(
                                 onClick = {
                                     menuExpanded = false
                                     showEditListDialog = true
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Adjust Parent") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.AccountTree, contentDescription = null, tint = KairoPrimary)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    showAdjustParentListDialog = true
                                 }
                             )
 
@@ -409,8 +410,8 @@ fun ListDetailScreen(
                                         leadingIcon = { Icon(Icons.Default.Add, null, tint = KairoPrimary) },
                                         onClick = {
                                             parentCardMenuExpanded = false
-                                            parentIdForNewSubtask = currentParent.id
-                                            showNewSubtaskDialog = true
+                                            targetParentForMultiAdd = currentParent
+                                            showMultiAddDialog = true
                                         }
                                     )
 
@@ -594,64 +595,7 @@ fun ListDetailScreen(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // 3. Quick Add Item Row (Enter to add next)
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = KairoSurfaceContainer,
-                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = inlineInputText,
-                        onValueChange = { inlineInputText = it },
-                        placeholder = {
-                            Text(
-                                text = if (currentParent != null) "Add subtask to '${currentParent.title}'... (Enter to add)" else "Add an item... (press Enter to add)",
-                                fontSize = 13.sp
-                            )
-                        },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        keyboardOptions = KeyboardOptions.Default.copy(
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = { commitInlineItem() }
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent,
-                            cursorColor = KairoPrimary,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent
-                        )
-                    )
-
-                    IconButton(
-                        onClick = { commitInlineItem() },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(KairoPrimary.copy(alpha = 0.15f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add Item",
-                            tint = KairoPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // 4. Main Scrollable Items List
+            // Main Scrollable Items List
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -681,7 +625,7 @@ fun ListDetailScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = if (currentParent != null) "Type a subtask above or click + to add" else "Type an item above to start your checklist",
+                                    text = if (currentParent != null) "Click + at the top to add subtasks" else "Click + at the top to add items",
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -702,8 +646,8 @@ fun ListDetailScreen(
                             onDrillDown = { breadcrumbStack.add(item) },
                             onShowDetails = { selectedItemForDetails = item },
                             onAddSubtask = { parentId ->
-                                parentIdForNewSubtask = parentId
-                                showNewSubtaskDialog = true
+                                targetParentForMultiAdd = listItems.find { it.id == parentId }
+                                showMultiAddDialog = true
                             },
                             onAdjustParent = { selectedItemForAdjustParent = it },
                             onEdit = { selectedItemForEdit = it },
@@ -783,8 +727,8 @@ fun ListDetailScreen(
                                     onDrillDown = { breadcrumbStack.add(completedItem) },
                                     onShowDetails = { selectedItemForDetails = completedItem },
                                     onAddSubtask = { parentId ->
-                                        parentIdForNewSubtask = parentId
-                                        showNewSubtaskDialog = true
+                                        targetParentForMultiAdd = listItems.find { it.id == parentId }
+                                        showMultiAddDialog = true
                                     },
                                     onAdjustParent = { selectedItemForAdjustParent = it },
                                     onEdit = { selectedItemForEdit = it },
@@ -872,8 +816,8 @@ fun ListDetailScreen(
                 selectedItemForDetails = null
             },
             onAddSubtaskClicked = {
-                parentIdForNewSubtask = selectedItemForDetails!!.id
-                showNewSubtaskDialog = true
+                targetParentForMultiAdd = selectedItemForDetails
+                showMultiAddDialog = true
                 selectedItemForDetails = null
             },
             onAdjustParentClicked = {
@@ -888,8 +832,8 @@ fun ListDetailScreen(
                 selectedItemForDetails = sub
             },
             onSubtaskAddSubtask = { sub ->
-                parentIdForNewSubtask = sub.id
-                showNewSubtaskDialog = true
+                targetParentForMultiAdd = sub
+                showMultiAddDialog = true
                 selectedItemForDetails = null
             },
             onSubtaskAdjustParent = { sub ->
@@ -962,95 +906,39 @@ fun ListDetailScreen(
         )
     }
 
-    // Add Subtask Dialog
-    if (showNewSubtaskDialog && parentIdForNewSubtask != null) {
-        var subtaskTitle by remember { mutableStateOf("") }
-        var errorMsg by remember { mutableStateOf<String?>(null) }
-        val parentItem = listItems.find { it.id == parentIdForNewSubtask }
-
-        AlertDialog(
-            onDismissRequest = {
-                showNewSubtaskDialog = false
-                parentIdForNewSubtask = null
+    // Add Multiple Items / Subtasks Dialog
+    if (showMultiAddDialog) {
+        AddMultipleItemsDialog(
+            parentItem = targetParentForMultiAdd,
+            listName = currentList.name,
+            onDismiss = {
+                showMultiAddDialog = false
+                targetParentForMultiAdd = null
             },
-            containerColor = KairoSurfaceContainer,
-            shape = RoundedCornerShape(20.dp),
-            title = {
-                Text(
-                    text = "Add Subtask",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Column {
-                    if (parentItem != null) {
-                        Text(
-                            text = "Under: ${parentItem.title}",
-                            fontSize = 12.sp,
-                            color = KairoPrimary,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                    }
-                    OutlinedTextField(
-                        value = subtaskTitle,
-                        onValueChange = {
-                            subtaskTitle = it
-                            errorMsg = null
-                        },
-                        label = { Text("Subtask Name") },
-                        placeholder = { Text("e.g. Call vendor, buy batteries...") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = KairoPrimary,
-                            cursorColor = KairoPrimary,
-                            unfocusedContainerColor = KairoSurfaceContainerLow,
-                            focusedContainerColor = KairoSurfaceContainerLow
-                        )
+            onConfirm = { items ->
+                if (items.isNotEmpty()) {
+                    ListRepository.addMultipleListItems(
+                        listId = listId,
+                        titles = items,
+                        parentId = targetParentForMultiAdd?.id
                     )
-                    if (errorMsg != null) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = errorMsg!!, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
-                    }
                 }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val clean = subtaskTitle.trim()
-                        if (clean.isBlank()) {
-                            errorMsg = "Please enter subtask name"
-                            return@Button
-                        }
-                        ListRepository.addListItem(
-                            listId = listId,
-                            title = clean,
-                            parentId = parentIdForNewSubtask
-                        )
-                        showNewSubtaskDialog = false
-                        parentIdForNewSubtask = null
-                    },
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary, contentColor = Color(0xFF1E1F26))
-                ) {
-                    Text("Add", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = {
-                        showNewSubtaskDialog = false
-                        parentIdForNewSubtask = null
-                    },
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.35f))
-                ) {
-                    Text("Cancel", fontSize = 13.sp)
-                }
+                showMultiAddDialog = false
+                targetParentForMultiAdd = null
+            }
+        )
+    }
+
+    // Adjust Parent List Dialog
+    if (showAdjustParentListDialog) {
+        AdjustParentListDialog(
+            currentList = currentList,
+            allLists = allListsWithStats.map { it.list },
+            onDismiss = { showAdjustParentListDialog = false },
+            onConfirmMove = { targetListId ->
+                ListRepository.moveListIntoList(currentList.id, targetListId)
+                showAdjustParentListDialog = false
+                onBack()
             }
         )
     }

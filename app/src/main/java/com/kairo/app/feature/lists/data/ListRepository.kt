@@ -244,6 +244,50 @@ object ListRepository {
         saveToDisk()
     }
 
+    fun moveListIntoList(sourceListId: String, targetListId: String) {
+        if (sourceListId == targetListId) return
+        val currentLists = _lists.value
+        val sourceList = currentLists.find { it.id == sourceListId } ?: return
+        val targetList = currentLists.find { it.id == targetListId } ?: return
+
+        val currentItems = _items.value
+        val sourceItems = currentItems.filter { it.listId == sourceListId }
+        val targetItems = currentItems.filter { it.listId == targetListId }
+
+        // 1. Create a parent item in targetList representing sourceList
+        val parentItem = ListItem(
+            id = UUID.randomUUID().toString(),
+            listId = targetListId,
+            parentId = null,
+            title = sourceList.name,
+            position = targetItems.size,
+            createdAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis()
+        )
+
+        // 2. Transfer all source items into targetList:
+        // Root items of sourceList now have parentId = parentItem.id
+        // Sub-items of sourceList keep their existing parentId within sourceList
+        val migratedItems = sourceItems.map { item ->
+            val newParentId = if (item.parentId == null) parentItem.id else item.parentId
+            item.copy(
+                listId = targetListId,
+                parentId = newParentId,
+                updatedAt = System.currentTimeMillis()
+            )
+        }
+
+        // 3. Remove sourceList from _lists
+        _lists.value = currentLists.filter { it.id != sourceListId }
+
+        // 4. Update _items: remove old source items, add parentItem and migratedItems
+        val remainingItems = currentItems.filter { it.listId != sourceListId }
+        _items.value = remainingItems + parentItem + migratedItems
+
+        recalculateStats()
+        saveToDisk()
+    }
+
     // ==========================================
     // ITEM OPERATIONS
     // ==========================================

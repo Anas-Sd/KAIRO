@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -56,6 +57,7 @@ import com.kairo.app.feature.lists.model.ListIconCatalog
 import com.kairo.app.feature.lists.model.ListIconDisplay
 import com.kairo.app.feature.lists.model.ListWithStats
 import com.kairo.app.feature.lists.model.TaskList
+import com.kairo.app.feature.lists.ui.AdjustParentListDialog
 import com.kairo.app.feature.lists.ui.CreateListDialog
 import com.kairo.app.feature.lists.ui.ListDetailScreen
 import com.kairo.app.ui.components.AppHeader
@@ -80,6 +82,7 @@ fun ListsScreen(modifier: Modifier = Modifier) {
     // Dialog state for creating / editing list
     var showCreateDialog by remember { mutableStateOf(false) }
     var listToEdit by remember { mutableStateOf<TaskList?>(null) }
+    var listToAdjustParent by remember { mutableStateOf<TaskList?>(null) }
     var listToDelete by remember { mutableStateOf<TaskList?>(null) }
 
     val allListsWithStats by ListRepository.listsWithStats.collectAsState()
@@ -216,6 +219,7 @@ fun ListsScreen(modifier: Modifier = Modifier) {
                             stats = stats,
                             onClick = { selectedListId = stats.list.id },
                             onEdit = { listToEdit = stats.list },
+                            onAdjustParent = { listToAdjustParent = stats.list },
                             onDelete = { listToDelete = stats.list }
                         )
                     }
@@ -254,6 +258,19 @@ fun ListsScreen(modifier: Modifier = Modifier) {
             onConfirm = { name, iconName, _ ->
                 ListRepository.updateList(listToEdit!!.id, name, iconName)
                 listToEdit = null
+            }
+        )
+    }
+
+    // Adjust Parent List Dialog
+    if (listToAdjustParent != null) {
+        AdjustParentListDialog(
+            currentList = listToAdjustParent!!,
+            allLists = allListsWithStats.map { it.list },
+            onDismiss = { listToAdjustParent = null },
+            onConfirmMove = { targetListId ->
+                ListRepository.moveListIntoList(listToAdjustParent!!.id, targetListId)
+                listToAdjustParent = null
             }
         )
     }
@@ -309,6 +326,7 @@ private fun ListOverviewCard(
     stats: ListWithStats,
     onClick: () -> Unit,
     onEdit: () -> Unit,
+    onAdjustParent: () -> Unit,
     onDelete: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -402,6 +420,15 @@ private fun ListOverviewCard(
                             onClick = {
                                 menuExpanded = false
                                 onEdit()
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Adjust Parent") },
+                            leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
+                            onClick = {
+                                menuExpanded = false
+                                onAdjustParent()
                             }
                         )
 

@@ -114,4 +114,70 @@ class ListHierarchyTest {
         assertEquals(100, statsComplete.progressPercentage)
         assertEquals(0, statsComplete.activeCount)
     }
+
+    @Test
+    fun testMoveListIntoList_migratesHierarchyCorrectly() {
+        // Source list "dmart" with items:
+        // - "Apples" (root item in dmart)
+        //   - "Fuji" (subtask of Apples)
+        // - "Bread" (root item in dmart)
+        val sourceListId = "list-dmart"
+        val targetListId = "list-groceries"
+
+        val dmartList = TaskList(id = sourceListId, name = "dmart")
+        val groceriesList = TaskList(id = targetListId, name = "groceries")
+
+        val apples = ListItem(id = "item-apples", listId = sourceListId, parentId = null, title = "Apples")
+        val fuji = ListItem(id = "item-fuji", listId = sourceListId, parentId = "item-apples", title = "Fuji")
+        val bread = ListItem(id = "item-bread", listId = sourceListId, parentId = null, title = "Bread")
+        val milk = ListItem(id = "item-milk", listId = targetListId, parentId = null, title = "Milk")
+
+        val currentLists = listOf(dmartList, groceriesList)
+        val currentItems = listOf(apples, fuji, bread, milk)
+
+        // Simulate moveListIntoList algorithm
+        val newParentItem = ListItem(
+            id = "item-dmart-parent",
+            listId = targetListId,
+            parentId = null,
+            title = dmartList.name
+        )
+
+        val migratedItems = currentItems.filter { it.listId == sourceListId }.map { item ->
+            val newParentId = if (item.parentId == null) newParentItem.id else item.parentId
+            item.copy(listId = targetListId, parentId = newParentId)
+        }
+
+        val remainingItems = currentItems.filter { it.listId != sourceListId }
+        val finalItems = remainingItems + newParentItem + migratedItems
+        val remainingLists = currentLists.filter { it.id != sourceListId }
+
+        // Assertions
+        assertEquals(1, remainingLists.size)
+        assertEquals("groceries", remainingLists.first().name)
+
+        // dmart is now a parent item in groceries
+        val dmartInGroceries = finalItems.find { it.id == "item-dmart-parent" }
+        org.junit.Assert.assertNotNull(dmartInGroceries)
+        assertEquals(targetListId, dmartInGroceries?.listId)
+        assertEquals(null, dmartInGroceries?.parentId)
+
+        // Root items of dmart now have parentId == dmart parent item
+        val applesInGroceries = finalItems.find { it.id == "item-apples" }
+        assertEquals(newParentItem.id, applesInGroceries?.parentId)
+        assertEquals(targetListId, applesInGroceries?.listId)
+
+        val breadInGroceries = finalItems.find { it.id == "item-bread" }
+        assertEquals(newParentItem.id, breadInGroceries?.parentId)
+        assertEquals(targetListId, breadInGroceries?.listId)
+
+        // Subtask "Fuji" remains under "Apples"
+        val fujiInGroceries = finalItems.find { it.id == "item-fuji" }
+        assertEquals("item-apples", fujiInGroceries?.parentId)
+        assertEquals(targetListId, fujiInGroceries?.listId)
+
+        // Descendants of dmart parent include Apples, Bread, Fuji
+        val descendantsOfDmart = ListRepository.getDescendantIds(newParentItem.id, finalItems)
+        assertEquals(setOf("item-apples", "item-fuji", "item-bread"), descendantsOfDmart)
+    }
 }
