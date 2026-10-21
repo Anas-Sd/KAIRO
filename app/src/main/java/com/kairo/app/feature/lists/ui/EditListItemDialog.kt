@@ -63,6 +63,7 @@ import java.util.Locale
 @Composable
 fun EditListItemDialog(
     item: ListItem,
+    hasSubtasks: Boolean = false,
     onDismiss: () -> Unit,
     onConfirm: (title: String, iconName: String, notes: String?, targetDate: String?, targetDateMillis: Long?) -> Unit
 ) {
@@ -137,7 +138,7 @@ fun EditListItemDialog(
                             )
                         }
                         Text(
-                            text = "Edit Item",
+                            text = if (hasSubtasks) "Edit Parent Task" else "Edit Item",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -165,7 +166,7 @@ fun EditListItemDialog(
                         title = it
                         titleError = null
                     },
-                    label = { Text("Item Name") },
+                    label = { Text(if (hasSubtasks) "Parent Task Name" else "Item Name") },
                     singleLine = true,
                     isError = titleError != null,
                     modifier = Modifier.fillMaxWidth(),
@@ -287,77 +288,79 @@ fun EditListItemDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                if (!hasSubtasks) {
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                // Notes Input
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Notes (Optional)") },
-                    minLines = 2,
-                    maxLines = 4,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = KairoPrimary,
-                        cursorColor = KairoPrimary,
-                        focusedLabelColor = KairoPrimary,
-                        unfocusedContainerColor = KairoSurfaceContainerLow,
-                        focusedContainerColor = KairoSurfaceContainerLow
+                    // Notes Input
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        label = { Text("Notes (Optional)") },
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = KairoPrimary,
+                            cursorColor = KairoPrimary,
+                            focusedLabelColor = KairoPrimary,
+                            unfocusedContainerColor = KairoSurfaceContainerLow,
+                            focusedContainerColor = KairoSurfaceContainerLow
+                        )
                     )
-                )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                // Optional Target Date
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = KairoSurfaceContainerLow,
-                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { openDatePicker() }
-                ) {
-                    Row(
+                    // Optional Target Date
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = KairoSurfaceContainerLow,
+                        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { openDatePicker() }
                     ) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.CalendarToday,
-                                contentDescription = null,
-                                tint = if (targetDate != null) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = targetDate ?: "Set Target Date (Optional)",
-                                fontSize = 13.sp,
-                                color = if (targetDate != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        if (targetDate != null) {
-                            IconButton(
-                                onClick = {
-                                    targetDate = null
-                                    targetDateMillis = null
-                                },
-                                modifier = Modifier.size(24.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear date",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(14.dp)
+                                    imageVector = Icons.Default.CalendarToday,
+                                    contentDescription = null,
+                                    tint = if (targetDate != null) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
                                 )
+                                Text(
+                                    text = targetDate ?: "Set Target Date (Optional)",
+                                    fontSize = 13.sp,
+                                    color = if (targetDate != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            if (targetDate != null) {
+                                IconButton(
+                                    onClick = {
+                                        targetDate = null
+                                        targetDateMillis = null
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Clear date",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -388,7 +391,13 @@ fun EditListItemDialog(
                                 titleError = "Please enter an item name"
                                 return@Button
                             }
-                            onConfirm(cleanTitle, selectedIcon, notes.trim().takeIf { it.isNotBlank() }, targetDate, targetDateMillis)
+                            onConfirm(
+                                cleanTitle,
+                                selectedIcon,
+                                if (hasSubtasks) null else notes.trim().takeIf { it.isNotBlank() },
+                                if (hasSubtasks) null else targetDate,
+                                if (hasSubtasks) null else targetDateMillis
+                            )
                         },
                         modifier = Modifier
                             .weight(1f)

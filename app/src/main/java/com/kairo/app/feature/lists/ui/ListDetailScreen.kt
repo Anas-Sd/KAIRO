@@ -32,6 +32,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountTree
@@ -40,6 +42,7 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
@@ -47,6 +50,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -63,6 +67,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -95,9 +100,11 @@ import com.kairo.app.feature.lists.model.ListItem
 import com.kairo.app.feature.lists.ui.AddMultipleItemsDialog
 import com.kairo.app.feature.lists.ui.AdjustParentListDialog
 import com.kairo.app.ui.theme.KairoBackground
+import com.kairo.app.ui.theme.KairoError
 import com.kairo.app.ui.theme.KairoHighUrgent
 import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
+import com.kairo.app.ui.theme.KairoSecondary
 import com.kairo.app.ui.theme.KairoSurfaceContainer
 import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import com.kairo.app.ui.theme.KairoSurfaceContainerLow
@@ -232,6 +239,13 @@ fun ListDetailScreen(
         }
     }
 
+    val context = LocalContext.current
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedItemIds by remember { mutableStateOf(emptySet<String>()) }
+    var showTopMenu by remember { mutableStateOf(false) }
+    var showCompleteConfirmDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+
     // Dialog states
     var showEditListDialog by remember { mutableStateOf(false) }
     var showAdjustParentListDialog by remember { mutableStateOf(false) }
@@ -244,9 +258,19 @@ fun ListDetailScreen(
     var targetParentForMultiAdd by remember { mutableStateOf<ListItem?>(null) }
     var showMultiAddDialog by remember { mutableStateOf(false) }
 
-    // Back handling: If inside breadcrumbs, pop one level; else exit list
-    BackHandler(enabled = breadcrumbStack.isNotEmpty()) {
-        breadcrumbStack.removeLast()
+    // Back handling:
+    // 1. If in selection mode, exit selection mode
+    // 2. If inside breadcrumbs, pop one level
+    // 3. Otherwise, exit to lists overview (onBack)
+    BackHandler(enabled = true) {
+        if (isSelectionMode) {
+            isSelectionMode = false
+            selectedItemIds = emptySet()
+        } else if (breadcrumbStack.isNotEmpty()) {
+            breadcrumbStack.removeLast()
+        } else {
+            onBack()
+        }
     }
 
     Scaffold(
@@ -255,76 +279,164 @@ fun ListDetailScreen(
                 color = KairoSurfaceContainer,
                 border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f))
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = {
-                        if (breadcrumbStack.isNotEmpty()) {
-                            breadcrumbStack.removeLast()
-                        } else {
-                            onBack()
-                        }
-                    }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-
-                    Box(
+                if (isSelectionMode) {
+                    Row(
                         modifier = Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(KairoPrimary.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        ListIconDisplay(
-                            iconKey = currentList.iconName,
-                            tint = KairoPrimary,
-                            modifier = Modifier.size(18.dp),
-                            emojiSize = 18.sp
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            IconButton(onClick = {
+                                isSelectionMode = false
+                                selectedItemIds = emptySet()
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Cancel selection",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Text(
+                                text = if (selectedItemIds.isEmpty()) "Select items" else "${selectedItemIds.size} selected",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        val visibleItemIds = (scopedActiveItems + scopedCompletedItems).map { it.id }.toSet()
+                        TextButton(onClick = {
+                            selectedItemIds = if (selectedItemIds.size == visibleItemIds.size) {
+                                emptySet()
+                            } else {
+                                visibleItemIds
+                            }
+                        }) {
+                            Text(
+                                text = if (selectedItemIds.size == visibleItemIds.size && visibleItemIds.isNotEmpty()) "Deselect All" else "Select All",
+                                color = KairoPrimary,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
+                        }
                     }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = {
+                            if (breadcrumbStack.isNotEmpty()) {
+                                breadcrumbStack.removeLast()
+                            } else {
+                                onBack()
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
 
-                    Spacer(modifier = Modifier.width(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(KairoPrimary.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            ListIconDisplay(
+                                iconKey = currentList.iconName,
+                                tint = KairoPrimary,
+                                modifier = Modifier.size(18.dp),
+                                emojiSize = 18.sp
+                            )
+                        }
 
-                    Text(
-                        text = currentList.name,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
+                        Spacer(modifier = Modifier.width(10.dp))
 
-                    // Plus (+) button to add multiple items at once
-                    IconButton(onClick = {
-                        targetParentForMultiAdd = currentParent
-                        showMultiAddDialog = true
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add Items",
-                            tint = MaterialTheme.colorScheme.onSurface
+                        Text(
+                            text = currentList.name,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
+
+                        // Plus (+) button to add multiple items at once
+                        IconButton(onClick = {
+                            targetParentForMultiAdd = currentParent
+                            showMultiAddDialog = true
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add Items",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        // 3-dots Menu on the right of + (with Select option)
+                        Box {
+                            IconButton(onClick = { showTopMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "More Options",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showTopMenu,
+                                onDismissRequest = { showTopMenu = false },
+                                modifier = Modifier.background(KairoSurfaceContainerHigh)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Select") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.SelectAll,
+                                            contentDescription = null,
+                                            tint = KairoPrimary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        showTopMenu = false
+                                        isSelectionMode = true
+                                        selectedItemIds = emptySet()
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
         },
         containerColor = KairoBackground
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .then(if (isSelectionMode) Modifier.padding(bottom = 76.dp) else Modifier)
+            ) {
             // 1. Breadcrumbs Navigation Bar (shown when drilled into subtasks)
             if (breadcrumbStack.isNotEmpty()) {
                 ListBreadcrumbBar(
@@ -657,6 +769,11 @@ fun ListDetailScreen(
                                 isBeingDragged = isBeingDragged,
                                 dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
                                 dragHandleModifier = buildItemDragHandleModifier(item, displayActiveItems),
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedItemIds.contains(item.id),
+                                onToggleSelect = {
+                                    selectedItemIds = if (selectedItemIds.contains(item.id)) selectedItemIds - item.id else selectedItemIds + item.id
+                                },
                                 onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
                                 onDrillDown = {
                                     if (draggingItemId == null) {
@@ -683,6 +800,11 @@ fun ListDetailScreen(
                                 isBeingDragged = isBeingDragged,
                                 dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
                                 dragHandleModifier = buildItemDragHandleModifier(item, displayActiveItems),
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedItemIds.contains(item.id),
+                                onToggleSelect = {
+                                    selectedItemIds = if (selectedItemIds.contains(item.id)) selectedItemIds - item.id else selectedItemIds + item.id
+                                },
                                 onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
                                 onShowDetails = {
                                     if (draggingItemId == null) {
@@ -774,6 +896,11 @@ fun ListDetailScreen(
                                         isBeingDragged = isBeingDragged,
                                         dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
                                         dragHandleModifier = buildItemDragHandleModifier(completedItem, displayCompletedItems),
+                                        isSelectionMode = isSelectionMode,
+                                        isSelected = selectedItemIds.contains(completedItem.id),
+                                        onToggleSelect = {
+                                            selectedItemIds = if (selectedItemIds.contains(completedItem.id)) selectedItemIds - completedItem.id else selectedItemIds + completedItem.id
+                                        },
                                         onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
                                         onDrillDown = {
                                             if (draggingItemId == null) {
@@ -800,6 +927,11 @@ fun ListDetailScreen(
                                         isBeingDragged = isBeingDragged,
                                         dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
                                         dragHandleModifier = buildItemDragHandleModifier(completedItem, displayCompletedItems),
+                                        isSelectionMode = isSelectionMode,
+                                        isSelected = selectedItemIds.contains(completedItem.id),
+                                        onToggleSelect = {
+                                            selectedItemIds = if (selectedItemIds.contains(completedItem.id)) selectedItemIds - completedItem.id else selectedItemIds + completedItem.id
+                                        },
                                         onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
                                         onShowDetails = {
                                             if (draggingItemId == null) {
@@ -822,7 +954,236 @@ fun ListDetailScreen(
                 }
             }
         }
+
+        // Selection Bottom Action Bar (Complete & Delete)
+        if (isSelectionMode) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = KairoSurfaceContainerHigh,
+                tonalElevation = 8.dp,
+                shadowElevation = 8.dp,
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Left: Selected count badge
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (selectedItemIds.isNotEmpty()) KairoPrimary.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.08f),
+                            border = BorderStroke(
+                                width = 1.dp,
+                                color = if (selectedItemIds.isNotEmpty()) KairoPrimary.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.1f)
+                            )
+                        ) {
+                            Text(
+                                text = "${selectedItemIds.size}",
+                                color = if (selectedItemIds.isNotEmpty()) KairoPrimary else Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                        Text(
+                            text = if (selectedItemIds.size == 1) "item selected" else "items selected",
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 13.sp
+                        )
+                    }
+
+                    // Right: Actions (Complete & Delete)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Complete Button
+                        Surface(
+                            onClick = {
+                                if (selectedItemIds.isEmpty()) {
+                                    Toast.makeText(context, "No items selected", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showCompleteConfirmDialog = true
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            color = KairoSecondary.copy(alpha = 0.18f),
+                            border = BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = KairoSecondary,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "Complete",
+                                    color = KairoSecondary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        }
+
+                        // Delete Button
+                        Surface(
+                            onClick = {
+                                if (selectedItemIds.isEmpty()) {
+                                    Toast.makeText(context, "No items selected", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showDeleteConfirmDialog = true
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            color = KairoError.copy(alpha = 0.18f),
+                            border = BorderStroke(1.dp, KairoError.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = KairoError,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "Delete",
+                                    color = KairoError,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
+}
+
+// Batch Complete Confirmation Dialog
+if (showCompleteConfirmDialog) {
+    AlertDialog(
+        onDismissRequest = { showCompleteConfirmDialog = false },
+        title = {
+            Text(
+                text = "Complete ${selectedItemIds.size} item${if (selectedItemIds.size > 1) "s" else ""}?",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        text = {
+            Text(
+                text = "This will mark all ${selectedItemIds.size} selected item(s) as completed.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val count = selectedItemIds.size
+                    ListRepository.completeListItems(selectedItemIds)
+                    isSelectionMode = false
+                    selectedItemIds = emptySet()
+                    showCompleteConfirmDialog = false
+                    Toast.makeText(context, "$count item(s) completed", Toast.LENGTH_SHORT).show()
+                }
+            ) {
+                Text(
+                    text = "Yes, Complete",
+                    color = KairoSecondary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = { showCompleteConfirmDialog = false }
+            ) {
+                Text(
+                    text = "Cancel",
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        },
+        containerColor = KairoSurfaceContainerHigh,
+        shape = RoundedCornerShape(20.dp)
+    )
+}
+
+// Batch Delete Confirmation Dialog
+if (showDeleteConfirmDialog) {
+    AlertDialog(
+        onDismissRequest = { showDeleteConfirmDialog = false },
+        title = {
+            Text(
+                text = "Delete ${selectedItemIds.size} item${if (selectedItemIds.size > 1) "s" else ""}?",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        text = {
+            Text(
+                text = "You are deleting ${selectedItemIds.size} item${if (selectedItemIds.size > 1) "s" else ""}. Are you sure you want to delete them permanently?",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val count = selectedItemIds.size
+                    ListRepository.deleteListItems(selectedItemIds)
+                    isSelectionMode = false
+                    selectedItemIds = emptySet()
+                    showDeleteConfirmDialog = false
+                    Toast.makeText(context, "$count item(s) deleted", Toast.LENGTH_SHORT).show()
+                }
+            ) {
+                Text(
+                    text = "Yes, Delete",
+                    color = KairoError,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = { showDeleteConfirmDialog = false }
+            ) {
+                Text(
+                    text = "Cancel",
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        },
+        containerColor = KairoSurfaceContainerHigh,
+        shape = RoundedCornerShape(20.dp)
+    )
+}
 
     // ==========================================
     // DIALOGS & BOTTOM SHEETS
@@ -936,8 +1297,10 @@ fun ListDetailScreen(
     // Edit Item Dialog
     if (selectedItemForEdit != null) {
         val itemToEdit = selectedItemForEdit!!
+        val hasSubtasks = listItems.any { it.parentId == itemToEdit.id }
         EditListItemDialog(
             item = itemToEdit,
+            hasSubtasks = hasSubtasks,
             onDismiss = { selectedItemForEdit = null },
             onConfirm = { updatedTitle, updatedIconName, updatedNotes, updatedTargetDate, updatedTargetDateMillis ->
                 ListRepository.updateListItem(
@@ -1157,6 +1520,9 @@ private fun ParentListItemCard(
     isBeingDragged: Boolean = false,
     dragOffsetY: Float = 0f,
     dragHandleModifier: Modifier = Modifier,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {},
     onToggleCompleted: (id: String) -> Unit,
     onDrillDown: () -> Unit,
     onShowDetails: () -> Unit,
@@ -1171,8 +1537,11 @@ private fun ParentListItemCard(
 
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = if (isBeingDragged) KairoSurfaceContainerHigh else KairoSurfaceContainer,
-        border = BorderStroke(1.dp, if (isBeingDragged) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.22f)),
+        color = if (isSelected) KairoPrimary.copy(alpha = 0.08f) else if (isBeingDragged) KairoSurfaceContainerHigh else KairoSurfaceContainer,
+        border = BorderStroke(
+            1.2.dp,
+            if (isSelected) KairoPrimary else if (isBeingDragged) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.22f)
+        ),
         modifier = Modifier
             .fillMaxWidth()
             .then(
@@ -1186,7 +1555,11 @@ private fun ParentListItemCard(
                 }
             )
             .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = { if (!isBeingDragged) onDrillDown() })
+            .clickable(onClick = {
+                if (!isBeingDragged) {
+                    if (isSelectionMode) onToggleSelect() else onDrillDown()
+                }
+            })
     ) {
         Row(
             modifier = Modifier
@@ -1196,10 +1569,12 @@ private fun ParentListItemCard(
         ) {
             // Left Column: 6-dots Drag Indicator on top + Squircle Checkbox below it
             ListCardLeadingControl(
-                isCompleted = item.isCompleted,
-                onToggleCompleted = { onToggleCompleted(item.id) },
+                isCompleted = if (isSelectionMode) isSelected else item.isCompleted,
+                onToggleCompleted = {
+                    if (isSelectionMode) onToggleSelect() else onToggleCompleted(item.id)
+                },
                 isBeingDragged = isBeingDragged,
-                dragHandleModifier = dragHandleModifier
+                dragHandleModifier = if (isSelectionMode) Modifier else dragHandleModifier
             )
 
             // Middle block: Icon + Name + % on top, progress bar below them
@@ -1364,6 +1739,9 @@ private fun LeafListItemCard(
     isBeingDragged: Boolean = false,
     dragOffsetY: Float = 0f,
     dragHandleModifier: Modifier = Modifier,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {},
     onToggleCompleted: (id: String) -> Unit,
     onShowDetails: () -> Unit,
     onAddSubtask: (parentId: String) -> Unit,
@@ -1375,8 +1753,11 @@ private fun LeafListItemCard(
 
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = if (isBeingDragged) KairoSurfaceContainerHigh else KairoSurfaceContainer,
-        border = BorderStroke(1.dp, if (isBeingDragged) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.2f)),
+        color = if (isSelected) KairoPrimary.copy(alpha = 0.08f) else if (isBeingDragged) KairoSurfaceContainerHigh else KairoSurfaceContainer,
+        border = BorderStroke(
+            1.2.dp,
+            if (isSelected) KairoPrimary else if (isBeingDragged) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.2f)
+        ),
         modifier = Modifier
             .fillMaxWidth()
             .then(
@@ -1390,7 +1771,11 @@ private fun LeafListItemCard(
                 }
             )
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = { if (!isBeingDragged) onShowDetails() })
+            .clickable(onClick = {
+                if (!isBeingDragged) {
+                    if (isSelectionMode) onToggleSelect() else onShowDetails()
+                }
+            })
     ) {
         Row(
             modifier = Modifier
@@ -1400,10 +1785,12 @@ private fun LeafListItemCard(
         ) {
             // Left Column: 6-dots Drag Indicator on top + Squircle Checkbox below it
             ListCardLeadingControl(
-                isCompleted = item.isCompleted,
-                onToggleCompleted = { onToggleCompleted(item.id) },
+                isCompleted = if (isSelectionMode) isSelected else item.isCompleted,
+                onToggleCompleted = {
+                    if (isSelectionMode) onToggleSelect() else onToggleCompleted(item.id)
+                },
                 isBeingDragged = isBeingDragged,
-                dragHandleModifier = dragHandleModifier
+                dragHandleModifier = if (isSelectionMode) Modifier else dragHandleModifier
             )
 
             Column(modifier = Modifier.weight(1f)) {

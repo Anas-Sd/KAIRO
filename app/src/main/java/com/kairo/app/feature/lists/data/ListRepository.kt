@@ -263,8 +263,10 @@ object ListRepository {
 
         val stats = currentLists.map { list ->
             val listItems = currentItems.filter { it.listId == list.id }
-            val total = listItems.size
-            val completed = listItems.count { it.isCompleted }
+            // Count root items under the list (parentId == null), not deeply nested subtasks
+            val rootItems = listItems.filter { it.parentId == null }
+            val total = rootItems.size
+            val completed = rootItems.count { it.isCompleted }
             val active = total - completed
             val percentage = if (total > 0) ((completed.toDouble() / total.toDouble()) * 100).toInt() else 0
 
@@ -687,6 +689,99 @@ object ListRepository {
             if (itemsToUpdate.isNotEmpty()) {
                 SupabaseClient.upsertListItems(itemsToUpdate.map { it.toDto() })
             }
+            idsToDelete.forEach { id ->
+                SupabaseClient.deleteListItem(id)
+            }
+        }
+    }
+
+    fun completeListItems(itemIds: Set<String>) {
+        if (itemIds.isEmpty()) return
+        val allItems = _items.value
+        val now = System.currentTimeMillis()
+        val toComplete = mutableSetOf<String>()
+        toComplete.addAll(itemIds)
+
+        // 1. For each item, add all its recursive descendants
+        for (id in itemIds) {
+            toComplete.addAll(getDescendantIds(id, allItems))
+        }
+
+        // 2. Cascade upward: A parent becomes completed if ALL its direct children are completed
+        val byId = allItems.associateBy { it.id }.toMutableMap()
+        for (id in toComplete) {
+            byId[id]?.let {
+                byId[id] = it.copy(isCompleted = true, completedAt = now, updatedAt = now)
+            }
+        }
+
+        // Check parents iteratively
+        for (id in itemIds) {
+            var currentParentId = byId[id]?.parentId
+            val visited = mutableSetOf<String>()
+            while (currentParentId != null && visited.add(currentParentId)) {
+                val parentItem = byId[currentParentId] ?: break
+                val siblings = byId.values.filter { it.parentId == currentParentId }
+                val allSiblingsDone = siblings.isNotEmpty() && siblings.all { it.isCompleted || toComplete.contains(it.id) }
+                if (allSiblingsDone) {
+                    toComplete.add(currentParentId)
+                    byId[currentParentId] = parentItem.copy(isCompleted = true, completedAt = now, updatedAt = now)
+                    currentParentId = parentItem.parentId
+                } else {
+                    break
+                }
+            }
+        }
+
+        _items.value = allItems.map {
+            if (toComplete.contains(it.id)) {
+                it.copy(isCompleted = true, completedAt = now, updatedAt = now)
+            } else it
+        }
+
+        recalculateStats()
+        saveToDisk()
+
+        val changedItems = _items.value.filter { toComplete.contains(it.id) }
+        scope.launch {
+            SupabaseClient.upsertListItems(changedItems.map { it.toDto() })
+        }
+    }
+
+    fun deleteListItems(itemIds: Set<String>, deleteSubtasks: Boolean = true) {
+        if (itemIds.isEmpty()) return
+        val allCurrent = _items.value
+        val idsToDelete = mutableSetOf<String>()
+        idsToDelete.addAll(itemIds)
+
+        if (deleteSubtasks) {
+            for (id in itemIds) {
+                idsToDelete.addAll(getDescendantIds(id, allCurrent))
+            }
+            _items.value = allCurrent.filter { !idsToDelete.contains(it.id) }
+        } else {
+            val byId = allCurrent.associateBy { it.id }
+            val itemsToUpdate = mutableListOf<ListItem>()
+            val updated = allCurrent.map { itm ->
+                if (itm.parentId != null && itemIds.contains(itm.parentId)) {
+                    val targetParent = byId[itm.parentId]?.parentId
+                    val reparented = itm.copy(parentId = targetParent, updatedAt = System.currentTimeMillis())
+                    itemsToUpdate.add(reparented)
+                    reparented
+                } else itm
+            }.filter { !idsToDelete.contains(it.id) }
+            _items.value = updated
+            if (itemsToUpdate.isNotEmpty()) {
+                scope.launch {
+                    SupabaseClient.upsertListItems(itemsToUpdate.map { it.toDto() })
+                }
+            }
+        }
+
+        recalculateStats()
+        saveToDisk()
+
+        scope.launch {
             idsToDelete.forEach { id ->
                 SupabaseClient.deleteListItem(id)
             }
