@@ -9,7 +9,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,7 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -123,6 +121,14 @@ private data class CalendarActiveNoteDialog(
     val countIndex: Int? = null
 )
 
+private val FORMATTER_MMM_D = DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH)
+private val FORMATTER_MMM_DD = DateTimeFormatter.ofPattern("MMM dd", Locale.ENGLISH)
+private val FORMATTER_MMM_D_YYYY = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH)
+private val FORMATTER_MMM_DD_YYYY = DateTimeFormatter.ofPattern("MMM dd, yyyy", Locale.ENGLISH)
+private val FORMATTER_YYYY_MM_DD = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH)
+private val FORMATTER_DD_MM_YYYY = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.ENGLISH)
+private val FORMATTER_EEE_MMM_D = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH)
+
 @Composable
 fun CalendarScreen(
     resetTrigger: Int = 0,
@@ -205,19 +211,27 @@ fun CalendarScreen(
     }
 
     // Progress metrics for selectedDate
-    val tasksCompletedCount = dayTasks.count { it.isCompleted }
+    val tasksCompletedCount = remember(dayTasks) { dayTasks.count { it.isCompleted } }
     val tasksTotalCount = dayTasks.size
 
-    val allSubtasksInDayLists = dayLists.flatMap { parent -> allTasks.filter { it.parentId == parent.id } }
-    val subtasksCompletedCount = allSubtasksInDayLists.count { it.isCompleted }
+    val allSubtasksInDayLists = remember(dayLists, allTasks) {
+        dayLists.flatMap { parent -> allTasks.filter { it.parentId == parent.id } }
+    }
+    val subtasksCompletedCount = remember(allSubtasksInDayLists) {
+        allSubtasksInDayLists.count { it.isCompleted }
+    }
     val subtasksTotalCount = allSubtasksInDayLists.size
 
-    val selectedDateStr = selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
-    val habitsCompletedCount = dayHabits.count { habit ->
-        val log = logsMap[habit.id]?.get(selectedDateStr)
-        when (habit.type) {
-            HabitType.YES_NO -> log?.state == HabitDayState.DONE
-            HabitType.TARGET -> (log?.value ?: 0) >= habit.targetValue || log?.state == HabitDayState.DONE
+    val selectedDateStr = remember(selectedDate) {
+        selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
+    }
+    val habitsCompletedCount = remember(dayHabits, logsMap, selectedDateStr) {
+        dayHabits.count { habit ->
+            val log = logsMap[habit.id]?.get(selectedDateStr)
+            when (habit.type) {
+                HabitType.YES_NO -> log?.state == HabitDayState.DONE
+                HabitType.TARGET -> (log?.value ?: 0) >= habit.targetValue || log?.state == HabitDayState.DONE
+            }
         }
     }
     val habitsTotalCount = dayHabits.size
@@ -722,6 +736,20 @@ private fun MonthCalendarGrid(
             HorizontalDivider(thickness = 1.dp, color = Color.White.copy(alpha = 0.06f))
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Precalculate which days in this month have tasks or habits (prevents thousands of calculations per frame)
+            val daysWithTasks = remember(yearMonth, allTasks) {
+                (1..daysInMonth).filter { day ->
+                    val cellDate = yearMonth.atDay(day)
+                    allTasks.any { isTaskScheduledForDate(it, cellDate) }
+                }.toSet()
+            }
+            val daysWithHabits = remember(yearMonth, habitsList, logsMap) {
+                (1..daysInMonth).filter { day ->
+                    val cellDate = yearMonth.atDay(day)
+                    habitsList.any { isHabitScheduledForDate(it, cellDate) }
+                }.toSet()
+            }
+
             // Calendar Day Cells Rows
             for (row in 0 until numRows) {
                 Row(
@@ -737,13 +765,8 @@ private fun MonthCalendarGrid(
                             val isSelected = cellDate == selectedDate
                             val isToday = cellDate == today
 
-                            // Count activity on this cell date
-                            val cellDateStr = cellDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                            val taskCount = allTasks.count { isTaskScheduledForDate(it, cellDate) }
-                            val habitCount = habitsList.count { isHabitScheduledForDate(it, cellDate) }
-
-                            val hasTasks = taskCount > 0
-                            val hasHabits = habitCount > 0
+                            val hasTasks = dayNumber in daysWithTasks
+                            val hasHabits = dayNumber in daysWithHabits
 
                             Box(
                                 modifier = Modifier
@@ -830,13 +853,11 @@ private fun FilterCategoryChips(
     onSelectFilter: (CalendarViewFilter) -> Unit
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        CalendarViewFilter.values().forEach { filter ->
+        CalendarViewFilter.entries.forEach { filter ->
             val isSelected = filter == selectedFilter
             Surface(
                 onClick = { onSelectFilter(filter) },
@@ -1656,8 +1677,7 @@ private fun isTaskScheduledForDate(task: Task, date: LocalDate): Boolean {
                 val datesList = task.repeatDates?.split(",")?.map { it.trim() } ?: emptyList()
                 if (datesList.contains(dateOfMonthStr)) return true
 
-                val monthDayFormatter = DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH)
-                if (datesList.any { it.equals(date.format(monthDayFormatter), ignoreCase = true) }) return true
+                if (datesList.any { it.equals(date.format(FORMATTER_MMM_D), ignoreCase = true) }) return true
             }
         }
     }
@@ -1671,30 +1691,41 @@ private fun isTaskScheduledForDate(task: Task, date: LocalDate): Boolean {
     }
 
     // 3. Due Date String (e.g. "Today", "Tomorrow", "Yesterday", or formatted date)
-    val today = LocalDate.now()
     val dueStr = task.dueDate.trim()
-    if (dueStr.equals("Today", ignoreCase = true) && date == today) return true
-    if (dueStr.equals("Tomorrow", ignoreCase = true) && date == today.plusDays(1)) return true
-    if (dueStr.equals("Yesterday", ignoreCase = true) && date == today.minusDays(1)) return true
+    if (dueStr.isNotEmpty() && !dueStr.equals("No due date", ignoreCase = true) && !dueStr.equals("None", ignoreCase = true)) {
+        val today = LocalDate.now()
+        if (dueStr.equals("Today", ignoreCase = true) && date == today) return true
+        if (dueStr.equals("Tomorrow", ignoreCase = true) && date == today.plusDays(1)) return true
+        if (dueStr.equals("Yesterday", ignoreCase = true) && date == today.minusDays(1)) return true
 
-    val formats = listOf(
-        DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("MMM dd", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("MMM dd, yyyy", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH)
-    )
-    for (fmt in formats) {
-        try {
-            val parsed = LocalDate.parse(dueStr, fmt)
-            if (parsed == date) return true
-        } catch (_: Exception) {}
-        try {
-            val parsedMd = MonthDay.parse(dueStr, fmt)
-            if (parsedMd.month == date.month && parsedMd.dayOfMonth == date.dayOfMonth) return true
-        } catch (_: Exception) {}
+        if (dueStr.length == 10 && dueStr[4] == '-' && dueStr[7] == '-') {
+            try {
+                if (LocalDate.parse(dueStr, FORMATTER_YYYY_MM_DD) == date) return true
+            } catch (_: Exception) {}
+        } else if (dueStr.contains('/')) {
+            try {
+                if (LocalDate.parse(dueStr, FORMATTER_DD_MM_YYYY) == date) return true
+            } catch (_: Exception) {}
+        } else if (dueStr.contains(',')) {
+            try {
+                if (LocalDate.parse(dueStr, FORMATTER_MMM_D_YYYY) == date) return true
+            } catch (_: Exception) {}
+            try {
+                if (LocalDate.parse(dueStr, FORMATTER_MMM_DD_YYYY) == date) return true
+            } catch (_: Exception) {}
+            try {
+                if (LocalDate.parse(dueStr, FORMATTER_EEE_MMM_D) == date) return true
+            } catch (_: Exception) {}
+        } else {
+            try {
+                val parsedMd = MonthDay.parse(dueStr, FORMATTER_MMM_D)
+                if (parsedMd.month == date.month && parsedMd.dayOfMonth == date.dayOfMonth) return true
+            } catch (_: Exception) {}
+            try {
+                val parsedMd = MonthDay.parse(dueStr, FORMATTER_MMM_DD)
+                if (parsedMd.month == date.month && parsedMd.dayOfMonth == date.dayOfMonth) return true
+            } catch (_: Exception) {}
+        }
     }
 
     // 4. If completed on this date:

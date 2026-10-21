@@ -1,6 +1,8 @@
 package com.kairo.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -38,7 +40,14 @@ fun MainScreen() {
 
     BackHandler(enabled = pagerState.currentPage != 0) {
         coroutineScope.launch {
-            pagerState.animateScrollToPage(0)
+            if (pagerState.currentPage > 1) {
+                pagerState.scrollToPage(0)
+            } else {
+                pagerState.animateScrollToPage(
+                    page = 0,
+                    animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                )
+            }
         }
     }
 
@@ -60,7 +69,17 @@ fun MainScreen() {
                             }
                         } else {
                             coroutineScope.launch {
-                                pagerState.animateScrollToPage(targetIndex)
+                                val distance = kotlin.math.abs(targetIndex - pagerState.currentPage)
+                                if (distance > 1) {
+                                    // Jump directly to avoid laggy scrolling across intermediate tabs
+                                    pagerState.scrollToPage(targetIndex)
+                                } else {
+                                    // Snappy, smooth animation for adjacent tabs
+                                    pagerState.animateScrollToPage(
+                                        page = targetIndex,
+                                        animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                                    )
+                                }
                             }
                         }
                     }
@@ -70,6 +89,7 @@ fun MainScreen() {
     ) { innerPadding ->
         HorizontalPager(
             state = pagerState,
+            key = { page -> bottomNavItems[page].route },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
