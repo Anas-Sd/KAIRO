@@ -1,5 +1,6 @@
 package com.kairo.app.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -105,6 +106,11 @@ fun ListsScreen(modifier: Modifier = Modifier) {
 
     val allListsWithStats by ListRepository.listsWithStats.collectAsState()
     val allItems by ListRepository.items.collectAsState()
+
+    BackHandler(enabled = isSearchActive) {
+        isSearchActive = false
+        searchQuery = ""
+    }
 
     // If a list is selected, display dedicated ListDetailScreen
     if (selectedListId != null) {
