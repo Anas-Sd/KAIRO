@@ -271,6 +271,7 @@ fun ListDetailScreen(
     var showEditListDialog by remember { mutableStateOf(false) }
     var showAdjustParentListDialog by remember { mutableStateOf(false) }
     var showDeleteListDialog by remember { mutableStateOf(false) }
+    var showListDetailsSheet by remember { mutableStateOf(false) }
 
     var selectedItemForDetails by remember { mutableStateOf<ListItem?>(null) }
     var selectedItemForEdit by remember { mutableStateOf<ListItem?>(null) }
@@ -446,6 +447,14 @@ fun ListDetailScreen(
                                     }
                                 )
                             } else {
+                                DropdownMenuItem(
+                                    text = { Text("List Details") },
+                                    leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
+                                    onClick = {
+                                        dismissMenu()
+                                        showListDetailsSheet = true
+                                    }
+                                )
                                 DropdownMenuItem(
                                     text = { Text("Edit List") },
                                     leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
@@ -1138,61 +1147,22 @@ if (showDeleteConfirmDialog) {
         )
     }
 
-    // Item Details Bottom Sheet
+    // Item Details Bottom Sheet (Strictly View-Only)
     if (selectedItemForDetails != null) {
         ListItemDetailsBottomSheet(
             item = selectedItemForDetails!!,
             allItemsInList = listItems,
-            onDismiss = { selectedItemForDetails = null },
-            onToggleCompleted = { itemId -> ListRepository.toggleItemCompleted(itemId) },
-            onEditClicked = {
-                selectedItemForEdit = selectedItemForDetails
-                selectedItemForDetails = null
-            },
-            onAddSubtaskClicked = {
-                val target = selectedItemForDetails!!
-                val isLeaf = listItems.none { it.parentId == target.id }
-                if (isLeaf) {
-                    leafItemForAddSubtasks = target
-                } else {
-                    targetParentForMultiAdd = target
-                    showMultiAddDialog = true
-                }
-                selectedItemForDetails = null
-            },
-            onAdjustParentClicked = {
-                selectedItemForAdjustParent = selectedItemForDetails
-                selectedItemForDetails = null
-            },
-            onDeleteClicked = {
-                selectedItemForDelete = selectedItemForDetails
-                selectedItemForDetails = null
-            },
-            onSelectSubtask = { sub ->
-                selectedItemForDetails = sub
-            },
-            onSubtaskAddSubtask = { sub ->
-                val isLeaf = listItems.none { it.parentId == sub.id }
-                if (isLeaf) {
-                    leafItemForAddSubtasks = sub
-                } else {
-                    targetParentForMultiAdd = sub
-                    showMultiAddDialog = true
-                }
-                selectedItemForDetails = null
-            },
-            onSubtaskAdjustParent = { sub ->
-                selectedItemForAdjustParent = sub
-                selectedItemForDetails = null
-            },
-            onSubtaskEdit = { sub ->
-                selectedItemForEdit = sub
-                selectedItemForDetails = null
-            },
-            onSubtaskDelete = { sub ->
-                selectedItemForDelete = sub
-                selectedItemForDetails = null
-            }
+            listName = currentList.name,
+            onDismiss = { selectedItemForDetails = null }
+        )
+    }
+
+    // List Details Bottom Sheet (Strictly View-Only)
+    if (showListDetailsSheet) {
+        TaskListDetailsBottomSheet(
+            list = currentList,
+            listStats = currentListStats,
+            onDismiss = { showListDetailsSheet = false }
         )
     }
 
