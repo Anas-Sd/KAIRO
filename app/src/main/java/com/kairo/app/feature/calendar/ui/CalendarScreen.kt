@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,6 +61,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -122,10 +124,15 @@ private data class CalendarActiveNoteDialog(
 )
 
 @Composable
-fun CalendarScreen(modifier: Modifier = Modifier) {
+fun CalendarScreen(
+    resetTrigger: Int = 0,
+    modifier: Modifier = Modifier
+) {
     // Current displayed YearMonth and active selected Date
     var currentYearMonth by remember { mutableStateOf(YearMonth.now()) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+
+    val listState = rememberLazyListState()
 
     // Dialog & UI states
     var showYearMonthPicker by remember { mutableStateOf(false) }
@@ -135,6 +142,21 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(CalendarViewFilter.ALL) }
+
+    LaunchedEffect(resetTrigger) {
+        if (resetTrigger > 0) {
+            currentYearMonth = YearMonth.now()
+            selectedDate = LocalDate.now()
+            selectedFilter = CalendarViewFilter.ALL
+            isSearchActive = false
+            searchQuery = ""
+            showYearMonthPicker = false
+            showSettingsDialog = false
+            showQuickAddTaskDialog = false
+            activeHabitNoteDialog = null
+            listState.animateScrollToItem(0)
+        }
+    }
 
     // Collapsible states (default collapsed as requested)
     var tasksExpanded by remember { mutableStateOf(false) }
@@ -227,6 +249,7 @@ fun CalendarScreen(modifier: Modifier = Modifier) {
         )
 
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),

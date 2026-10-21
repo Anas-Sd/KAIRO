@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
@@ -88,7 +89,10 @@ import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import com.kairo.app.ui.theme.KairoSurfaceContainerLow
 
 @Composable
-fun ListsScreen(modifier: Modifier = Modifier) {
+fun ListsScreen(
+    resetTrigger: Int = 0,
+    modifier: Modifier = Modifier
+) {
     LaunchedEffect(Unit) {
         ListRepository.fetchFromSupabase()
     }
@@ -100,6 +104,18 @@ fun ListsScreen(modifier: Modifier = Modifier) {
     // Navigation state to Dedicated List Details Page
     var selectedListId by remember { mutableStateOf<String?>(null) }
     var initialDrillDownItemId by remember { mutableStateOf<String?>(null) }
+
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(resetTrigger) {
+        if (resetTrigger > 0) {
+            selectedListId = null
+            initialDrillDownItemId = null
+            isSearchActive = false
+            searchQuery = ""
+            listState.animateScrollToItem(0)
+        }
+    }
 
     // Dialog state for creating / editing list
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -354,6 +370,7 @@ fun ListsScreen(modifier: Modifier = Modifier) {
             } else if (isSearching) {
                 // Search Results: Lists section + Items section with breadcrumbs!
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -515,6 +532,7 @@ fun ListsScreen(modifier: Modifier = Modifier) {
             } else {
                 val displayLists = if (draggingListId != null) (localReorderLists ?: matchingLists) else matchingLists
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,10 +27,21 @@ import com.kairo.app.ui.theme.KairoBackground
 
 
 @Composable
-fun AnalyticsScreen(modifier: Modifier = Modifier) {
+fun AnalyticsScreen(
+    resetTrigger: Int = 0,
+    modifier: Modifier = Modifier
+) {
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(resetTrigger) {
+        if (resetTrigger > 0) {
+            searchQuery = ""
+            isSearchActive = false
+            showSettingsDialog = false
+        }
+    }
 
     Column(
         modifier = modifier

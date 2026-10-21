@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -110,6 +111,7 @@ import com.kairo.app.ui.components.SettingsDialog
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TasksScreen(
+    resetTrigger: Int = 0,
     modifier: Modifier = Modifier,
     viewModel: TaskViewModel = viewModel()
 ) {
@@ -129,6 +131,25 @@ fun TasksScreen(
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteWarningDialog by remember { mutableStateOf(false) }
     var showCompleteWarningDialog by remember { mutableStateOf(false) }
+
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(resetTrigger) {
+        if (resetTrigger > 0) {
+            isSelectionMode = false
+            selectedTaskIds = emptySet()
+            if (uiState.isSearchActive) {
+                viewModel.closeSearchBar()
+            }
+            if (uiState.breadcrumbStack.isNotEmpty()) {
+                viewModel.navigateBreadcrumbTo(-1)
+            }
+            viewModel.setShowCreateDialog(false)
+            viewModel.dismissTaskDetails()
+            viewModel.dismissEditTask()
+            listState.animateScrollToItem(0)
+        }
+    }
 
     var tickerMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -442,6 +463,7 @@ fun TasksScreen(
             }
         ) { innerPadding ->
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),

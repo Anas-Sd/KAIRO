@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -93,6 +94,7 @@ private data class ActiveTargetDayPicker(
 
 @Composable
 fun HabitsScreen(
+    resetTrigger: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val habitsWithStats by HabitRepository.habitsWithStats.collectAsState()
@@ -103,6 +105,8 @@ fun HabitsScreen(
     LaunchedEffect(Unit) {
         HabitRepository.autoMarkMissedPastDays()
     }
+
+    val listState = rememberLazyListState()
 
     var selectedHabitForDetail by remember { mutableStateOf<HabitWithStats?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -119,6 +123,23 @@ fun HabitsScreen(
     var selectedHabitIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var showExportBottomSheet by remember { mutableStateOf(false) }
+
+    LaunchedEffect(resetTrigger) {
+        if (resetTrigger > 0) {
+            searchQuery = ""
+            isSearchActive = false
+            isSelectionMode = false
+            selectedHabitIds = emptySet()
+            selectedHabitForDetail = null
+            activeIncrementNote = null
+            activeTargetPicker = null
+            showCreateDialog = false
+            showSettingsDialog = false
+            showDeleteConfirmDialog = false
+            showExportBottomSheet = false
+            listState.animateScrollToItem(0)
+        }
+    }
 
     // Drag-to-reorder state
     var draggingHabitId by remember { mutableStateOf<String?>(null) }
@@ -341,6 +362,7 @@ fun HabitsScreen(
 
             // Scrollable Content
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp),
