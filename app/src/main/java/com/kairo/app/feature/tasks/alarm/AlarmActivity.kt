@@ -160,8 +160,13 @@ open class AlarmActivity : ComponentActivity() {
                     onComplete = {
                         AlarmRingingService.stop(this@AlarmActivity)
                         if (taskId.isNotBlank()) {
+                            DirectBootAlarmStore.removeAlarm(this@AlarmActivity, taskId)
                             AlarmScheduler.cancelAlarm(this@AlarmActivity, taskId)
-                            TaskRepository.markTaskCompleted(taskId)
+                            if (DirectBootAlarmStore.isUserUnlocked(this@AlarmActivity)) {
+                                runCatching { TaskRepository.markTaskCompleted(taskId) }
+                            } else {
+                                DirectBootAlarmStore.recordPendingAction(this@AlarmActivity, taskId, "COMPLETE")
+                            }
                         }
                         val completeIntent = Intent(this@AlarmActivity, AlarmReceiver::class.java).apply {
                             action = AlarmReceiver.ACTION_COMPLETE_ALARM
@@ -175,7 +180,7 @@ open class AlarmActivity : ComponentActivity() {
                         AlarmRingingService.stop(this@AlarmActivity)
                         if (taskId.isNotBlank()) {
                             val existing = TaskRepository.getTaskById(taskId)
-                                ?: LocalTaskDatabase.getInstance(this@AlarmActivity).getTaskById(taskId)
+                                ?: runCatching { LocalTaskDatabase.getInstance(this@AlarmActivity).getTaskById(taskId) }.getOrNull()
                             if (existing != null) {
                                 val todayStart = Calendar.getInstance().apply {
                                     set(Calendar.HOUR_OF_DAY, 0)
@@ -198,7 +203,7 @@ open class AlarmActivity : ComponentActivity() {
                                     snoozeUntilMillis = null,
                                     updatedAt = System.currentTimeMillis()
                                 )
-                                TaskRepository.updateTask(updated)
+                                runCatching { TaskRepository.updateTask(updated) }
                                 AlarmScheduler.cancelAlarm(this@AlarmActivity, taskId)
                                 AlarmScheduler.scheduleAlarm(this@AlarmActivity, updated, targetMillis)
                             }
@@ -218,7 +223,7 @@ open class AlarmActivity : ComponentActivity() {
                         AlarmRingingService.stop(this@AlarmActivity)
                         val snoozeMillis = System.currentTimeMillis() + (minutes * 60 * 1000L)
                         if (taskId.isNotBlank()) {
-                            TaskRepository.snoozeTask(taskId, snoozeMillis)
+                            runCatching { TaskRepository.snoozeTask(taskId, snoozeMillis) }
                         }
                         val snoozeIntent = Intent(this@AlarmActivity, AlarmReceiver::class.java).apply {
                             action = AlarmReceiver.ACTION_SNOOZE_ALARM
@@ -240,8 +245,13 @@ open class AlarmActivity : ComponentActivity() {
                     onDismiss = {
                         AlarmRingingService.stop(this@AlarmActivity)
                         if (taskId.isNotBlank()) {
+                            DirectBootAlarmStore.removeAlarm(this@AlarmActivity, taskId)
                             AlarmScheduler.cancelAlarm(this@AlarmActivity, taskId)
-                            TaskRepository.markTaskOverdue(taskId)
+                            if (DirectBootAlarmStore.isUserUnlocked(this@AlarmActivity)) {
+                                runCatching { TaskRepository.markTaskOverdue(taskId) }
+                            } else {
+                                DirectBootAlarmStore.recordPendingAction(this@AlarmActivity, taskId, "DISMISS")
+                            }
                         }
                         val dismissIntent = Intent(this@AlarmActivity, AlarmReceiver::class.java).apply {
                             action = AlarmReceiver.ACTION_DISMISS_ALARM
@@ -254,8 +264,13 @@ open class AlarmActivity : ComponentActivity() {
                     onCloseHeader = {
                         AlarmRingingService.stop(this@AlarmActivity)
                         if (taskId.isNotBlank()) {
+                            DirectBootAlarmStore.removeAlarm(this@AlarmActivity, taskId)
                             AlarmScheduler.cancelAlarm(this@AlarmActivity, taskId)
-                            TaskRepository.markTaskOverdue(taskId)
+                            if (DirectBootAlarmStore.isUserUnlocked(this@AlarmActivity)) {
+                                runCatching { TaskRepository.markTaskOverdue(taskId) }
+                            } else {
+                                DirectBootAlarmStore.recordPendingAction(this@AlarmActivity, taskId, "DISMISS")
+                            }
                         }
                         val dismissIntent = Intent(this@AlarmActivity, AlarmReceiver::class.java).apply {
                             action = AlarmReceiver.ACTION_DISMISS_ALARM

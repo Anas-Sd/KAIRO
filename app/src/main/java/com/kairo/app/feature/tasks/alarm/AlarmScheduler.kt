@@ -156,10 +156,13 @@ internal object AlarmScheduler {
                 alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
                 Log.i(TAG, "Successfully scheduled alarm clock for '${task.title}' at $triggerTime")
             }
+            // Save to Device-Protected storage for Direct Boot survival across reboots/scheduled power-on
+            DirectBootAlarmStore.saveAlarm(context, task, triggerTime)
         } catch (e: SecurityException) {
             Log.w(TAG, "SecurityException on setAlarmClock, falling back to setAndAllowWhileIdle", e)
             try {
                 alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+                DirectBootAlarmStore.saveAlarm(context, task, triggerTime)
             } catch (ex: Exception) {
                 Log.e(TAG, "Failed fallback alarm scheduling", ex)
             }
@@ -169,6 +172,7 @@ internal object AlarmScheduler {
     }
 
     fun cancelAlarm(context: Context, taskId: String) {
+        DirectBootAlarmStore.removeAlarm(context, taskId)
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
         val requestCode = taskId.hashCode()
 

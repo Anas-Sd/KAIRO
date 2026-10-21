@@ -158,12 +158,18 @@ open class AlarmRingingService : Service() {
 
         // Validation guard: Terminate immediately if task is completed or deleted
         if (taskId.isNotBlank()) {
-            val task = TaskRepository.getTaskById(taskId)
-                ?: LocalTaskDatabase.getInstance(this).getTaskById(taskId)
-            if (task == null || task.isCompleted) {
-                Log.i(TAG, "Task '$taskId' is completed or deleted. Terminating AlarmRingingService immediately.")
-                stopRingingAndSelf()
-                return START_NOT_STICKY
+            val isUnlocked = DirectBootAlarmStore.isUserUnlocked(this)
+            if (isUnlocked) {
+                val task = TaskRepository.getTaskById(taskId)
+                    ?: runCatching { LocalTaskDatabase.getInstance(this).getTaskById(taskId) }.getOrNull()
+                if (task == null || task.isCompleted) {
+                    Log.i(TAG, "Task '$taskId' is completed or deleted. Terminating AlarmRingingService immediately.")
+                    stopRingingAndSelf()
+                    return START_NOT_STICKY
+                }
+            } else {
+                val item = DirectBootAlarmStore.getAlarm(this, taskId)
+                Log.i(TAG, "AlarmRingingService in Direct Boot mode for task '$taskId' (found in DE store: ${item != null})")
             }
         }
         val title = intent.getStringExtra(EXTRA_TASK_TITLE).orEmpty().ifBlank { "Task Reminder" }

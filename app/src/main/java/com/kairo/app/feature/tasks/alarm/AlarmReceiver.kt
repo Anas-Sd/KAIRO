@@ -68,27 +68,34 @@ open class AlarmReceiver : BroadcastReceiver() {
 
         // 0. Active Validation Guard: Never ring for completed, deleted, or future-rescheduled tasks
         if (taskId.isNotBlank()) {
-            val task = TaskRepository.getTaskById(taskId)
-                ?: LocalTaskDatabase.getInstance(context).getTaskById(taskId)
+            val isUnlocked = DirectBootAlarmStore.isUserUnlocked(context)
+            if (isUnlocked) {
+                val task = TaskRepository.getTaskById(taskId)
+                    ?: runCatching { LocalTaskDatabase.getInstance(context).getTaskById(taskId) }.getOrNull()
 
-            if (task == null) {
-                Log.i(TAG, "Task '$taskId' no longer exists in database. Aborting alarm.")
-                AlarmScheduler.cancelAlarm(context, taskId)
-                return
-            }
+                if (task == null) {
+                    Log.i(TAG, "Task '$taskId' no longer exists in database. Aborting alarm.")
+                    AlarmScheduler.cancelAlarm(context, taskId)
+                    return
+                }
 
-            if (task.isCompleted) {
-                Log.i(TAG, "Task '$taskId' ('${task.title}') is already completed. Aborting alarm.")
-                AlarmScheduler.cancelAlarm(context, taskId)
-                return
-            }
+                if (task.isCompleted) {
+                    Log.i(TAG, "Task '$taskId' ('${task.title}') is already completed. Aborting alarm.")
+                    AlarmScheduler.cancelAlarm(context, taskId)
+                    return
+                }
 
-            val currentTrigger = AlarmScheduler.calculateTriggerMillis(task.dueDate, task.dueTime, task.dueDateMillis)
-            if (currentTrigger != null && currentTrigger > System.currentTimeMillis() + 60000L) {
-                Log.i(TAG, "Task '$taskId' ('${task.title}') was rescheduled to the future ($currentTrigger). Skipping obsolete alarm.")
-                AlarmScheduler.cancelAlarm(context, taskId)
-                AlarmScheduler.scheduleAlarm(context, task, currentTrigger)
-                return
+                val currentTrigger = AlarmScheduler.calculateTriggerMillis(task.dueDate, task.dueTime, task.dueDateMillis)
+                if (currentTrigger != null && currentTrigger > System.currentTimeMillis() + 60000L) {
+                    Log.i(TAG, "Task '$taskId' ('${task.title}') was rescheduled to the future ($currentTrigger). Skipping obsolete alarm.")
+                    AlarmScheduler.cancelAlarm(context, taskId)
+                    AlarmScheduler.scheduleAlarm(context, task, currentTrigger)
+                    return
+                }
+            } else {
+                // Direct Boot mode: User has not unlocked the phone yet. Validate against DirectBootAlarmStore
+                val directBootItem = DirectBootAlarmStore.getAlarm(context, taskId)
+                Log.i(TAG, "Alarm triggered in Direct Boot mode for task '$taskId' (found in DE store: ${directBootItem != null})")
             }
         }
 
@@ -135,7 +142,7 @@ open class AlarmReceiver : BroadcastReceiver() {
         }
         ContextCompat.startForegroundService(context, serviceIntent)
 
-        if (taskId.isNotBlank()) {
+        if (taskId.isNotBlank() && DirectBootAlarmStore.isUserUnlocked(context)) {
             try {
                 LocalTaskDatabase.getInstance(context).insertAlarmLog(taskId, "RING", "Alarm triggered and ringing")
             } catch (e: Exception) {
@@ -204,21 +211,26 @@ open class AlarmReceiver : BroadcastReceiver() {
         notifyAlarmOverlayFinish(context)
 
         if (taskId.isNotBlank()) {
-            try {
-                LocalTaskDatabase.getInstance(context).insertAlarmLog(taskId, "COMPLETED", "Completed via alarm")
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to log COMPLETED event: ${e.message}")
-            }
+            DirectBootAlarmStore.removeAlarm(context, taskId)
             AlarmScheduler.cancelAlarm(context, taskId)
-            val pendingResult = goAsync()
-            CoroutineScope(Dispatchers.IO).launch {
+            if (DirectBootAlarmStore.isUserUnlocked(context)) {
                 try {
-                    TaskRepository.markTaskCompleted(taskId)
+                    LocalTaskDatabase.getInstance(context).insertAlarmLog(taskId, "COMPLETED", "Completed via alarm")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error in handleCompleteAlarm: ${e.message}", e)
-                } finally {
-                    pendingResult.finish()
+                    Log.w(TAG, "Failed to log COMPLETED event: ${e.message}")
                 }
+                val pendingResult = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        TaskRepository.markTaskCompleted(taskId)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in handleCompleteAlarm: ${e.message}", e)
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }
+            } else {
+                DirectBootAlarmStore.recordPendingAction(context, taskId, "COMPLETE")
             }
             Toast.makeText(context, "Task marked as completed", Toast.LENGTH_SHORT).show()
         }
@@ -284,21 +296,26 @@ open class AlarmReceiver : BroadcastReceiver() {
         notifyAlarmOverlayFinish(context)
 
         if (taskId.isNotBlank()) {
-            try {
-                LocalTaskDatabase.getInstance(context).insertAlarmLog(taskId, "DISMISSED", "Alarm dismissed (moved to Overdue)")
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to log DISMISSED event: ${e.message}")
-            }
+            DirectBootAlarmStore.removeAlarm(context, taskId)
             AlarmScheduler.cancelAlarm(context, taskId)
-            val pendingResult = goAsync()
-            CoroutineScope(Dispatchers.IO).launch {
+            if (DirectBootAlarmStore.isUserUnlocked(context)) {
                 try {
-                    TaskRepository.markTaskOverdue(taskId)
+                    LocalTaskDatabase.getInstance(context).insertAlarmLog(taskId, "DISMISSED", "Alarm dismissed (moved to Overdue)")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error in handleDismissAlarm: ${e.message}", e)
-                } finally {
-                    pendingResult.finish()
+                    Log.w(TAG, "Failed to log DISMISSED event: ${e.message}")
                 }
+                val pendingResult = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        TaskRepository.markTaskOverdue(taskId)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in handleDismissAlarm: ${e.message}", e)
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }
+            } else {
+                DirectBootAlarmStore.recordPendingAction(context, taskId, "DISMISS")
             }
             Toast.makeText(context, "Alarm dismissed • Task moved to Overdue", Toast.LENGTH_SHORT).show()
         }

@@ -78,6 +78,7 @@ object TaskRepository {
         _tasks.value = sanitizedList
         Log.d("TaskRepository", "Loaded ${sanitizedList.size} tasks immediately from local SQLite database")
         TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
+        com.kairo.app.feature.tasks.alarm.DirectBootAlarmStore.syncFromTasks(KairoApplication.instance, sanitizedList)
     }
 
     fun clearTasksLocally() {

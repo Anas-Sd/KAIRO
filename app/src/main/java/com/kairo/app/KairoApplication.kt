@@ -18,11 +18,15 @@ class KairoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        try {
-            com.kairo.app.data.sync.SyncManager.initialize(this)
-            com.kairo.app.feature.sync.FcmTokenManager.syncTokenIfLoggedIn()
-        } catch (e: Throwable) {
-            android.util.Log.e("KairoApplication", "Error initializing services: ${e.message}", e)
+        if (com.kairo.app.feature.tasks.alarm.DirectBootAlarmStore.isUserUnlocked(this)) {
+            try {
+                com.kairo.app.data.sync.SyncManager.initialize(this)
+                com.kairo.app.feature.sync.FcmTokenManager.syncTokenIfLoggedIn()
+            } catch (e: Throwable) {
+                android.util.Log.e("KairoApplication", "Error initializing services: ${e.message}", e)
+            }
+        } else {
+            android.util.Log.i("KairoApplication", "App starting in Direct Boot mode (device locked). Deferring sync/token init until unlock.")
         }
     }
 }

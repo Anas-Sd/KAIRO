@@ -48,6 +48,7 @@
         <activity
             android:name=".feature.tasks.alarm.AlarmActivity"
             android:exported="true"
+            android:directBootAware="true"
             android:taskAffinity=""
             android:launchMode="singleInstance"
             android:excludeFromRecents="true"
@@ -60,6 +61,7 @@
         <activity
             android:name=".ui.screens.alarm.AlarmActivity"
             android:exported="true"
+            android:directBootAware="true"
             android:taskAffinity=""
             android:launchMode="singleInstance"
             android:excludeFromRecents="true"
@@ -74,15 +76,18 @@
         <service
             android:name=".feature.tasks.alarm.AlarmRingingService"
             android:foregroundServiceType="mediaPlayback"
+            android:directBootAware="true"
             android:exported="false" />
         <service
             android:name=".alarm.AlarmRingingService"
             android:foregroundServiceType="mediaPlayback"
+            android:directBootAware="true"
             android:exported="false" />
 
         <!-- Alarm Broadcast Receiver -->
         <receiver
             android:name=".feature.tasks.alarm.AlarmReceiver"
+            android:directBootAware="true"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.kairo.app.ACTION_TRIGGER_ALARM" />
@@ -94,6 +99,7 @@
         </receiver>
         <receiver
             android:name=".alarm.AlarmReceiver"
+            android:directBootAware="true"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.kairo.app.ACTION_TRIGGER_ALARM" />
@@ -104,13 +110,19 @@
             </intent-filter>
         </receiver>
 
-        <!-- Device Boot Completed Receiver to Reschedule Active Alarms & Geofences -->
+        <!-- Device Boot Completed Receiver to Reschedule Active Alarms & Geofences (Direct Boot Aware) -->
         <receiver
             android:name=".alarm.BootReceiver"
+            android:directBootAware="true"
             android:exported="true">
             <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>
         </receiver>
 
