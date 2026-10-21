@@ -262,4 +262,79 @@ class ListHierarchyTest {
         toReopenC.addAll(ListRepository.getAncestorIds("C", items))
         assertEquals(setOf("C", "P", "GP"), toReopenC)
     }
+
+    @Test
+    fun testParentItems_automaticallyFloatToTop() {
+        // List A has items b, c, d. b has subtasks x, y, z.
+        // Therefore, b is a parent task, while c and d are leaf tasks.
+        // b must automatically come over the top of list A (before c and d).
+        val b = createItem("b", parentId = null)
+        val c = createItem("c", parentId = null)
+        val d = createItem("d", parentId = null)
+        val x = createItem("x", parentId = "b")
+        val y = createItem("y", parentId = "b")
+        val z = createItem("z", parentId = "b")
+
+        val allItems = listOf(b, c, d, x, y, z)
+        val rootItems = allItems.filter { it.parentId == null }
+
+        val (parents, leaves) = rootItems.partition { item ->
+            allItems.any { it.parentId == item.id }
+        }
+
+        val sortedDisplay = parents.sortedBy { it.position } + leaves.sortedBy { it.position }
+        assertEquals("b", sortedDisplay[0].id)
+        assertEquals(listOf("b", "c", "d"), sortedDisplay.map { it.id })
+    }
+
+    @Test
+    fun testConvertItemToStandaloneList_createsNewListBelowCurrent() {
+        // List A at position 0, List B at position 1
+        val listA = TaskList(id = "list-A", name = "List A", position = 0)
+        val listB = TaskList(id = "list-B", name = "List B", position = 1)
+        val currentLists = listOf(listA, listB)
+
+        // Item X is in List A
+        val itemX = ListItem(id = "x", listId = "list-A", parentId = null, title = "Task X")
+        val childX = ListItem(id = "sub-x", listId = "list-A", parentId = "x", title = "Subtask of X")
+        val itemY = ListItem(id = "y", listId = "list-A", parentId = null, title = "Task Y")
+        val allItems = listOf(itemX, childX, itemY)
+
+        val sourceListIndex = currentLists.indexOfFirst { it.id == itemX.listId }
+        val insertPos = sourceListIndex + 1
+
+        val newList = TaskList(
+            id = "new-list-X",
+            name = itemX.title,
+            position = insertPos
+        )
+
+        val updatedLists = currentLists.toMutableList()
+        updatedLists.add(insertPos, newList)
+        val reindexedLists = updatedLists.mapIndexed { idx, list -> list.copy(position = idx) }
+
+        // New list X is inserted immediately below List A
+        assertEquals("list-A", reindexedLists[0].id)
+        assertEquals(0, reindexedLists[0].position)
+        assertEquals("new-list-X", reindexedLists[1].id)
+        assertEquals(1, reindexedLists[1].position)
+        assertEquals("list-B", reindexedLists[2].id)
+        assertEquals(2, reindexedLists[2].position)
+
+        // Subtask childX is reparented to new-list-X with parentId = null
+        val descendantIds = ListRepository.getDescendantIds(itemX.id, allItems)
+        val newItems = allItems.filter { it.id != itemX.id }.map { item ->
+            if (descendantIds.contains(item.id)) {
+                val newParentId = if (item.parentId == itemX.id) null else item.parentId
+                item.copy(listId = newList.id, parentId = newParentId)
+            } else item
+        }
+
+        val migratedChild = newItems.find { it.id == "sub-x" }!!
+        assertEquals("new-list-X", migratedChild.listId)
+        assertEquals(null, migratedChild.parentId)
+
+        val untouchedY = newItems.find { it.id == "y" }!!
+        assertEquals("list-A", untouchedY.listId)
+    }
 }

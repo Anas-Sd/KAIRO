@@ -16,14 +16,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -49,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,6 +64,7 @@ import com.kairo.app.feature.lists.model.TaskList
 import com.kairo.app.feature.lists.ui.AdjustParentListDialog
 import com.kairo.app.feature.lists.ui.CreateListDialog
 import com.kairo.app.feature.lists.ui.ListDetailScreen
+import com.kairo.app.feature.lists.ui.ListReorderHandle
 import com.kairo.app.ui.components.AppHeader
 import com.kairo.app.ui.components.SettingsDialog
 import com.kairo.app.ui.theme.KairoBackground
@@ -214,9 +219,19 @@ fun ListsScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(filteredLists, key = { it.list.id }) { stats ->
+                    itemsIndexed(filteredLists, key = { _, stats -> stats.list.id }) { index, stats ->
                         ListOverviewCard(
                             stats = stats,
+                            canMoveUp = index > 0,
+                            canMoveDown = index < filteredLists.size - 1,
+                            onMoveUp = { ListRepository.moveListUp(stats.list.id) },
+                            onMoveDown = { ListRepository.moveListDown(stats.list.id) },
+                            onMoveToTop = { ListRepository.moveListToTop(stats.list.id) },
+                            onMoveToBottom = { ListRepository.moveListToBottom(stats.list.id) },
+                            onToggleComplete = {
+                                val isAllDone = stats.totalCount > 0 && stats.completedCount == stats.totalCount
+                                ListRepository.checkAllItems(stats.list.id, !isAllDone)
+                            },
                             onClick = { selectedListId = stats.list.id },
                             onEdit = { listToEdit = stats.list },
                             onAdjustParent = { listToAdjustParent = stats.list },
@@ -324,12 +339,20 @@ fun ListsScreen(modifier: Modifier = Modifier) {
 @Composable
 private fun ListOverviewCard(
     stats: ListWithStats,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onMoveToTop: () -> Unit,
+    onMoveToBottom: () -> Unit,
+    onToggleComplete: () -> Unit,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onAdjustParent: () -> Unit,
     onDelete: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val isAllCompleted = stats.totalCount > 0 && stats.completedCount == stats.totalCount
 
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -340,11 +363,36 @@ private fun ListOverviewCard(
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Reorder handle on the very left
+                ListReorderHandle(
+                    canMoveUp = canMoveUp,
+                    canMoveDown = canMoveDown,
+                    onMoveUp = onMoveUp,
+                    onMoveDown = onMoveDown,
+                    onMoveToTop = onMoveToTop,
+                    onMoveToBottom = onMoveToBottom
+                )
+
+                // Bi-directional completion checkbox
+                IconButton(
+                    onClick = onToggleComplete,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isAllCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        contentDescription = "Toggle Complete",
+                        tint = if (isAllCompleted) Color(0xFF10B981) else KairoOutlineVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
                 Box(
                     modifier = Modifier
                         .size(42.dp)
@@ -360,14 +408,15 @@ private fun ListOverviewCard(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = stats.list.name,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = if (isAllCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        textDecoration = if (isAllCompleted) TextDecoration.LineThrough else TextDecoration.None,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )

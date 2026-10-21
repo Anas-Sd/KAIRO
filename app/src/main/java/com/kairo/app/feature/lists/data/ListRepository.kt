@@ -246,6 +246,46 @@ object ListRepository {
         saveToDisk()
     }
 
+    fun moveListUp(listId: String) {
+        val current = _lists.value.sortedBy { it.position }.toMutableList()
+        val index = current.indexOfFirst { it.id == listId }
+        if (index > 0) {
+            val item = current.removeAt(index)
+            current.add(index - 1, item)
+            reorderLists(current)
+        }
+    }
+
+    fun moveListDown(listId: String) {
+        val current = _lists.value.sortedBy { it.position }.toMutableList()
+        val index = current.indexOfFirst { it.id == listId }
+        if (index != -1 && index < current.size - 1) {
+            val item = current.removeAt(index)
+            current.add(index + 1, item)
+            reorderLists(current)
+        }
+    }
+
+    fun moveListToTop(listId: String) {
+        val current = _lists.value.sortedBy { it.position }.toMutableList()
+        val index = current.indexOfFirst { it.id == listId }
+        if (index > 0) {
+            val item = current.removeAt(index)
+            current.add(0, item)
+            reorderLists(current)
+        }
+    }
+
+    fun moveListToBottom(listId: String) {
+        val current = _lists.value.sortedBy { it.position }.toMutableList()
+        val index = current.indexOfFirst { it.id == listId }
+        if (index != -1 && index < current.size - 1) {
+            val item = current.removeAt(index)
+            current.add(item)
+            reorderLists(current)
+        }
+    }
+
     fun moveListIntoList(sourceListId: String, targetListId: String) {
         if (sourceListId == targetListId) return
         val currentLists = _lists.value
@@ -549,5 +589,118 @@ object ListRepository {
         }
         _items.value = updated
         saveToDisk()
+    }
+
+    fun moveItemUp(itemId: String) {
+        val allItems = _items.value
+        val target = allItems.find { it.id == itemId } ?: return
+        val siblings = allItems.filter { it.listId == target.listId && it.parentId == target.parentId }
+        val hasSubtasks = allItems.any { it.parentId == itemId }
+        val peers = siblings.filter { (allItems.any { child -> child.parentId == it.id }) == hasSubtasks }
+            .sortedBy { it.position }
+            .toMutableList()
+        val index = peers.indexOfFirst { it.id == itemId }
+        if (index > 0) {
+            val item = peers.removeAt(index)
+            peers.add(index - 1, item)
+            val updatedMap = peers.mapIndexed { idx, itm -> itm.id to idx }.toMap()
+            _items.value = allItems.map { itm ->
+                if (updatedMap.containsKey(itm.id)) itm.copy(position = updatedMap[itm.id]!!) else itm
+            }
+            saveToDisk()
+        }
+    }
+
+    fun moveItemDown(itemId: String) {
+        val allItems = _items.value
+        val target = allItems.find { it.id == itemId } ?: return
+        val siblings = allItems.filter { it.listId == target.listId && it.parentId == target.parentId }
+        val hasSubtasks = allItems.any { it.parentId == itemId }
+        val peers = siblings.filter { (allItems.any { child -> child.parentId == it.id }) == hasSubtasks }
+            .sortedBy { it.position }
+            .toMutableList()
+        val index = peers.indexOfFirst { it.id == itemId }
+        if (index != -1 && index < peers.size - 1) {
+            val item = peers.removeAt(index)
+            peers.add(index + 1, item)
+            val updatedMap = peers.mapIndexed { idx, itm -> itm.id to idx }.toMap()
+            _items.value = allItems.map { itm ->
+                if (updatedMap.containsKey(itm.id)) itm.copy(position = updatedMap[itm.id]!!) else itm
+            }
+            saveToDisk()
+        }
+    }
+
+    fun moveItemToTop(itemId: String) {
+        val allItems = _items.value
+        val target = allItems.find { it.id == itemId } ?: return
+        val siblings = allItems.filter { it.listId == target.listId && it.parentId == target.parentId }
+        val hasSubtasks = allItems.any { it.parentId == itemId }
+        val peers = siblings.filter { (allItems.any { child -> child.parentId == it.id }) == hasSubtasks }
+            .sortedBy { it.position }
+            .toMutableList()
+        val index = peers.indexOfFirst { it.id == itemId }
+        if (index > 0) {
+            val item = peers.removeAt(index)
+            peers.add(0, item)
+            val updatedMap = peers.mapIndexed { idx, itm -> itm.id to idx }.toMap()
+            _items.value = allItems.map { itm ->
+                if (updatedMap.containsKey(itm.id)) itm.copy(position = updatedMap[itm.id]!!) else itm
+            }
+            saveToDisk()
+        }
+    }
+
+    fun moveItemToBottom(itemId: String) {
+        val allItems = _items.value
+        val target = allItems.find { it.id == itemId } ?: return
+        val siblings = allItems.filter { it.listId == target.listId && it.parentId == target.parentId }
+        val hasSubtasks = allItems.any { it.parentId == itemId }
+        val peers = siblings.filter { (allItems.any { child -> child.parentId == it.id }) == hasSubtasks }
+            .sortedBy { it.position }
+            .toMutableList()
+        val index = peers.indexOfFirst { it.id == itemId }
+        if (index != -1 && index < peers.size - 1) {
+            val item = peers.removeAt(index)
+            peers.add(item)
+            val updatedMap = peers.mapIndexed { idx, itm -> itm.id to idx }.toMap()
+            _items.value = allItems.map { itm ->
+                if (updatedMap.containsKey(itm.id)) itm.copy(position = updatedMap[itm.id]!!) else itm
+            }
+            saveToDisk()
+        }
+    }
+
+    fun convertItemToStandaloneList(itemId: String): TaskList? {
+        val allItems = _items.value
+        val targetItem = allItems.find { it.id == itemId } ?: return null
+        val currentLists = _lists.value
+        val sourceListIndex = currentLists.indexOfFirst { it.id == targetItem.listId }
+        val insertPos = if (sourceListIndex != -1) sourceListIndex + 1 else currentLists.size
+
+        val newList = TaskList(
+            id = UUID.randomUUID().toString(),
+            name = targetItem.title,
+            iconName = targetItem.iconName,
+            position = insertPos,
+            createdAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis()
+        )
+
+        val descendantIds = getDescendantIds(itemId, allItems)
+        val updatedLists = currentLists.toMutableList()
+        updatedLists.add(insertPos, newList)
+        _lists.value = updatedLists.mapIndexed { index, list -> list.copy(position = index) }
+
+        val newItems = allItems.filter { it.id != itemId }.map { item ->
+            if (descendantIds.contains(item.id)) {
+                val newParentId = if (item.parentId == itemId) null else item.parentId
+                item.copy(listId = newList.id, parentId = newParentId, updatedAt = System.currentTimeMillis())
+            } else item
+        }
+        _items.value = newItems
+        recalculateStats()
+        saveToDisk()
+        return newList
     }
 }

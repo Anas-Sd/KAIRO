@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
@@ -62,7 +63,8 @@ fun AdjustParentListItemDialog(
     item: ListItem,
     allItemsInList: List<ListItem>,
     onDismiss: () -> Unit,
-    onMoveConfirmed: (newParentId: String?, moveSubtasks: Boolean) -> Unit
+    onMoveConfirmed: (newParentId: String?, moveSubtasks: Boolean) -> Unit,
+    onConvertToStandalone: () -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedParentId by remember { mutableStateOf<String?>(item.parentId) }
@@ -234,6 +236,54 @@ fun AdjustParentListItemDialog(
                         }
                     }
 
+                    // Option: Convert to Standalone List (Below this list)
+                    item {
+                        val isStandaloneSelected = selectedParentId == "__STANDALONE__"
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isStandaloneSelected) KairoPrimary.copy(alpha = 0.12f) else KairoSurfaceContainerLow,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isStandaloneSelected) KairoPrimary.copy(alpha = 0.5f) else KairoOutlineVariant.copy(alpha = 0.18f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedParentId = "__STANDALONE__" }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isStandaloneSelected,
+                                    onClick = { selectedParentId = "__STANDALONE__" },
+                                    colors = RadioButtonDefaults.colors(selectedColor = KairoPrimary)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
+                                    contentDescription = null,
+                                    tint = if (isStandaloneSelected) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Standalone List",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isStandaloneSelected) KairoPrimary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Make a main list placed below current list",
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     items(eligibleParents) { candidate ->
                         val isCandidateSelected = selectedParentId == candidate.id
                         Surface(
@@ -299,6 +349,11 @@ fun AdjustParentListItemDialog(
 
                     Button(
                         onClick = {
+                            if (selectedParentId == "__STANDALONE__") {
+                                onConvertToStandalone()
+                                onDismiss()
+                                return@Button
+                            }
                             if (selectedParentId == item.parentId) {
                                 onDismiss()
                                 return@Button

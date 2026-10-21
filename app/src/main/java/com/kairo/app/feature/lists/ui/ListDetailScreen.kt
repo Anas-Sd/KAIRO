@@ -7,6 +7,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -138,28 +141,35 @@ fun ListDetailScreen(
     }
 
     // Items scoped to current level (root if breadcrumbs empty, or children of currentParent)
-    val scopedActiveItems = remember(activeItems, currentParent) {
-        if (currentParent == null) {
+    // Parent items (items that have subtasks) automatically float to the top above leaf items
+    val scopedActiveItems = remember(activeItems, listItems, currentParent) {
+        val base = if (currentParent == null) {
             activeItems.filter { it.parentId == null }
         } else {
             activeItems.filter { it.parentId == currentParent.id }
         }
+        val (parents, leaves) = base.partition { item ->
+            listItems.any { it.parentId == item.id }
+        }
+        parents.sortedBy { it.position } + leaves.sortedBy { it.position }
     }
 
-    val scopedCompletedItems = remember(completedItems, currentParent) {
-        if (currentParent == null) {
+    val scopedCompletedItems = remember(completedItems, listItems, currentParent) {
+        val base = if (currentParent == null) {
             completedItems.filter { it.parentId == null }
         } else {
             completedItems.filter { it.parentId == currentParent.id }
         }
+        val (parents, leaves) = base.partition { item ->
+            listItems.any { it.parentId == item.id }
+        }
+        parents.sortedBy { it.position } + leaves.sortedBy { it.position }
     }
 
     // Two sections: Active (expanded) and Completed (collapsed by default)
     var isCompletedSectionExpanded by remember { mutableStateOf(false) }
 
-    // Menus & Dialog states
-    var menuExpanded by remember { mutableStateOf(false) }
-    var parentCardMenuExpanded by remember { mutableStateOf(false) }
+    // Dialog states
     var showEditListDialog by remember { mutableStateOf(false) }
     var showAdjustParentListDialog by remember { mutableStateOf(false) }
     var showDeleteListDialog by remember { mutableStateOf(false) }
@@ -230,7 +240,7 @@ fun ListDetailScreen(
                         modifier = Modifier.weight(1f)
                     )
 
-                    // Plus (+) button on left of 3 dots to add multiple items at once
+                    // Plus (+) button to add multiple items at once
                     IconButton(onClick = {
                         targetParentForMultiAdd = currentParent
                         showMultiAddDialog = true
@@ -240,80 +250,6 @@ fun ListDetailScreen(
                             contentDescription = "Add Items",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
-                    }
-
-                    // 3-dots Menu for List
-                    Box {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "List Options",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                            modifier = Modifier.background(KairoSurfaceContainerHigh)
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Edit List") },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Edit, contentDescription = null, tint = KairoPrimary)
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    showEditListDialog = true
-                                }
-                            )
-
-                            DropdownMenuItem(
-                                text = { Text("Adjust Parent") },
-                                leadingIcon = {
-                                    Icon(Icons.Default.AccountTree, contentDescription = null, tint = KairoPrimary)
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    showAdjustParentListDialog = true
-                                }
-                            )
-
-                            DropdownMenuItem(
-                                text = { Text("Check All") },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF10B981))
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    ListRepository.checkAllItems(listId, true)
-                                }
-                            )
-
-                            DropdownMenuItem(
-                                text = { Text("Uncheck All") },
-                                leadingIcon = {
-                                    Icon(Icons.Default.RadioButtonUnchecked, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    ListRepository.checkAllItems(listId, false)
-                                }
-                            )
-
-                            HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
-
-                            DropdownMenuItem(
-                                text = { Text("Delete List", color = KairoHighUrgent) },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Delete, contentDescription = null, tint = KairoHighUrgent)
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    showDeleteListDialog = true
-                                }
-                            )
-                        }
                     }
                 }
             }
@@ -359,7 +295,10 @@ fun ListDetailScreen(
                     shape = RoundedCornerShape(16.dp),
                     color = KairoSurfaceContainer,
                     border = BorderStroke(1.2.dp, KairoPrimary.copy(alpha = 0.45f)),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { selectedItemForDetails = currentParent }
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(
@@ -433,75 +372,6 @@ fun ListDetailScreen(
                                     color = if (percentage == 100) Color(0xFF10B981) else KairoPrimary,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                 )
-                            }
-
-                            // 3-dots Menu for Current Parent
-                            Box {
-                                IconButton(
-                                    onClick = { parentCardMenuExpanded = true },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.MoreVert,
-                                        contentDescription = "Parent Actions",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-
-                                DropdownMenu(
-                                    expanded = parentCardMenuExpanded,
-                                    onDismissRequest = { parentCardMenuExpanded = false },
-                                    modifier = Modifier.background(KairoSurfaceContainerHigh)
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("Add Subtask") },
-                                        leadingIcon = { Icon(Icons.Default.Add, null, tint = KairoPrimary) },
-                                        onClick = {
-                                            parentCardMenuExpanded = false
-                                            targetParentForMultiAdd = currentParent
-                                            showMultiAddDialog = true
-                                        }
-                                    )
-
-                                    DropdownMenuItem(
-                                        text = { Text("Adjust Parent") },
-                                        leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
-                                        onClick = {
-                                            parentCardMenuExpanded = false
-                                            selectedItemForAdjustParent = currentParent
-                                        }
-                                    )
-
-                                    DropdownMenuItem(
-                                        text = { Text("Details") },
-                                        leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
-                                        onClick = {
-                                            parentCardMenuExpanded = false
-                                            selectedItemForDetails = currentParent
-                                        }
-                                    )
-
-                                    DropdownMenuItem(
-                                        text = { Text("Edit") },
-                                        leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
-                                        onClick = {
-                                            parentCardMenuExpanded = false
-                                            selectedItemForEdit = currentParent
-                                        }
-                                    )
-
-                                    HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
-
-                                    DropdownMenuItem(
-                                        text = { Text("Delete", color = KairoHighUrgent) },
-                                        leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
-                                        onClick = {
-                                            parentCardMenuExpanded = false
-                                            selectedItemForDelete = currentParent
-                                        }
-                                    )
-                                }
                             }
                         }
 
@@ -626,39 +496,40 @@ fun ListDetailScreen(
                         }
                     }
                 } else {
-                    items(scopedActiveItems, key = { it.id }) { item ->
+                    itemsIndexed(scopedActiveItems, key = { _, item -> item.id }) { index, item ->
                         val childSubtasks = listItems.filter { it.parentId == item.id }
                         val hasSubtasks = childSubtasks.isNotEmpty()
                         val completedSubtasks = childSubtasks.count { it.isCompleted }
+
+                        val canMoveUp = index > 0
+                        val canMoveDown = index < scopedActiveItems.size - 1
 
                         if (hasSubtasks) {
                             ParentListItemCard(
                                 item = item,
                                 completedSubtasks = completedSubtasks,
                                 totalSubtasks = childSubtasks.size,
+                                canMoveUp = canMoveUp,
+                                canMoveDown = canMoveDown,
+                                onMoveUp = { ListRepository.moveItemUp(item.id) },
+                                onMoveDown = { ListRepository.moveItemDown(item.id) },
+                                onMoveToTop = { ListRepository.moveItemToTop(item.id) },
+                                onMoveToBottom = { ListRepository.moveItemToBottom(item.id) },
                                 onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
                                 onDrillDown = { breadcrumbStack.add(item) },
-                                onShowDetails = { selectedItemForDetails = item },
-                                onAddSubtask = { parentId ->
-                                    targetParentForMultiAdd = listItems.find { it.id == parentId }
-                                    showMultiAddDialog = true
-                                },
-                                onAdjustParent = { selectedItemForAdjustParent = it },
-                                onEdit = { selectedItemForEdit = it },
-                                onDelete = { selectedItemForDelete = it }
+                                onShowDetails = { selectedItemForDetails = item }
                             )
                         } else {
                             LeafListItemCard(
                                 item = item,
+                                canMoveUp = canMoveUp,
+                                canMoveDown = canMoveDown,
+                                onMoveUp = { ListRepository.moveItemUp(item.id) },
+                                onMoveDown = { ListRepository.moveItemDown(item.id) },
+                                onMoveToTop = { ListRepository.moveItemToTop(item.id) },
+                                onMoveToBottom = { ListRepository.moveItemToBottom(item.id) },
                                 onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
-                                onShowDetails = { selectedItemForDetails = item },
-                                onAddSubtask = { parentId ->
-                                    targetParentForMultiAdd = listItems.find { it.id == parentId }
-                                    showMultiAddDialog = true
-                                },
-                                onAdjustParent = { selectedItemForAdjustParent = it },
-                                onEdit = { selectedItemForEdit = it },
-                                onDelete = { selectedItemForDelete = it }
+                                onShowDetails = { selectedItemForDetails = item }
                             )
                         }
                     }
@@ -722,39 +593,40 @@ fun ListDetailScreen(
                         }
 
                         if (isCompletedSectionExpanded) {
-                            items(scopedCompletedItems, key = { it.id }) { completedItem ->
+                            itemsIndexed(scopedCompletedItems, key = { _, completedItem -> completedItem.id }) { index, completedItem ->
                                 val childSubtasks = listItems.filter { it.parentId == completedItem.id }
                                 val hasSubtasks = childSubtasks.isNotEmpty()
                                 val completedCount = childSubtasks.count { it.isCompleted }
+
+                                val canMoveUp = index > 0
+                                val canMoveDown = index < scopedCompletedItems.size - 1
 
                                 if (hasSubtasks) {
                                     ParentListItemCard(
                                         item = completedItem,
                                         completedSubtasks = completedCount,
                                         totalSubtasks = childSubtasks.size,
+                                        canMoveUp = canMoveUp,
+                                        canMoveDown = canMoveDown,
+                                        onMoveUp = { ListRepository.moveItemUp(completedItem.id) },
+                                        onMoveDown = { ListRepository.moveItemDown(completedItem.id) },
+                                        onMoveToTop = { ListRepository.moveItemToTop(completedItem.id) },
+                                        onMoveToBottom = { ListRepository.moveItemToBottom(completedItem.id) },
                                         onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
                                         onDrillDown = { breadcrumbStack.add(completedItem) },
-                                        onShowDetails = { selectedItemForDetails = completedItem },
-                                        onAddSubtask = { parentId ->
-                                            targetParentForMultiAdd = listItems.find { it.id == parentId }
-                                            showMultiAddDialog = true
-                                        },
-                                        onAdjustParent = { selectedItemForAdjustParent = it },
-                                        onEdit = { selectedItemForEdit = it },
-                                        onDelete = { selectedItemForDelete = it }
+                                        onShowDetails = { selectedItemForDetails = completedItem }
                                     )
                                 } else {
                                     LeafListItemCard(
                                         item = completedItem,
+                                        canMoveUp = canMoveUp,
+                                        canMoveDown = canMoveDown,
+                                        onMoveUp = { ListRepository.moveItemUp(completedItem.id) },
+                                        onMoveDown = { ListRepository.moveItemDown(completedItem.id) },
+                                        onMoveToTop = { ListRepository.moveItemToTop(completedItem.id) },
+                                        onMoveToBottom = { ListRepository.moveItemToBottom(completedItem.id) },
                                         onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
-                                        onShowDetails = { selectedItemForDetails = completedItem },
-                                        onAddSubtask = { parentId ->
-                                            targetParentForMultiAdd = listItems.find { it.id == parentId }
-                                            showMultiAddDialog = true
-                                        },
-                                        onAdjustParent = { selectedItemForAdjustParent = it },
-                                        onEdit = { selectedItemForEdit = it },
-                                        onDelete = { selectedItemForDelete = it }
+                                        onShowDetails = { selectedItemForDetails = completedItem }
                                     )
                                 }
                             }
@@ -903,6 +775,20 @@ fun ListDetailScreen(
             onDismiss = { selectedItemForAdjustParent = null },
             onMoveConfirmed = { newParentId, moveSubtasks ->
                 ListRepository.adjustItemParent(selectedItemForAdjustParent!!.id, newParentId, moveSubtasks)
+                selectedItemForAdjustParent = null
+            },
+            onConvertToStandalone = {
+                val target = selectedItemForAdjustParent!!
+                val wasInBreadcrumbs = breadcrumbStack.any { it.id == target.id }
+                ListRepository.convertItemToStandaloneList(target.id)
+                if (wasInBreadcrumbs) {
+                    val idx = breadcrumbStack.indexOfFirst { it.id == target.id }
+                    if (idx != -1) {
+                        while (breadcrumbStack.size > idx) {
+                            breadcrumbStack.removeLast()
+                        }
+                    }
+                }
                 selectedItemForAdjustParent = null
             }
         )
@@ -1065,29 +951,32 @@ fun ListBreadcrumbBar(
 
 /**
  * Parent List Item Card (Matches Pic 1 List Overview Card):
- * - 42.dp Icon container Box
+ * - Reorder handle on the very left
  * - Checkbox to toggle parent and all subtasks
+ * - 42.dp Icon container Box
  * - Bold title (16.sp)
  * - Subtitle: "X of Y completed"
  * - Progress percentage pill badge
- * - 3-dots menu: Add Subtask, Adjust Parent, Details, Edit, Delete
+ * - Chevron drill-down indicator
  * - 6.dp linear progress indicator
- * - Clicking the card drills down into its subtasks
+ * - Tapping drills down into subtasks; long-press opens details sheet
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ParentListItemCard(
     item: ListItem,
     completedSubtasks: Int,
     totalSubtasks: Int,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onMoveToTop: () -> Unit,
+    onMoveToBottom: () -> Unit,
     onToggleCompleted: (id: String) -> Unit,
     onDrillDown: () -> Unit,
-    onShowDetails: () -> Unit,
-    onAddSubtask: (parentId: String) -> Unit,
-    onAdjustParent: (item: ListItem) -> Unit,
-    onEdit: (item: ListItem) -> Unit,
-    onDelete: (item: ListItem) -> Unit
+    onShowDetails: () -> Unit
 ) {
-    var itemMenuExpanded by remember { mutableStateOf(false) }
     val percentage = if (totalSubtasks > 0) (completedSubtasks * 100) / totalSubtasks else 0
     val progressFloat = if (totalSubtasks > 0) completedSubtasks.toFloat() / totalSubtasks.toFloat() else 0f
 
@@ -1098,13 +987,26 @@ private fun ParentListItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onDrillDown)
+            .combinedClickable(
+                onClick = onDrillDown,
+                onLongClick = onShowDetails
+            )
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Reorder handle on the very left
+                ListReorderHandle(
+                    canMoveUp = canMoveUp,
+                    canMoveDown = canMoveDown,
+                    onMoveUp = onMoveUp,
+                    onMoveDown = onMoveDown,
+                    onMoveToTop = onMoveToTop,
+                    onMoveToBottom = onMoveToBottom
+                )
+
                 // Checkbox to complete parent and all subtasks
                 IconButton(
                     onClick = { onToggleCompleted(item.id) },
@@ -1136,7 +1038,7 @@ private fun ParentListItemCard(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -1174,76 +1076,18 @@ private fun ParentListItemCard(
                     )
                 }
 
-                // 3-dots Menu
-                Box {
-                    IconButton(
-                        onClick = { itemMenuExpanded = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Options",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                Spacer(modifier = Modifier.width(4.dp))
 
-                    DropdownMenu(
-                        expanded = itemMenuExpanded,
-                        onDismissRequest = { itemMenuExpanded = false },
-                        modifier = Modifier.background(KairoSurfaceContainerHigh)
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Add Subtask") },
-                            leadingIcon = { Icon(Icons.Default.Add, null, tint = KairoPrimary) },
-                            onClick = {
-                                itemMenuExpanded = false
-                                onAddSubtask(item.id)
-                            }
-                        )
-
-                        DropdownMenuItem(
-                            text = { Text("Adjust Parent") },
-                            leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
-                            onClick = {
-                                itemMenuExpanded = false
-                                onAdjustParent(item)
-                            }
-                        )
-
-                        DropdownMenuItem(
-                            text = { Text("Details") },
-                            leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
-                            onClick = {
-                                itemMenuExpanded = false
-                                onShowDetails()
-                            }
-                        )
-
-                        DropdownMenuItem(
-                            text = { Text("Edit") },
-                            leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
-                            onClick = {
-                                itemMenuExpanded = false
-                                onEdit(item)
-                            }
-                        )
-
-                        HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
-
-                        DropdownMenuItem(
-                            text = { Text("Delete", color = KairoHighUrgent) },
-                            leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
-                            onClick = {
-                                itemMenuExpanded = false
-                                onDelete(item)
-                            }
-                        )
-                    }
-                }
+                // Drill-down Chevron
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = "Drill Down",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(20.dp)
+                )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // 6.dp linear progress indicator matching Pic 1
             LinearProgressIndicator(
@@ -1261,23 +1105,22 @@ private fun ParentListItemCard(
 
 /**
  * Leaf List Item Card (For items with no subtasks):
- * - Clean row layout
+ * - Reorder handle on the very left
  * - Checkbox + Title + Notes/Date
- * - 3-dots Menu: Details, Add Subtask, Adjust Parent, Edit, Delete
- * - Clicking the card opens details
+ * - Clicking the card opens details sheet (no 3-dots)
  */
 @Composable
 private fun LeafListItemCard(
     item: ListItem,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onMoveToTop: () -> Unit,
+    onMoveToBottom: () -> Unit,
     onToggleCompleted: (id: String) -> Unit,
-    onShowDetails: () -> Unit,
-    onAddSubtask: (parentId: String) -> Unit,
-    onAdjustParent: (item: ListItem) -> Unit,
-    onEdit: (item: ListItem) -> Unit,
-    onDelete: (item: ListItem) -> Unit
+    onShowDetails: () -> Unit
 ) {
-    var itemMenuExpanded by remember { mutableStateOf(false) }
-
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = KairoSurfaceContainer,
@@ -1290,9 +1133,19 @@ private fun LeafListItemCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Reorder handle on the very left
+            ListReorderHandle(
+                canMoveUp = canMoveUp,
+                canMoveDown = canMoveDown,
+                onMoveUp = onMoveUp,
+                onMoveDown = onMoveDown,
+                onMoveToTop = onMoveToTop,
+                onMoveToBottom = onMoveToBottom
+            )
+
             IconButton(
                 onClick = { onToggleCompleted(item.id) },
                 modifier = Modifier.size(28.dp)
@@ -1346,74 +1199,6 @@ private fun LeafListItemCard(
                             fontWeight = FontWeight.Medium
                         )
                     }
-                }
-            }
-
-            // 3-dots Menu for every leaf item
-            Box {
-                IconButton(
-                    onClick = { itemMenuExpanded = true },
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Item Actions",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-
-                DropdownMenu(
-                    expanded = itemMenuExpanded,
-                    onDismissRequest = { itemMenuExpanded = false },
-                    modifier = Modifier.background(KairoSurfaceContainerHigh)
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Details") },
-                        leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
-                        onClick = {
-                            itemMenuExpanded = false
-                            onShowDetails()
-                        }
-                    )
-
-                    DropdownMenuItem(
-                        text = { Text("Add Subtask") },
-                        leadingIcon = { Icon(Icons.Default.Add, null, tint = KairoPrimary) },
-                        onClick = {
-                            itemMenuExpanded = false
-                            onAddSubtask(item.id)
-                        }
-                    )
-
-                    DropdownMenuItem(
-                        text = { Text("Adjust Parent") },
-                        leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
-                        onClick = {
-                            itemMenuExpanded = false
-                            onAdjustParent(item)
-                        }
-                    )
-
-                    DropdownMenuItem(
-                        text = { Text("Edit") },
-                        leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
-                        onClick = {
-                            itemMenuExpanded = false
-                            onEdit(item)
-                        }
-                    )
-
-                    HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
-
-                    DropdownMenuItem(
-                        text = { Text("Delete", color = KairoHighUrgent) },
-                        leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
-                        onClick = {
-                            itemMenuExpanded = false
-                            onDelete(item)
-                        }
-                    )
                 }
             }
         }
