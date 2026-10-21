@@ -23,7 +23,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
@@ -97,6 +99,7 @@ fun ListsScreen(modifier: Modifier = Modifier) {
 
     // Navigation state to Dedicated List Details Page
     var selectedListId by remember { mutableStateOf<String?>(null) }
+    var initialDrillDownItemId by remember { mutableStateOf<String?>(null) }
 
     // Dialog state for creating / editing list
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -116,19 +119,32 @@ fun ListsScreen(modifier: Modifier = Modifier) {
     if (selectedListId != null) {
         ListDetailScreen(
             listId = selectedListId!!,
-            onBack = { selectedListId = null }
+            initialDrillDownItemId = initialDrillDownItemId,
+            onBack = {
+                selectedListId = null
+                initialDrillDownItemId = null
+            }
         )
         return
     }
 
-    val filteredLists = remember(allListsWithStats, allItems, searchQuery) {
+    val matchingLists = remember(allListsWithStats, searchQuery) {
         if (searchQuery.isBlank()) {
             allListsWithStats
         } else {
             allListsWithStats.filter { stats ->
-                val listMatches = stats.list.name.contains(searchQuery, ignoreCase = true)
-                val itemMatches = allItems.any { it.listId == stats.list.id && it.title.contains(searchQuery, ignoreCase = true) }
-                listMatches || itemMatches
+                stats.list.name.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+
+    val matchingItems = remember(allItems, searchQuery) {
+        if (searchQuery.isBlank()) {
+            emptyList()
+        } else {
+            allItems.filter {
+                it.title.contains(searchQuery, ignoreCase = true) ||
+                    (it.notes?.contains(searchQuery, ignoreCase = true) == true)
             }
         }
     }
@@ -229,8 +245,11 @@ fun ListsScreen(modifier: Modifier = Modifier) {
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            if (filteredLists.isEmpty()) {
-                // Empty state
+            val isSearching = searchQuery.isNotBlank()
+            val hasSearchMatches = matchingLists.isNotEmpty() || matchingItems.isNotEmpty()
+
+            if (isSearching && !hasSearchMatches) {
+                // Empty search results state
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -259,7 +278,7 @@ fun ListsScreen(modifier: Modifier = Modifier) {
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Text(
-                            text = if (searchQuery.isNotBlank()) "No matching lists found" else "No lists yet",
+                            text = "No matching lists or items found",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -268,28 +287,233 @@ fun ListsScreen(modifier: Modifier = Modifier) {
                         Spacer(modifier = Modifier.height(6.dp))
 
                         Text(
-                            text = if (searchQuery.isNotBlank()) "Try a different search term" else "Create your first list to organize projects, packing, or groceries.",
+                            text = "Try searching for a different keyword",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            } else if (!isSearching && allListsWithStats.isEmpty()) {
+                // Empty lists state
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(KairoPrimary.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
+                                contentDescription = null,
+                                tint = KairoPrimary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = "No lists yet",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Text(
+                            text = "Create your first list to organize projects, packing, or groceries.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp
                         )
 
-                        if (searchQuery.isBlank()) {
-                            Spacer(modifier = Modifier.height(20.dp))
-                            Button(
-                                onClick = { showCreateDialog = true },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary, contentColor = Color(0xFF1E1F26))
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Create List", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = { showCreateDialog = true },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary, contentColor = Color(0xFF1E1F26))
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Create List", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
                 }
+            } else if (isSearching) {
+                // Search Results: Lists section + Items section with breadcrumbs!
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (matchingLists.isNotEmpty()) {
+                        if (matchingItems.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Lists (${matchingLists.size})",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            }
+                        }
+                        itemsIndexed(matchingLists, key = { _, stats -> "list_${stats.list.id}" }) { _, stats ->
+                            ListOverviewCard(
+                                stats = stats,
+                                isBeingDragged = false,
+                                dragOffsetY = 0f,
+                                dragHandleModifier = Modifier,
+                                onToggleComplete = {
+                                    val isAllDone = stats.totalCount > 0 && stats.completedCount == stats.totalCount
+                                    ListRepository.checkAllItems(stats.list.id, !isAllDone)
+                                },
+                                onClick = {
+                                    selectedListId = stats.list.id
+                                },
+                                onEdit = { listToEdit = stats.list },
+                                onAdjustParent = { listToAdjustParent = stats.list },
+                                onDelete = { listToDelete = stats.list }
+                            )
+                        }
+                    }
+
+                    if (matchingItems.isNotEmpty()) {
+                        item {
+                            if (matchingLists.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                            }
+                            Text(
+                                text = "Items (${matchingItems.size})",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+
+                        itemsIndexed(matchingItems, key = { _, item -> "item_${item.id}" }) { _, item ->
+                            val breadcrumbPath = remember(item.id, allItems) {
+                                ListRepository.getBreadcrumbPath(item.id, allItems)
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = KairoSurfaceContainer,
+                                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        selectedListId = item.listId
+                                        initialDrillDownItemId = item.id
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Squircle Checkbox
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (item.isCompleted) Color(0xFF10B981) else Color.Transparent,
+                                        border = BorderStroke(
+                                            1.5.dp,
+                                            if (item.isCompleted) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        ),
+                                        modifier = Modifier
+                                            .size(20.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .clickable { ListRepository.toggleItemCompleted(item.id) }
+                                    ) {
+                                        if (item.isCompleted) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = item.title,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (item.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                                            textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+
+                                        if (breadcrumbPath.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.height(3.dp))
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.AccountTree,
+                                                    contentDescription = null,
+                                                    tint = KairoPrimary,
+                                                    modifier = Modifier.size(11.dp)
+                                                )
+                                                Text(
+                                                    text = breadcrumbPath.joinToString("  ›  "),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = KairoPrimary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+
+                                        if (!item.notes.isNullOrBlank()) {
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = item.notes,
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = "Go to item",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(72.dp))
+                    }
+                }
             } else {
-                val displayLists = if (draggingListId != null) (localReorderLists ?: filteredLists) else filteredLists
+                val displayLists = if (draggingListId != null) (localReorderLists ?: matchingLists) else matchingLists
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)

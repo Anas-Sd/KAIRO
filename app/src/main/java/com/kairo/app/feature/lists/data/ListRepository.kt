@@ -922,6 +922,36 @@ object ListRepository {
         return ancestors
     }
 
+    fun getAncestorItems(itemId: String, allItems: List<ListItem> = _items.value): List<ListItem> {
+        val byId = allItems.associateBy { it.id }
+        val ancestors = mutableListOf<ListItem>()
+        var curr = byId[itemId]?.parentId
+        val visited = mutableSetOf(itemId)
+        while (curr != null && visited.add(curr)) {
+            val parent = byId[curr] ?: break
+            ancestors.add(0, parent)
+            curr = parent.parentId
+        }
+        return ancestors
+    }
+
+    fun getBreadcrumbPath(
+        itemId: String,
+        allItems: List<ListItem> = _items.value,
+        listName: String? = null
+    ): List<String> {
+        val item = allItems.find { it.id == itemId }
+        val resolvedListName = listName ?: item?.let { itm -> _lists.value.find { it.id == itm.listId }?.name }
+        val ancestors = getAncestorItems(itemId, allItems)
+        val names = mutableListOf<String>()
+        if (!resolvedListName.isNullOrBlank()) {
+            names.add(resolvedListName)
+        }
+        names.addAll(ancestors.map { it.title })
+        return names
+    }
+
+
     fun reorderItems(listId: String, newOrder: List<ListItem>) {
         val updatedMap = newOrder.mapIndexed { index, item -> item.id to index }.toMap()
         val updated = _items.value.map { item ->

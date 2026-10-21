@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kairo.app.feature.lists.data.ListRepository
 import com.kairo.app.feature.lists.model.ListIconDisplay
 import com.kairo.app.feature.lists.model.ListItem
 import com.kairo.app.feature.lists.model.ListWithStats
@@ -241,6 +242,19 @@ fun ListItemDetailsBottomSheet(
                             icon = Icons.Default.AccountTree,
                             label = "Parent Task / Item",
                             value = "${parentItem.title} (${if (parentItem.isCompleted) "Completed" else "Active"})"
+                        )
+                    }
+
+                    // Full Hierarchy Path (if item is nested)
+                    val breadcrumbPath = remember(item.id, allItemsInList, listName) {
+                        ListRepository.getBreadcrumbPath(item.id, allItemsInList, listName)
+                    }
+                    if (breadcrumbPath.size > 1) {
+                        HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.12f))
+                        DetailInfoRow(
+                            icon = Icons.Default.AccountTree,
+                            label = "Hierarchy Path",
+                            value = breadcrumbPath.joinToString("  ›  ")
                         )
                     }
                 }

@@ -114,6 +114,7 @@ import com.kairo.app.ui.theme.KairoSurfaceContainerLow
 @Composable
 fun ListDetailScreen(
     listId: String,
+    initialDrillDownItemId: String? = null,
     onBack: () -> Unit
 ) {
     val allListsWithStats by ListRepository.listsWithStats.collectAsState()
@@ -145,6 +146,21 @@ fun ListDetailScreen(
         }
     }
 
+    // Support deep-linking to an item (from global search or external link)
+    LaunchedEffect(initialDrillDownItemId, listItems) {
+        if (initialDrillDownItemId != null && breadcrumbStack.isEmpty()) {
+            val target = listItems.find { it.id == initialDrillDownItemId }
+            if (target != null) {
+                val ancestors = ListRepository.getAncestorItems(target.id, listItems)
+                breadcrumbStack.addAll(ancestors)
+                val hasSubtasks = listItems.any { it.parentId == target.id }
+                if (hasSubtasks) {
+                    breadcrumbStack.add(target)
+                }
+            }
+        }
+    }
+
     val currentParent = remember(breadcrumbStack.toList(), listItems) {
         breadcrumbStack.lastOrNull()?.let { last -> listItems.find { it.id == last.id } }
     }
@@ -162,9 +178,12 @@ fun ListDetailScreen(
     }
 
     // Items scoped to current level (root if breadcrumbs empty, or children of currentParent)
+    // When searching, recursively searches all items in the list!
     // Parent items (items that have subtasks) automatically float to the top above leaf items
     val scopedActiveItems = remember(activeItems, listItems, currentParent, searchQuery) {
-        val base = if (currentParent == null) {
+        val base = if (searchQuery.isNotBlank()) {
+            activeItems
+        } else if (currentParent == null) {
             activeItems.filter { it.parentId == null }
         } else {
             activeItems.filter { it.parentId == currentParent.id }
@@ -184,7 +203,9 @@ fun ListDetailScreen(
     }
 
     val scopedCompletedItems = remember(completedItems, listItems, currentParent, searchQuery) {
-        val base = if (currentParent == null) {
+        val base = if (searchQuery.isNotBlank()) {
+            completedItems
+        } else if (currentParent == null) {
             completedItems.filter { it.parentId == null }
         } else {
             completedItems.filter { it.parentId == currentParent.id }
@@ -662,12 +683,16 @@ fun ListDetailScreen(
                         val childSubtasks = listItems.filter { it.parentId == item.id }
                         val hasSubtasks = childSubtasks.isNotEmpty()
                         val completedSubtasks = childSubtasks.count { it.isCompleted }
+                        val breadcrumbPath = if (searchQuery.isNotBlank()) {
+                            ListRepository.getBreadcrumbPath(item.id, listItems, currentList.name)
+                        } else null
 
                         if (hasSubtasks) {
                             ParentListItemCard(
                                 item = item,
                                 completedSubtasks = completedSubtasks,
                                 totalSubtasks = childSubtasks.size,
+                                breadcrumbPath = breadcrumbPath,
                                 isBeingDragged = isBeingDragged,
                                 dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
                                 dragHandleModifier = buildItemDragHandleModifier(item, displayActiveItems),
@@ -679,8 +704,25 @@ fun ListDetailScreen(
                                 onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
                                 onDrillDown = {
                                     if (draggingItemId == null) {
-                                        breadcrumbStack.add(item)
+                                        if (searchQuery.isNotBlank()) {
+                                            val ancestors = ListRepository.getAncestorItems(item.id, listItems)
+                                            breadcrumbStack.clear()
+                                            breadcrumbStack.addAll(ancestors)
+                                            breadcrumbStack.add(item)
+                                            searchQuery = ""
+                                            isSearchActive = false
+                                        } else {
+                                            breadcrumbStack.add(item)
+                                        }
                                     }
+                                },
+                                onNavigateToLocation = {
+                                    val ancestors = ListRepository.getAncestorItems(item.id, listItems)
+                                    breadcrumbStack.clear()
+                                    breadcrumbStack.addAll(ancestors)
+                                    breadcrumbStack.add(item)
+                                    searchQuery = ""
+                                    isSearchActive = false
                                 },
                                 onShowDetails = {
                                     if (draggingItemId == null) {
@@ -699,6 +741,7 @@ fun ListDetailScreen(
                         } else {
                             LeafListItemCard(
                                 item = item,
+                                breadcrumbPath = breadcrumbPath,
                                 isBeingDragged = isBeingDragged,
                                 dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
                                 dragHandleModifier = buildItemDragHandleModifier(item, displayActiveItems),
@@ -708,6 +751,15 @@ fun ListDetailScreen(
                                     selectedItemIds = if (selectedItemIds.contains(item.id)) selectedItemIds - item.id else selectedItemIds + item.id
                                 },
                                 onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
+                                onNavigateToLocation = if (searchQuery.isNotBlank()) {
+                                    {
+                                        val ancestors = ListRepository.getAncestorItems(item.id, listItems)
+                                        breadcrumbStack.clear()
+                                        breadcrumbStack.addAll(ancestors)
+                                        searchQuery = ""
+                                        isSearchActive = false
+                                    }
+                                } else null,
                                 onShowDetails = {
                                     if (draggingItemId == null) {
                                         selectedItemForDetails = item
@@ -788,12 +840,16 @@ fun ListDetailScreen(
                                 val childSubtasks = listItems.filter { it.parentId == completedItem.id }
                                 val hasSubtasks = childSubtasks.isNotEmpty()
                                 val completedCount = childSubtasks.count { it.isCompleted }
+                                val breadcrumbPath = if (searchQuery.isNotBlank()) {
+                                    ListRepository.getBreadcrumbPath(completedItem.id, listItems, currentList.name)
+                                } else null
 
                                 if (hasSubtasks) {
                                     ParentListItemCard(
                                         item = completedItem,
                                         completedSubtasks = completedCount,
                                         totalSubtasks = childSubtasks.size,
+                                        breadcrumbPath = breadcrumbPath,
                                         isBeingDragged = isBeingDragged,
                                         dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
                                         dragHandleModifier = buildItemDragHandleModifier(completedItem, displayCompletedItems),
@@ -805,8 +861,25 @@ fun ListDetailScreen(
                                         onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
                                         onDrillDown = {
                                             if (draggingItemId == null) {
-                                                breadcrumbStack.add(completedItem)
+                                                if (searchQuery.isNotBlank()) {
+                                                    val ancestors = ListRepository.getAncestorItems(completedItem.id, listItems)
+                                                    breadcrumbStack.clear()
+                                                    breadcrumbStack.addAll(ancestors)
+                                                    breadcrumbStack.add(completedItem)
+                                                    searchQuery = ""
+                                                    isSearchActive = false
+                                                } else {
+                                                    breadcrumbStack.add(completedItem)
+                                                }
                                             }
+                                        },
+                                        onNavigateToLocation = {
+                                            val ancestors = ListRepository.getAncestorItems(completedItem.id, listItems)
+                                            breadcrumbStack.clear()
+                                            breadcrumbStack.addAll(ancestors)
+                                            breadcrumbStack.add(completedItem)
+                                            searchQuery = ""
+                                            isSearchActive = false
                                         },
                                         onShowDetails = {
                                             if (draggingItemId == null) {
@@ -825,6 +898,7 @@ fun ListDetailScreen(
                                 } else {
                                     LeafListItemCard(
                                         item = completedItem,
+                                        breadcrumbPath = breadcrumbPath,
                                         isBeingDragged = isBeingDragged,
                                         dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
                                         dragHandleModifier = buildItemDragHandleModifier(completedItem, displayCompletedItems),
@@ -834,6 +908,15 @@ fun ListDetailScreen(
                                             selectedItemIds = if (selectedItemIds.contains(completedItem.id)) selectedItemIds - completedItem.id else selectedItemIds + completedItem.id
                                         },
                                         onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
+                                        onNavigateToLocation = if (searchQuery.isNotBlank()) {
+                                            {
+                                                val ancestors = ListRepository.getAncestorItems(completedItem.id, listItems)
+                                                breadcrumbStack.clear()
+                                                breadcrumbStack.addAll(ancestors)
+                                                searchQuery = ""
+                                                isSearchActive = false
+                                            }
+                                        } else null,
                                         onShowDetails = {
                                             if (draggingItemId == null) {
                                                 selectedItemForDetails = completedItem
@@ -1393,6 +1476,7 @@ private fun ParentListItemCard(
     item: ListItem,
     completedSubtasks: Int,
     totalSubtasks: Int,
+    breadcrumbPath: List<String>? = null,
     isBeingDragged: Boolean = false,
     dragOffsetY: Float = 0f,
     dragHandleModifier: Modifier = Modifier,
@@ -1401,6 +1485,7 @@ private fun ParentListItemCard(
     onToggleSelect: () -> Unit = {},
     onToggleCompleted: (id: String) -> Unit,
     onDrillDown: () -> Unit,
+    onNavigateToLocation: (() -> Unit)? = null,
     onShowDetails: () -> Unit,
     onAddSubtask: (parentId: String) -> Unit,
     onAdjustParent: (item: ListItem) -> Unit,
@@ -1433,7 +1518,7 @@ private fun ParentListItemCard(
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = {
                 if (!isBeingDragged) {
-                    if (isSelectionMode) onToggleSelect() else onDrillDown()
+                    if (isSelectionMode) onToggleSelect() else (onNavigateToLocation?.invoke() ?: onDrillDown())
                 }
             })
     ) {
@@ -1488,6 +1573,35 @@ private fun ParentListItemCard(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+
+                        if (!breadcrumbPath.isNullOrEmpty()) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(KairoPrimary.copy(alpha = 0.08f))
+                                    .clickable { onNavigateToLocation?.invoke() ?: onDrillDown() }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AccountTree,
+                                    contentDescription = null,
+                                    tint = KairoPrimary,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    text = breadcrumbPath.joinToString("  ›  "),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = KairoPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "$completedSubtasks/$totalSubtasks completed",
@@ -1612,6 +1726,7 @@ private fun ParentListItemCard(
 @Composable
 private fun LeafListItemCard(
     item: ListItem,
+    breadcrumbPath: List<String>? = null,
     isBeingDragged: Boolean = false,
     dragOffsetY: Float = 0f,
     dragHandleModifier: Modifier = Modifier,
@@ -1619,6 +1734,7 @@ private fun LeafListItemCard(
     isSelected: Boolean = false,
     onToggleSelect: () -> Unit = {},
     onToggleCompleted: (id: String) -> Unit,
+    onNavigateToLocation: (() -> Unit)? = null,
     onShowDetails: () -> Unit,
     onAddSubtask: (parentId: String) -> Unit,
     onAdjustParent: (item: ListItem) -> Unit,
@@ -1649,7 +1765,13 @@ private fun LeafListItemCard(
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = {
                 if (!isBeingDragged) {
-                    if (isSelectionMode) onToggleSelect() else onShowDetails()
+                    if (isSelectionMode) {
+                        onToggleSelect()
+                    } else if (onNavigateToLocation != null) {
+                        onNavigateToLocation()
+                    } else {
+                        onShowDetails()
+                    }
                 }
             })
     ) {
@@ -1679,6 +1801,34 @@ private fun LeafListItemCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+
+                if (!breadcrumbPath.isNullOrEmpty()) {
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(KairoPrimary.copy(alpha = 0.08f))
+                            .clickable { onNavigateToLocation?.invoke() ?: onShowDetails() }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AccountTree,
+                            contentDescription = null,
+                            tint = KairoPrimary,
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Text(
+                            text = breadcrumbPath.joinToString("  ›  "),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = KairoPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
 
                 if (!item.notes.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(2.dp))
