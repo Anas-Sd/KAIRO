@@ -549,6 +549,58 @@ object ListRepository {
         }
     }
 
+    fun convertLeafToParentWithSubtasks(
+        itemId: String,
+        updatedTitle: String,
+        updatedIconName: String,
+        subtaskTitles: List<String>
+    ) {
+        val all = _items.value.toMutableList()
+        val index = all.indexOfFirst { it.id == itemId }
+        if (index == -1) return
+        val current = all[index]
+
+        // 1. Update the item itself with new title and chosen icon
+        val updatedItem = current.copy(
+            title = updatedTitle.trim(),
+            iconName = updatedIconName,
+            updatedAt = System.currentTimeMillis()
+        )
+        all[index] = updatedItem
+
+        // 2. Add subtask items
+        val listId = current.listId
+        val existingItems = all.filter { it.listId == listId }
+        var currentPos = existingItems.size
+        val userCode = getUserCodeSafe()
+        val newSubtasks = mutableListOf<ListItem>()
+
+        subtaskTitles.map { it.trim() }.filter { it.isNotBlank() }.forEach { title ->
+            newSubtasks.add(
+                ListItem(
+                    id = UUID.randomUUID().toString(),
+                    userCode = userCode,
+                    listId = listId,
+                    parentId = current.id,
+                    title = title,
+                    position = currentPos++,
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+
+        all.addAll(newSubtasks)
+        _items.value = all
+        recalculateStats()
+        saveToDisk()
+
+        scope.launch {
+            val dtoList = listOf(updatedItem.toDto()) + newSubtasks.map { it.toDto() }
+            SupabaseClient.upsertListItems(dtoList)
+        }
+    }
+
     fun updateListItem(item: ListItem) {
         val updated = _items.value.map {
             if (it.id == item.id) {

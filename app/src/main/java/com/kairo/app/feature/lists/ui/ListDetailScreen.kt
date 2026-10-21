@@ -256,6 +256,7 @@ fun ListDetailScreen(
     var selectedItemForAdjustParent by remember { mutableStateOf<ListItem?>(null) }
     var selectedItemForDelete by remember { mutableStateOf<ListItem?>(null) }
     var targetParentForMultiAdd by remember { mutableStateOf<ListItem?>(null) }
+    var leafItemForAddSubtasks by remember { mutableStateOf<ListItem?>(null) }
     var showMultiAddDialog by remember { mutableStateOf(false) }
 
     // Back handling:
@@ -813,8 +814,7 @@ fun ListDetailScreen(
                                 },
                                 onAddSubtask = { parentId ->
                                     val target = listItems.find { it.id == parentId } ?: item
-                                    targetParentForMultiAdd = target
-                                    showMultiAddDialog = true
+                                    leafItemForAddSubtasks = target
                                 },
                                 onAdjustParent = { selectedItemForAdjustParent = it },
                                 onEdit = { selectedItemForEdit = it },
@@ -940,8 +940,7 @@ fun ListDetailScreen(
                                         },
                                         onAddSubtask = { parentId ->
                                             val target = listItems.find { it.id == parentId } ?: completedItem
-                                            targetParentForMultiAdd = target
-                                            showMultiAddDialog = true
+                                            leafItemForAddSubtasks = target
                                         },
                                         onAdjustParent = { selectedItemForAdjustParent = it },
                                         onEdit = { selectedItemForEdit = it },
@@ -1259,8 +1258,14 @@ if (showDeleteConfirmDialog) {
                 selectedItemForDetails = null
             },
             onAddSubtaskClicked = {
-                targetParentForMultiAdd = selectedItemForDetails
-                showMultiAddDialog = true
+                val target = selectedItemForDetails!!
+                val isLeaf = listItems.none { it.parentId == target.id }
+                if (isLeaf) {
+                    leafItemForAddSubtasks = target
+                } else {
+                    targetParentForMultiAdd = target
+                    showMultiAddDialog = true
+                }
                 selectedItemForDetails = null
             },
             onAdjustParentClicked = {
@@ -1275,8 +1280,13 @@ if (showDeleteConfirmDialog) {
                 selectedItemForDetails = sub
             },
             onSubtaskAddSubtask = { sub ->
-                targetParentForMultiAdd = sub
-                showMultiAddDialog = true
+                val isLeaf = listItems.none { it.parentId == sub.id }
+                if (isLeaf) {
+                    leafItemForAddSubtasks = sub
+                } else {
+                    targetParentForMultiAdd = sub
+                    showMultiAddDialog = true
+                }
                 selectedItemForDetails = null
             },
             onSubtaskAdjustParent = { sub ->
@@ -1399,6 +1409,25 @@ if (showDeleteConfirmDialog) {
                 ListRepository.moveListIntoList(currentList.id, targetListId)
                 showAdjustParentListDialog = false
                 onBack()
+            }
+        )
+    }
+
+    // Add Subtasks to Leaf Node Dialog (Promoting to Parent with icon & subtasks)
+    if (leafItemForAddSubtasks != null) {
+        val targetLeaf = leafItemForAddSubtasks!!
+        AddSubtasksToLeafDialog(
+            leafItem = targetLeaf,
+            onDismiss = { leafItemForAddSubtasks = null },
+            onConfirm = { updatedTitle, updatedIconName, subtasks ->
+                ListRepository.convertLeafToParentWithSubtasks(
+                    itemId = targetLeaf.id,
+                    updatedTitle = updatedTitle,
+                    updatedIconName = updatedIconName,
+                    subtaskTitles = subtasks
+                )
+                leafItemForAddSubtasks = null
+                Toast.makeText(context, "Added ${subtasks.size} subtask(s)", Toast.LENGTH_SHORT).show()
             }
         )
     }
