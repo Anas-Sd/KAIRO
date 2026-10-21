@@ -99,6 +99,8 @@ import com.kairo.app.feature.lists.model.ListIconDisplay
 import com.kairo.app.feature.lists.model.ListItem
 import com.kairo.app.feature.lists.ui.AddMultipleItemsDialog
 import com.kairo.app.feature.lists.ui.AdjustParentListDialog
+import com.kairo.app.ui.components.AppHeader
+import com.kairo.app.ui.components.SettingsDialog
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoError
 import com.kairo.app.ui.theme.KairoHighUrgent
@@ -147,6 +149,10 @@ fun ListDetailScreen(
         breadcrumbStack.lastOrNull()?.let { last -> listItems.find { it.id == last.id } }
     }
 
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearchActive by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+
     val activeItems = remember(listItems) {
         listItems.filter { !it.isCompleted }
     }
@@ -157,25 +163,41 @@ fun ListDetailScreen(
 
     // Items scoped to current level (root if breadcrumbs empty, or children of currentParent)
     // Parent items (items that have subtasks) automatically float to the top above leaf items
-    val scopedActiveItems = remember(activeItems, listItems, currentParent) {
+    val scopedActiveItems = remember(activeItems, listItems, currentParent, searchQuery) {
         val base = if (currentParent == null) {
             activeItems.filter { it.parentId == null }
         } else {
             activeItems.filter { it.parentId == currentParent.id }
         }
-        val (parents, leaves) = base.partition { item ->
+        val searched = if (searchQuery.isBlank()) {
+            base
+        } else {
+            base.filter {
+                it.title.contains(searchQuery, ignoreCase = true) ||
+                    (it.notes?.contains(searchQuery, ignoreCase = true) == true)
+            }
+        }
+        val (parents, leaves) = searched.partition { item ->
             listItems.any { it.parentId == item.id }
         }
         parents.sortedBy { it.position } + leaves.sortedBy { it.position }
     }
 
-    val scopedCompletedItems = remember(completedItems, listItems, currentParent) {
+    val scopedCompletedItems = remember(completedItems, listItems, currentParent, searchQuery) {
         val base = if (currentParent == null) {
             completedItems.filter { it.parentId == null }
         } else {
             completedItems.filter { it.parentId == currentParent.id }
         }
-        val (parents, leaves) = base.partition { item ->
+        val searched = if (searchQuery.isBlank()) {
+            base
+        } else {
+            base.filter {
+                it.title.contains(searchQuery, ignoreCase = true) ||
+                    (it.notes?.contains(searchQuery, ignoreCase = true) == true)
+            }
+        }
+        val (parents, leaves) = searched.partition { item ->
             listItems.any { it.parentId == item.id }
         }
         parents.sortedBy { it.position } + leaves.sortedBy { it.position }
@@ -242,7 +264,6 @@ fun ListDetailScreen(
     val context = LocalContext.current
     var isSelectionMode by remember { mutableStateOf(false) }
     var selectedItemIds by remember { mutableStateOf(emptySet<String>()) }
-    var showTopMenu by remember { mutableStateOf(false) }
     var showCompleteConfirmDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
@@ -260,11 +281,15 @@ fun ListDetailScreen(
     var showMultiAddDialog by remember { mutableStateOf(false) }
 
     // Back handling:
+    // 0. If search active, close search
     // 1. If in selection mode, exit selection mode
     // 2. If inside breadcrumbs, pop one level
     // 3. Otherwise, exit to lists overview (onBack)
     BackHandler(enabled = true) {
-        if (isSelectionMode) {
+        if (isSearchActive) {
+            isSearchActive = false
+            searchQuery = ""
+        } else if (isSelectionMode) {
             isSelectionMode = false
             selectedItemIds = emptySet()
         } else if (breadcrumbStack.isNotEmpty()) {
@@ -301,16 +326,17 @@ fun ListDetailScreen(
 
     Scaffold(
         topBar = {
-            Surface(
-                color = KairoSurfaceContainer,
-                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(KairoBackground)
             ) {
+                // Main Header of Anas (date, search, settings, and 3 dots)
                 if (isSelectionMode) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .statusBarsPadding()
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -353,15 +379,115 @@ fun ListDetailScreen(
                         }
                     }
                 } else {
+                    AppHeader(
+                        searchQuery = searchQuery,
+                        isSearchActive = isSearchActive,
+                        onSearchQueryChange = { searchQuery = it },
+                        onToggleSearch = {
+                            isSearchActive = !isSearchActive
+                            if (!isSearchActive) searchQuery = ""
+                        },
+                        onCloseSearch = {
+                            isSearchActive = false
+                            searchQuery = ""
+                        },
+                        searchPlaceholder = if (currentParent != null) "Search in ${currentParent.title}..." else "Search in ${currentList.name}...",
+                        onSettingsClick = { showSettingsDialog = true },
+                        moreMenuContent = { dismissMenu ->
+                            DropdownMenuItem(
+                                text = { Text("Select") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.SelectAll,
+                                        contentDescription = null,
+                                        tint = KairoPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                onClick = {
+                                    dismissMenu()
+                                    isSelectionMode = true
+                                    selectedItemIds = emptySet()
+                                }
+                            )
+
+                            if (currentParent != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Parent Details") },
+                                    leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
+                                    onClick = {
+                                        dismissMenu()
+                                        selectedItemForDetails = currentParent
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Edit Parent") },
+                                    leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
+                                    onClick = {
+                                        dismissMenu()
+                                        selectedItemForEdit = currentParent
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Adjust Parent") },
+                                    leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
+                                    onClick = {
+                                        dismissMenu()
+                                        selectedItemForAdjustParent = currentParent
+                                    }
+                                )
+                                HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
+                                DropdownMenuItem(
+                                    text = { Text("Delete Parent", color = KairoHighUrgent) },
+                                    leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
+                                    onClick = {
+                                        dismissMenu()
+                                        selectedItemForDelete = currentParent
+                                    }
+                                )
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text("Edit List") },
+                                    leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
+                                    onClick = {
+                                        dismissMenu()
+                                        showEditListDialog = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Adjust Parent List") },
+                                    leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
+                                    onClick = {
+                                        dismissMenu()
+                                        showAdjustParentListDialog = true
+                                    }
+                                )
+                                HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
+                                DropdownMenuItem(
+                                    text = { Text("Delete List", color = KairoHighUrgent) },
+                                    leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
+                                    onClick = {
+                                        dismissMenu()
+                                        showDeleteListDialog = true
+                                    }
+                                )
+                            }
+                        }
+                    )
+                }
+
+                // List Sub-header with Back, Icon, Current Parent/List Name, Progress Count, and (+) button (NO 3-dots!)
+                Surface(
+                    color = KairoSurfaceContainer,
+                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f))
+                ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             IconButton(onClick = {
@@ -413,7 +539,7 @@ fun ListDetailScreen(
                                 }
                             }
 
-                            // Plus (+) button to add multiple items at once
+                            // Plus (+) button to add multiple items at once (NO 3-dots beside it!)
                             IconButton(onClick = {
                                 targetParentForMultiAdd = currentParent
                                 showMultiAddDialog = true
@@ -423,102 +549,6 @@ fun ListDetailScreen(
                                     contentDescription = if (currentParent != null) "Add Subtasks" else "Add Items",
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
-                            }
-
-                            // 3-dots Menu on the right of + (with Select, Edit, Details, Delete)
-                            Box {
-                                IconButton(onClick = { showTopMenu = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.MoreVert,
-                                        contentDescription = "More Options",
-                                        tint = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-
-                                DropdownMenu(
-                                    expanded = showTopMenu,
-                                    onDismissRequest = { showTopMenu = false },
-                                    modifier = Modifier.background(KairoSurfaceContainerHigh)
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("Select") },
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = Icons.Default.SelectAll,
-                                                contentDescription = null,
-                                                tint = KairoPrimary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        },
-                                        onClick = {
-                                            showTopMenu = false
-                                            isSelectionMode = true
-                                            selectedItemIds = emptySet()
-                                        }
-                                    )
-
-                                    if (currentParent != null) {
-                                        DropdownMenuItem(
-                                            text = { Text("Parent Details") },
-                                            leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
-                                            onClick = {
-                                                showTopMenu = false
-                                                selectedItemForDetails = currentParent
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Edit Parent") },
-                                            leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
-                                            onClick = {
-                                                showTopMenu = false
-                                                selectedItemForEdit = currentParent
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Adjust Parent") },
-                                            leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
-                                            onClick = {
-                                                showTopMenu = false
-                                                selectedItemForAdjustParent = currentParent
-                                            }
-                                        )
-                                        HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
-                                        DropdownMenuItem(
-                                            text = { Text("Delete Parent", color = KairoHighUrgent) },
-                                            leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
-                                            onClick = {
-                                                showTopMenu = false
-                                                selectedItemForDelete = currentParent
-                                            }
-                                        )
-                                    } else {
-                                        DropdownMenuItem(
-                                            text = { Text("Edit List") },
-                                            leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
-                                            onClick = {
-                                                showTopMenu = false
-                                                showEditListDialog = true
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Adjust Parent List") },
-                                            leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
-                                            onClick = {
-                                                showTopMenu = false
-                                                showAdjustParentListDialog = true
-                                            }
-                                        )
-                                        HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
-                                        DropdownMenuItem(
-                                            text = { Text("Delete List", color = KairoHighUrgent) },
-                                            leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
-                                            onClick = {
-                                                showTopMenu = false
-                                                showDeleteListDialog = true
-                                            }
-                                        )
-                                    }
-                                }
                             }
                         }
 
@@ -1292,6 +1322,10 @@ if (showDeleteConfirmDialog) {
                 Toast.makeText(context, "Added ${subtasks.size} subtask(s)", Toast.LENGTH_SHORT).show()
             }
         )
+    }
+
+    if (showSettingsDialog) {
+        SettingsDialog(onDismissRequest = { showSettingsDialog = false })
     }
 }
 
