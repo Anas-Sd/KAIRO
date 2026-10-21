@@ -358,6 +358,9 @@ private fun ListOverviewCard(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val isAllCompleted = stats.totalCount > 0 && stats.completedCount == stats.totalCount
+    val progressFloat = if (stats.totalCount > 0) {
+        stats.completedCount.toFloat() / stats.totalCount.toFloat()
+    } else 0f
 
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -368,151 +371,162 @@ private fun ListOverviewCard(
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Reorder handle on the very left
-                ListReorderHandle(
-                    canMoveUp = canMoveUp,
-                    canMoveDown = canMoveDown,
-                    onMoveUp = onMoveUp,
-                    onMoveDown = onMoveDown,
-                    onMoveToTop = onMoveToTop,
-                    onMoveToBottom = onMoveToBottom
-                )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Reorder handle on the very left
+            ListReorderHandle(
+                canMoveUp = canMoveUp,
+                canMoveDown = canMoveDown,
+                onMoveUp = onMoveUp,
+                onMoveDown = onMoveDown,
+                onMoveToTop = onMoveToTop,
+                onMoveToBottom = onMoveToBottom
+            )
 
-                // Bi-directional completion checkbox
+            // Bi-directional completion checkbox
+            IconButton(
+                onClick = onToggleComplete,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = if (isAllCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                    contentDescription = "Toggle Complete",
+                    tint = if (isAllCompleted) Color(0xFF10B981) else KairoOutlineVariant,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Main content block with Icon + Text + % on top, and progress bar below them
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(KairoPrimary.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ListIconDisplay(
+                            iconKey = stats.list.iconName,
+                            tint = KairoPrimary,
+                            modifier = Modifier.size(22.dp),
+                            emojiSize = 20.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stats.list.name,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isAllCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                            textDecoration = if (isAllCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${stats.completedCount}/${stats.totalCount} completed",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(100.dp),
+                        color = if (stats.progressPercentage == 100) Color(0xFF10B981).copy(alpha = 0.15f) else KairoPrimary.copy(alpha = 0.12f),
+                        border = BorderStroke(
+                            1.dp,
+                            if (stats.progressPercentage == 100) Color(0xFF10B981).copy(alpha = 0.4f) else KairoPrimary.copy(alpha = 0.35f)
+                        )
+                    ) {
+                        Text(
+                            text = "${stats.progressPercentage}%",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (stats.progressPercentage == 100) Color(0xFF10B981) else KairoPrimary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                LinearProgressIndicator(
+                    progress = { progressFloat },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = if (stats.progressPercentage == 100) Color(0xFF10B981) else KairoPrimary,
+                    trackColor = KairoSurfaceContainerLow
+                )
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // 3-dots Menu on the far right
+            Box {
                 IconButton(
-                    onClick = onToggleComplete,
+                    onClick = { menuExpanded = true },
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
-                        imageVector = if (isAllCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                        contentDescription = "Toggle Complete",
-                        tint = if (isAllCompleted) Color(0xFF10B981) else KairoOutlineVariant,
-                        modifier = Modifier.size(22.dp)
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Options",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(KairoPrimary.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                    modifier = Modifier.background(KairoSurfaceContainerHigh)
                 ) {
-                    ListIconDisplay(
-                        iconKey = stats.list.iconName,
-                        tint = KairoPrimary,
-                        modifier = Modifier.size(22.dp),
-                        emojiSize = 20.sp
+                    DropdownMenuItem(
+                        text = { Text("Edit List") },
+                        leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
+                        onClick = {
+                            menuExpanded = false
+                            onEdit()
+                        }
                     )
-                }
 
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stats.list.name,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isAllCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                        textDecoration = if (isAllCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                    DropdownMenuItem(
+                        text = { Text("Adjust Parent") },
+                        leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
+                        onClick = {
+                            menuExpanded = false
+                            onAdjustParent()
+                        }
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "${stats.completedCount} of ${stats.totalCount} completed",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                    DropdownMenuItem(
+                        text = { Text("Delete List", color = KairoHighUrgent) },
+                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = KairoHighUrgent) },
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        }
                     )
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(100.dp),
-                    color = if (stats.progressPercentage == 100) Color(0xFF10B981).copy(alpha = 0.15f) else KairoPrimary.copy(alpha = 0.12f),
-                    border = BorderStroke(
-                        1.dp,
-                        if (stats.progressPercentage == 100) Color(0xFF10B981).copy(alpha = 0.4f) else KairoPrimary.copy(alpha = 0.35f)
-                    )
-                ) {
-                    Text(
-                        text = "${stats.progressPercentage}%",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (stats.progressPercentage == 100) Color(0xFF10B981) else KairoPrimary,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
-
-                Box {
-                    IconButton(
-                        onClick = { menuExpanded = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Options",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                        modifier = Modifier.background(KairoSurfaceContainerHigh)
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Edit List") },
-                            leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
-                            onClick = {
-                                menuExpanded = false
-                                onEdit()
-                            }
-                        )
-
-                        DropdownMenuItem(
-                            text = { Text("Adjust Parent") },
-                            leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
-                            onClick = {
-                                menuExpanded = false
-                                onAdjustParent()
-                            }
-                        )
-
-                        DropdownMenuItem(
-                            text = { Text("Delete List", color = KairoHighUrgent) },
-                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = KairoHighUrgent) },
-                            onClick = {
-                                menuExpanded = false
-                                onDelete()
-                            }
-                        )
-                    }
                 }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            val progressFloat = if (stats.totalCount > 0) {
-                stats.completedCount.toFloat() / stats.totalCount.toFloat()
-            } else 0f
-
-            LinearProgressIndicator(
-                progress = { progressFloat },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = if (stats.progressPercentage == 100) Color(0xFF10B981) else KairoPrimary,
-                trackColor = KairoSurfaceContainerLow
-            )
         }
     }
 }

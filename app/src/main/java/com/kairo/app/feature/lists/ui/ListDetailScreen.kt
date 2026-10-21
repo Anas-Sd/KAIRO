@@ -1098,181 +1098,182 @@ private fun ParentListItemCard(
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onDrillDown)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Reorder handle on the very left
+            ListReorderHandle(
+                canMoveUp = canMoveUp,
+                canMoveDown = canMoveDown,
+                onMoveUp = onMoveUp,
+                onMoveDown = onMoveDown,
+                onMoveToTop = onMoveToTop,
+                onMoveToBottom = onMoveToBottom
+            )
+
+            // Checkbox to complete parent and all subtasks
+            IconButton(
+                onClick = { onToggleCompleted(item.id) },
+                modifier = Modifier.size(32.dp)
             ) {
-                // Reorder handle on the very left
-                ListReorderHandle(
-                    canMoveUp = canMoveUp,
-                    canMoveDown = canMoveDown,
-                    onMoveUp = onMoveUp,
-                    onMoveDown = onMoveDown,
-                    onMoveToTop = onMoveToTop,
-                    onMoveToBottom = onMoveToBottom
-                )
-
-                // Checkbox to complete parent and all subtasks
-                IconButton(
-                    onClick = { onToggleCompleted(item.id) },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = if (item.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                        contentDescription = "Toggle Complete",
-                        tint = if (item.isCompleted) Color(0xFF10B981) else KairoOutlineVariant,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                // 42.dp Icon container matching Pic 1
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(KairoPrimary.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    ListIconDisplay(
-                        iconKey = item.iconName,
-                        tint = KairoPrimary,
-                        modifier = Modifier.size(22.dp),
-                        emojiSize = 20.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.title,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "$completedSubtasks of $totalSubtasks completed",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // Progress Badge Pill
-                Surface(
-                    shape = RoundedCornerShape(100.dp),
-                    color = if (percentage == 100) Color(0xFF10B981).copy(alpha = 0.15f) else KairoPrimary.copy(alpha = 0.12f),
-                    border = BorderStroke(
-                        1.dp,
-                        if (percentage == 100) Color(0xFF10B981).copy(alpha = 0.4f) else KairoPrimary.copy(alpha = 0.35f)
-                    )
-                ) {
-                    Text(
-                        text = "$percentage%",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (percentage == 100) Color(0xFF10B981) else KairoPrimary,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(2.dp))
-
-                // 3-dots Menu for Parent Subtask Card
-                Box {
-                    IconButton(
-                        onClick = { itemMenuExpanded = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Item Actions",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = itemMenuExpanded,
-                        onDismissRequest = { itemMenuExpanded = false },
-                        modifier = Modifier.background(KairoSurfaceContainerHigh)
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Add Subtask") },
-                            leadingIcon = { Icon(Icons.Default.Add, null, tint = KairoPrimary) },
-                            onClick = {
-                                itemMenuExpanded = false
-                                onAddSubtask(item.id)
-                            }
-                        )
-
-                        DropdownMenuItem(
-                            text = { Text("Adjust Parent") },
-                            leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
-                            onClick = {
-                                itemMenuExpanded = false
-                                onAdjustParent(item)
-                            }
-                        )
-
-                        DropdownMenuItem(
-                            text = { Text("Details") },
-                            leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
-                            onClick = {
-                                itemMenuExpanded = false
-                                onShowDetails()
-                            }
-                        )
-
-                        DropdownMenuItem(
-                            text = { Text("Edit") },
-                            leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
-                            onClick = {
-                                itemMenuExpanded = false
-                                onEdit(item)
-                            }
-                        )
-
-                        HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
-
-                        DropdownMenuItem(
-                            text = { Text("Delete", color = KairoHighUrgent) },
-                            leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
-                            onClick = {
-                                itemMenuExpanded = false
-                                onDelete(item)
-                            }
-                        )
-                    }
-                }
-
-                // Drill-down Chevron
                 Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = "Drill Down",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(20.dp)
+                    imageVector = if (item.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                    contentDescription = "Toggle Complete",
+                    tint = if (item.isCompleted) Color(0xFF10B981) else KairoOutlineVariant,
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.width(6.dp))
 
-            // 6.dp linear progress indicator matching Pic 1
-            LinearProgressIndicator(
-                progress = { progressFloat },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = if (percentage == 100) Color(0xFF10B981) else KairoPrimary,
-                trackColor = KairoSurfaceContainerLow
-            )
+            // Middle block: Icon + Name + % on top, progress bar below them
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(KairoPrimary.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ListIconDisplay(
+                            iconKey = item.iconName,
+                            tint = KairoPrimary,
+                            modifier = Modifier.size(22.dp),
+                            emojiSize = 20.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = item.title,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (item.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                            textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "$completedSubtasks/$totalSubtasks completed",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(100.dp),
+                        color = if (percentage == 100) Color(0xFF10B981).copy(alpha = 0.15f) else KairoPrimary.copy(alpha = 0.12f),
+                        border = BorderStroke(
+                            1.dp,
+                            if (percentage == 100) Color(0xFF10B981).copy(alpha = 0.4f) else KairoPrimary.copy(alpha = 0.35f)
+                        )
+                    ) {
+                        Text(
+                            text = "$percentage%",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (percentage == 100) Color(0xFF10B981) else KairoPrimary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                LinearProgressIndicator(
+                    progress = { progressFloat },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = if (percentage == 100) Color(0xFF10B981) else KairoPrimary,
+                    trackColor = KairoSurfaceContainerLow
+                )
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // 3-dots Menu for Parent Subtask Card on the far right
+            Box {
+                IconButton(
+                    onClick = { itemMenuExpanded = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Item Actions",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = itemMenuExpanded,
+                    onDismissRequest = { itemMenuExpanded = false },
+                    modifier = Modifier.background(KairoSurfaceContainerHigh)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Add Subtask") },
+                        leadingIcon = { Icon(Icons.Default.Add, null, tint = KairoPrimary) },
+                        onClick = {
+                            itemMenuExpanded = false
+                            onAddSubtask(item.id)
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("Adjust Parent") },
+                        leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
+                        onClick = {
+                            itemMenuExpanded = false
+                            onAdjustParent(item)
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("Details") },
+                        leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
+                        onClick = {
+                            itemMenuExpanded = false
+                            onShowDetails()
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("Edit") },
+                        leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
+                        onClick = {
+                            itemMenuExpanded = false
+                            onEdit(item)
+                        }
+                    )
+
+                    HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
+
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = KairoHighUrgent) },
+                        leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
+                        onClick = {
+                            itemMenuExpanded = false
+                            onDelete(item)
+                        }
+                    )
+                }
+            }
         }
     }
 }
