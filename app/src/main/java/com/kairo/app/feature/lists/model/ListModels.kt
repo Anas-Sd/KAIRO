@@ -28,6 +28,7 @@ import java.util.UUID
 
 data class TaskList(
     val id: String = UUID.randomUUID().toString(),
+    val userCode: String = "DEFAULT",
     val name: String,
     val iconName: String = "list",
     val position: Int = 0,
@@ -37,6 +38,7 @@ data class TaskList(
 
 data class ListItem(
     val id: String = UUID.randomUUID().toString(),
+    val userCode: String = "DEFAULT",
     val listId: String,
     val parentId: String? = null,
     val title: String,

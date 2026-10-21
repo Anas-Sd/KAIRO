@@ -8,6 +8,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import com.kairo.app.feature.lists.data.ListItemDto
+import com.kairo.app.feature.lists.data.TaskListDto
 import java.util.concurrent.TimeUnit
 
 object SupabaseClient {
@@ -515,6 +517,152 @@ object SupabaseClient {
             if (!response.isSuccessful) {
                 val err = response.body?.string().orEmpty()
                 error("Failed to delete habit log: HTTP ${response.code} $err")
+            }
+        }
+    }
+
+    // ==================== LISTS & LIST ITEMS SUPABASE SYNC ====================
+
+    suspend fun getTaskLists(userCode: String? = com.kairo.app.data.auth.AuthManager.getUserCode()): Result<List<TaskListDto>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = if (!userCode.isNullOrBlank()) {
+                val encoded = java.net.URLEncoder.encode(userCode, "UTF-8")
+                "$SUPABASE_URL/rest/v1/task_lists?user_code=eq.$encoded&select=*&order=position.asc"
+            } else {
+                "$SUPABASE_URL/rest/v1/task_lists?select=*&order=position.asc"
+            }
+
+            val request = Request.Builder()
+                .url(url)
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .get()
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                error("Failed to fetch task lists: HTTP ${response.code} $body")
+            }
+            json.decodeFromString<List<TaskListDto>>(body)
+        }
+    }
+
+    suspend fun upsertTaskList(dto: TaskListDto): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val bodyJson = json.encodeToString(dto)
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/task_lists")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Prefer", "resolution=merge-duplicates,return=minimal")
+                .post(bodyJson.toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val err = response.body?.string().orEmpty()
+                error("Failed to upsert task list: HTTP ${response.code} $err")
+            }
+        }
+    }
+
+    suspend fun deleteTaskList(listId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encodedId = java.net.URLEncoder.encode(listId, "UTF-8")
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/task_lists?id=eq.$encodedId")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .delete()
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val err = response.body?.string().orEmpty()
+                error("Failed to delete task list: HTTP ${response.code} $err")
+            }
+        }
+    }
+
+    suspend fun getListItems(userCode: String? = com.kairo.app.data.auth.AuthManager.getUserCode()): Result<List<ListItemDto>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = if (!userCode.isNullOrBlank()) {
+                val encoded = java.net.URLEncoder.encode(userCode, "UTF-8")
+                "$SUPABASE_URL/rest/v1/list_items?user_code=eq.$encoded&select=*&order=position.asc"
+            } else {
+                "$SUPABASE_URL/rest/v1/list_items?select=*&order=position.asc"
+            }
+
+            val request = Request.Builder()
+                .url(url)
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .get()
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                error("Failed to fetch list items: HTTP ${response.code} $body")
+            }
+            json.decodeFromString<List<ListItemDto>>(body)
+        }
+    }
+
+    suspend fun upsertListItem(dto: ListItemDto): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val bodyJson = json.encodeToString(dto)
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/list_items")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Prefer", "resolution=merge-duplicates,return=minimal")
+                .post(bodyJson.toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val err = response.body?.string().orEmpty()
+                error("Failed to upsert list item: HTTP ${response.code} $err")
+            }
+        }
+    }
+
+    suspend fun upsertListItems(dtos: List<ListItemDto>): Result<Unit> = withContext(Dispatchers.IO) {
+        if (dtos.isEmpty()) return@withContext Result.success(Unit)
+        runCatching {
+            val bodyJson = json.encodeToString(dtos)
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/list_items")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Prefer", "resolution=merge-duplicates,return=minimal")
+                .post(bodyJson.toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val err = response.body?.string().orEmpty()
+                error("Failed to batch upsert list items: HTTP ${response.code} $err")
+            }
+        }
+    }
+
+    suspend fun deleteListItem(itemId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encodedId = java.net.URLEncoder.encode(itemId, "UTF-8")
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/list_items?id=eq.$encodedId")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .delete()
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val err = response.body?.string().orEmpty()
+                error("Failed to delete list item: HTTP ${response.code} $err")
             }
         }
     }

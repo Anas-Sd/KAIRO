@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import com.kairo.app.KairoApplication
+import com.kairo.app.data.auth.AuthManager
 import com.kairo.app.feature.lists.model.ListItem
 import com.kairo.app.feature.lists.model.ListWithStats
 import com.kairo.app.feature.lists.model.TaskList
+import com.kairo.app.feature.sync.SupabaseClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,6 +47,107 @@ object ListRepository {
     init {
         if (KairoApplication.isInitialized) {
             loadFromDisk()
+            fetchFromSupabase()
+        }
+    }
+
+    private fun getUserCodeSafe(): String {
+        return runCatching { AuthManager.getUserCode() }.getOrNull()?.takeIf { it.isNotBlank() } ?: "DEFAULT"
+    }
+
+    private fun TaskList.toDto(): TaskListDto = TaskListDto(
+        id = id,
+        userCode = if (userCode.isNotBlank() && userCode != "DEFAULT") userCode else getUserCodeSafe(),
+        name = name,
+        iconName = iconName,
+        position = position,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+
+    private fun ListItem.toDto(): ListItemDto = ListItemDto(
+        id = id,
+        userCode = if (userCode.isNotBlank() && userCode != "DEFAULT") userCode else getUserCodeSafe(),
+        listId = listId,
+        parentId = parentId,
+        title = title,
+        iconName = iconName,
+        notes = notes,
+        targetDate = targetDate,
+        targetDateMillis = targetDateMillis,
+        isCompleted = isCompleted,
+        position = position,
+        completedAt = completedAt,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+
+    fun fetchFromSupabase() {
+        scope.launch {
+            val userCode = getUserCodeSafe()
+            val listsResult = SupabaseClient.getTaskLists(userCode)
+            val itemsResult = SupabaseClient.getListItems(userCode)
+
+            var hasChanges = false
+            if (listsResult.isSuccess) {
+                val dtoList = listsResult.getOrNull().orEmpty()
+                val remoteLists = dtoList.map { dto ->
+                    TaskList(
+                        id = dto.id,
+                        userCode = dto.userCode,
+                        name = dto.name,
+                        iconName = dto.iconName,
+                        position = dto.position,
+                        createdAt = dto.createdAt,
+                        updatedAt = dto.updatedAt
+                    )
+                }.sortedBy { it.position }
+
+                if (remoteLists.isNotEmpty()) {
+                    _lists.value = remoteLists
+                    hasChanges = true
+                } else if (_lists.value.isNotEmpty()) {
+                    _lists.value.forEach { SupabaseClient.upsertTaskList(it.toDto()) }
+                }
+            } else {
+                Log.w(TAG, "Could not fetch lists from Supabase: ${listsResult.exceptionOrNull()?.message}")
+            }
+
+            if (itemsResult.isSuccess) {
+                val dtoList = itemsResult.getOrNull().orEmpty()
+                val remoteItems = dtoList.map { dto ->
+                    ListItem(
+                        id = dto.id,
+                        userCode = dto.userCode,
+                        listId = dto.listId,
+                        parentId = dto.parentId,
+                        title = dto.title,
+                        iconName = dto.iconName,
+                        notes = dto.notes,
+                        targetDate = dto.targetDate,
+                        targetDateMillis = dto.targetDateMillis,
+                        isCompleted = dto.isCompleted,
+                        position = dto.position,
+                        completedAt = dto.completedAt,
+                        createdAt = dto.createdAt,
+                        updatedAt = dto.updatedAt
+                    )
+                }.sortedBy { it.position }
+
+                if (remoteItems.isNotEmpty()) {
+                    _items.value = remoteItems
+                    hasChanges = true
+                } else if (_items.value.isNotEmpty()) {
+                    SupabaseClient.upsertListItems(_items.value.map { it.toDto() })
+                }
+            } else {
+                Log.w(TAG, "Could not fetch list items from Supabase: ${itemsResult.exceptionOrNull()?.message}")
+            }
+
+            if (hasChanges) {
+                recalculateStats()
+                saveToDisk()
+            }
         }
     }
 
@@ -184,8 +287,10 @@ object ListRepository {
     fun createList(name: String, iconName: String, initialSubtasks: List<String> = emptyList()): TaskList {
         val cleanName = name.trim()
         val current = _lists.value
+        val userCode = getUserCodeSafe()
         val newList = TaskList(
             id = UUID.randomUUID().toString(),
+            userCode = userCode,
             name = cleanName,
             iconName = iconName,
             position = current.size,
@@ -196,14 +301,16 @@ object ListRepository {
         val updatedLists = current + newList
         _lists.value = updatedLists
 
+        var newItemsList: List<ListItem> = emptyList()
         // If initial subtasks were entered, add them directly
         if (initialSubtasks.isNotEmpty()) {
-            val newItems = initialSubtasks
+            newItemsList = initialSubtasks
                 .map { it.trim() }
                 .filter { it.isNotBlank() }
                 .mapIndexed { index, subtaskTitle ->
                     ListItem(
                         id = UUID.randomUUID().toString(),
+                        userCode = userCode,
                         listId = newList.id,
                         parentId = null,
                         title = subtaskTitle,
@@ -212,24 +319,40 @@ object ListRepository {
                         updatedAt = System.currentTimeMillis() + index
                     )
                 }
-            _items.value = _items.value + newItems
+            _items.value = _items.value + newItemsList
         }
 
         recalculateStats()
         saveToDisk()
+
+        // Sync to Supabase
+        scope.launch {
+            SupabaseClient.upsertTaskList(newList.toDto())
+            if (newItemsList.isNotEmpty()) {
+                SupabaseClient.upsertListItems(newItemsList.map { it.toDto() })
+            }
+        }
+
         return newList
     }
 
     fun updateList(id: String, name: String, iconName: String) {
         val cleanName = name.trim()
+        var updatedList: TaskList? = null
         val updated = _lists.value.map {
             if (it.id == id) {
-                it.copy(name = cleanName, iconName = iconName, updatedAt = System.currentTimeMillis())
+                val list = it.copy(name = cleanName, iconName = iconName, updatedAt = System.currentTimeMillis())
+                updatedList = list
+                list
             } else it
         }
         _lists.value = updated
         recalculateStats()
         saveToDisk()
+
+        scope.launch {
+            updatedList?.let { SupabaseClient.upsertTaskList(it.toDto()) }
+        }
     }
 
     fun deleteList(id: String) {
@@ -237,6 +360,10 @@ object ListRepository {
         _items.value = _items.value.filter { it.listId != id }
         recalculateStats()
         saveToDisk()
+
+        scope.launch {
+            SupabaseClient.deleteTaskList(id)
+        }
     }
 
     fun reorderLists(newOrder: List<TaskList>) {
@@ -244,6 +371,10 @@ object ListRepository {
         _lists.value = updated
         recalculateStats()
         saveToDisk()
+
+        scope.launch {
+            updated.forEach { SupabaseClient.upsertTaskList(it.toDto()) }
+        }
     }
 
     fun moveListUp(listId: String) {
@@ -329,6 +460,12 @@ object ListRepository {
 
         recalculateStats()
         saveToDisk()
+
+        scope.launch {
+            SupabaseClient.deleteTaskList(sourceListId)
+            SupabaseClient.upsertListItem(parentItem.toDto())
+            SupabaseClient.upsertListItems(migratedItems.map { it.toDto() })
+        }
     }
 
     // ==========================================
@@ -346,8 +483,10 @@ object ListRepository {
     ): ListItem {
         val cleanTitle = title.trim()
         val listItems = _items.value.filter { it.listId == listId }
+        val userCode = getUserCodeSafe()
         val newItem = ListItem(
             id = UUID.randomUUID().toString(),
+            userCode = userCode,
             listId = listId,
             parentId = parentId,
             title = cleanTitle,
@@ -364,6 +503,11 @@ object ListRepository {
         _items.value = _items.value + newItem
         recalculateStats()
         saveToDisk()
+
+        scope.launch {
+            SupabaseClient.upsertListItem(newItem.toDto())
+        }
+
         return newItem
     }
 
@@ -375,11 +519,13 @@ object ListRepository {
         val existingItems = _items.value.filter { it.listId == listId }
         var currentPos = existingItems.size
         val newItems = mutableListOf<ListItem>()
+        val userCode = getUserCodeSafe()
 
         titles.map { it.trim() }.filter { it.isNotBlank() }.forEach { title ->
             newItems.add(
                 ListItem(
                     id = UUID.randomUUID().toString(),
+                    userCode = userCode,
                     listId = listId,
                     parentId = parentId,
                     title = title,
@@ -394,6 +540,10 @@ object ListRepository {
             _items.value = _items.value + newItems
             recalculateStats()
             saveToDisk()
+
+            scope.launch {
+                SupabaseClient.upsertListItems(newItems.map { it.toDto() })
+            }
         }
     }
 
@@ -406,6 +556,10 @@ object ListRepository {
         _items.value = updated
         recalculateStats()
         saveToDisk()
+
+        scope.launch {
+            SupabaseClient.upsertListItem(item.toDto())
+        }
     }
 
     fun toggleItemCompleted(itemId: String) {
@@ -414,6 +568,7 @@ object ListRepository {
         val listId = target.listId
         val itemsInList = allItems.filter { it.listId == listId }
         val now = System.currentTimeMillis()
+        val affectedIds = mutableSetOf<String>()
 
         if (!target.isCompleted) {
             // 1. Target and all recursive descendants become COMPLETED
@@ -447,6 +602,7 @@ object ListRepository {
                 }
             }
 
+            affectedIds.addAll(toComplete)
             _items.value = allItems.map {
                 if (toComplete.contains(it.id)) {
                     it.copy(isCompleted = true, completedAt = now, updatedAt = now)
@@ -462,6 +618,7 @@ object ListRepository {
             // Rule 2: Unticking a subtask -> parent & all done ancestors become not done
             toReopen.addAll(getAncestorIds(itemId, itemsInList))
 
+            affectedIds.addAll(toReopen)
             _items.value = allItems.map {
                 if (toReopen.contains(it.id)) {
                     it.copy(
@@ -475,6 +632,11 @@ object ListRepository {
 
         recalculateStats()
         saveToDisk()
+
+        val changedItems = _items.value.filter { affectedIds.contains(it.id) }
+        scope.launch {
+            SupabaseClient.upsertListItems(changedItems.map { it.toDto() })
+        }
     }
 
     fun checkAllItems(listId: String, completed: Boolean) {
@@ -487,21 +649,32 @@ object ListRepository {
         _items.value = updated
         recalculateStats()
         saveToDisk()
+
+        val affected = updated.filter { it.listId == listId }
+        scope.launch {
+            SupabaseClient.upsertListItems(affected.map { it.toDto() })
+        }
     }
 
     fun deleteListItem(itemId: String, deleteSubtasks: Boolean) {
         val allCurrent = _items.value
         val target = allCurrent.find { it.id == itemId } ?: return
+        val idsToDelete = mutableSetOf<String>()
+        val itemsToUpdate = mutableListOf<ListItem>()
 
         if (deleteSubtasks) {
             val descendantIds = getDescendantIds(itemId, allCurrent)
-            val idsToDelete = descendantIds + itemId
+            idsToDelete.addAll(descendantIds)
+            idsToDelete.add(itemId)
             _items.value = allCurrent.filter { !idsToDelete.contains(it.id) }
         } else {
             // Reparent direct children to target's parent
+            idsToDelete.add(itemId)
             val updated = allCurrent.map {
                 if (it.parentId == itemId) {
-                    it.copy(parentId = target.parentId, updatedAt = System.currentTimeMillis())
+                    val reparented = it.copy(parentId = target.parentId, updatedAt = System.currentTimeMillis())
+                    itemsToUpdate.add(reparented)
+                    reparented
                 } else it
             }.filter { it.id != itemId }
             _items.value = updated
@@ -509,6 +682,15 @@ object ListRepository {
 
         recalculateStats()
         saveToDisk()
+
+        scope.launch {
+            if (itemsToUpdate.isNotEmpty()) {
+                SupabaseClient.upsertListItems(itemsToUpdate.map { it.toDto() })
+            }
+            idsToDelete.forEach { id ->
+                SupabaseClient.deleteListItem(id)
+            }
+        }
     }
 
     fun adjustItemParent(itemId: String, newParentId: String?, moveSubtasks: Boolean) {
@@ -524,11 +706,14 @@ object ListRepository {
             }
         }
 
+        val affectedItems = mutableListOf<ListItem>()
         if (moveSubtasks) {
             // Move target under newParentId; children remain attached to target
             val updated = allCurrent.map {
                 if (it.id == itemId) {
-                    it.copy(parentId = newParentId, updatedAt = System.currentTimeMillis())
+                    val itm = it.copy(parentId = newParentId, updatedAt = System.currentTimeMillis())
+                    affectedItems.add(itm)
+                    itm
                 } else it
             }
             _items.value = updated
@@ -537,10 +722,16 @@ object ListRepository {
             val originalParent = target.parentId
             val updated = allCurrent.map {
                 when (it.id) {
-                    itemId -> it.copy(parentId = newParentId, updatedAt = System.currentTimeMillis())
+                    itemId -> {
+                        val itm = it.copy(parentId = newParentId, updatedAt = System.currentTimeMillis())
+                        affectedItems.add(itm)
+                        itm
+                    }
                     else -> {
                         if (it.parentId == itemId) {
-                            it.copy(parentId = originalParent, updatedAt = System.currentTimeMillis())
+                            val itm = it.copy(parentId = originalParent, updatedAt = System.currentTimeMillis())
+                            affectedItems.add(itm)
+                            itm
                         } else it
                     }
                 }
@@ -550,6 +741,10 @@ object ListRepository {
 
         recalculateStats()
         saveToDisk()
+
+        scope.launch {
+            SupabaseClient.upsertListItems(affectedItems.map { it.toDto() })
+        }
     }
 
     fun getDescendantIds(itemId: String, allItems: List<ListItem> = _items.value): Set<String> {
@@ -589,6 +784,11 @@ object ListRepository {
         }
         _items.value = updated
         saveToDisk()
+
+        val reordered = updated.filter { it.listId == listId && updatedMap.containsKey(it.id) }
+        scope.launch {
+            SupabaseClient.upsertListItems(reordered.map { it.toDto() })
+        }
     }
 
     fun moveItemUp(itemId: String) {
@@ -604,10 +804,16 @@ object ListRepository {
             val item = peers.removeAt(index)
             peers.add(index - 1, item)
             val updatedMap = peers.mapIndexed { idx, itm -> itm.id to idx }.toMap()
-            _items.value = allItems.map { itm ->
+            val updated = allItems.map { itm ->
                 if (updatedMap.containsKey(itm.id)) itm.copy(position = updatedMap[itm.id]!!) else itm
             }
+            _items.value = updated
             saveToDisk()
+
+            val changed = updated.filter { updatedMap.containsKey(it.id) }
+            scope.launch {
+                SupabaseClient.upsertListItems(changed.map { it.toDto() })
+            }
         }
     }
 
@@ -624,10 +830,16 @@ object ListRepository {
             val item = peers.removeAt(index)
             peers.add(index + 1, item)
             val updatedMap = peers.mapIndexed { idx, itm -> itm.id to idx }.toMap()
-            _items.value = allItems.map { itm ->
+            val updated = allItems.map { itm ->
                 if (updatedMap.containsKey(itm.id)) itm.copy(position = updatedMap[itm.id]!!) else itm
             }
+            _items.value = updated
             saveToDisk()
+
+            val changed = updated.filter { updatedMap.containsKey(it.id) }
+            scope.launch {
+                SupabaseClient.upsertListItems(changed.map { it.toDto() })
+            }
         }
     }
 
@@ -644,10 +856,16 @@ object ListRepository {
             val item = peers.removeAt(index)
             peers.add(0, item)
             val updatedMap = peers.mapIndexed { idx, itm -> itm.id to idx }.toMap()
-            _items.value = allItems.map { itm ->
+            val updated = allItems.map { itm ->
                 if (updatedMap.containsKey(itm.id)) itm.copy(position = updatedMap[itm.id]!!) else itm
             }
+            _items.value = updated
             saveToDisk()
+
+            val changed = updated.filter { updatedMap.containsKey(it.id) }
+            scope.launch {
+                SupabaseClient.upsertListItems(changed.map { it.toDto() })
+            }
         }
     }
 
@@ -664,10 +882,16 @@ object ListRepository {
             val item = peers.removeAt(index)
             peers.add(item)
             val updatedMap = peers.mapIndexed { idx, itm -> itm.id to idx }.toMap()
-            _items.value = allItems.map { itm ->
+            val updated = allItems.map { itm ->
                 if (updatedMap.containsKey(itm.id)) itm.copy(position = updatedMap[itm.id]!!) else itm
             }
+            _items.value = updated
             saveToDisk()
+
+            val changed = updated.filter { updatedMap.containsKey(it.id) }
+            scope.launch {
+                SupabaseClient.upsertListItems(changed.map { it.toDto() })
+            }
         }
     }
 
@@ -677,9 +901,11 @@ object ListRepository {
         val currentLists = _lists.value
         val sourceListIndex = currentLists.indexOfFirst { it.id == targetItem.listId }
         val insertPos = if (sourceListIndex != -1) sourceListIndex + 1 else currentLists.size
+        val userCode = getUserCodeSafe()
 
         val newList = TaskList(
             id = UUID.randomUUID().toString(),
+            userCode = userCode,
             name = targetItem.title,
             iconName = targetItem.iconName,
             position = insertPos,
@@ -690,7 +916,8 @@ object ListRepository {
         val descendantIds = getDescendantIds(itemId, allItems)
         val updatedLists = currentLists.toMutableList()
         updatedLists.add(insertPos, newList)
-        _lists.value = updatedLists.mapIndexed { index, list -> list.copy(position = index) }
+        val reorderedLists = updatedLists.mapIndexed { index, list -> list.copy(position = index) }
+        _lists.value = reorderedLists
 
         val newItems = allItems.filter { it.id != itemId }.map { item ->
             if (descendantIds.contains(item.id)) {
@@ -701,6 +928,17 @@ object ListRepository {
         _items.value = newItems
         recalculateStats()
         saveToDisk()
+
+        val migratedItems = newItems.filter { descendantIds.contains(it.id) }
+        scope.launch {
+            SupabaseClient.upsertTaskList(newList.toDto())
+            SupabaseClient.deleteListItem(itemId)
+            if (migratedItems.isNotEmpty()) {
+                SupabaseClient.upsertListItems(migratedItems.map { it.toDto() })
+            }
+            reorderedLists.forEach { SupabaseClient.upsertTaskList(it.toDto()) }
+        }
+
         return newList
     }
 }

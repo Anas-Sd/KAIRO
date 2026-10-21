@@ -51,6 +51,7 @@ import kotlinx.coroutines.delay
 import com.kairo.app.data.auth.AuthManager
 import com.kairo.app.data.sync.SyncManager
 import com.kairo.app.feature.habits.data.HabitRepository
+import com.kairo.app.feature.lists.data.ListRepository
 import com.kairo.app.ui.theme.KairoBackground
 import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoSecondary
@@ -238,6 +239,7 @@ fun AppHeader(
                                 coroutineScope.launch {
                                     SyncManager.performSync(forceCheckNetwork = true)
                                     HabitRepository.fetchFromSupabase()
+                                    ListRepository.fetchFromSupabase()
                                 }
                             }
                         )

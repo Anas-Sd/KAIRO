@@ -42,6 +42,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +78,10 @@ import com.kairo.app.ui.theme.KairoSurfaceContainerLow
 
 @Composable
 fun ListsScreen(modifier: Modifier = Modifier) {
+    LaunchedEffect(Unit) {
+        ListRepository.fetchFromSupabase()
+    }
+
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
