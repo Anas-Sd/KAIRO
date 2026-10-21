@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -65,6 +67,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,13 +76,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import kotlin.math.roundToInt
 import com.kairo.app.feature.lists.data.ListRepository
 import com.kairo.app.feature.lists.model.ListIconCatalog
 import com.kairo.app.feature.lists.model.ListIconDisplay
@@ -168,6 +176,61 @@ fun ListDetailScreen(
 
     // Two sections: Active (expanded) and Completed (collapsed by default)
     var isCompletedSectionExpanded by remember { mutableStateOf(false) }
+
+    // Drag-to-reorder state for list items
+    var draggingItemId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var localReorderItems by remember { mutableStateOf<List<ListItem>?>(null) }
+
+    fun buildItemDragHandleModifier(item: ListItem, sectionItems: List<ListItem>): Modifier {
+        return Modifier.pointerInput(item.id) {
+            detectDragGestures(
+                onDragStart = {
+                    draggingItemId = item.id
+                    dragOffsetY = 0f
+                    localReorderItems = sectionItems
+                },
+                onDrag = { change, dragAmount ->
+                    change.consume()
+                    dragOffsetY += dragAmount.y
+                    val current = localReorderItems
+                    val currentId = draggingItemId
+                    if (current != null && currentId != null) {
+                        val currentIndex = current.indexOfFirst { it.id == currentId }
+                        val itemThreshold = 140f
+                        if (dragOffsetY > itemThreshold && currentIndex in 0 until current.lastIndex) {
+                            val mutable = current.toMutableList()
+                            val targetIndex = currentIndex + 1
+                            val itm = mutable.removeAt(currentIndex)
+                            mutable.add(targetIndex, itm)
+                            localReorderItems = mutable
+                            dragOffsetY -= itemThreshold
+                        } else if (dragOffsetY < -itemThreshold && currentIndex > 0) {
+                            val mutable = current.toMutableList()
+                            val targetIndex = currentIndex - 1
+                            val itm = mutable.removeAt(currentIndex)
+                            mutable.add(targetIndex, itm)
+                            localReorderItems = mutable
+                            dragOffsetY += itemThreshold
+                        }
+                    }
+                },
+                onDragEnd = {
+                    localReorderItems?.let { reordered ->
+                        ListRepository.reorderItems(currentList.id, reordered)
+                    }
+                    draggingItemId = null
+                    dragOffsetY = 0f
+                    localReorderItems = null
+                },
+                onDragCancel = {
+                    draggingItemId = null
+                    dragOffsetY = 0f
+                    localReorderItems = null
+                }
+            )
+        }
+    }
 
     // Dialog states
     var showEditListDialog by remember { mutableStateOf(false) }
@@ -538,7 +601,19 @@ fun ListDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Active items
-                if (scopedActiveItems.isEmpty() && scopedCompletedItems.isEmpty()) {
+                val displayActiveItems = if (draggingItemId != null && scopedActiveItems.any { it.id == draggingItemId }) {
+                    localReorderItems ?: scopedActiveItems
+                } else {
+                    scopedActiveItems
+                }
+
+                val displayCompletedItems = if (draggingItemId != null && scopedCompletedItems.any { it.id == draggingItemId }) {
+                    localReorderItems ?: scopedCompletedItems
+                } else {
+                    scopedCompletedItems
+                }
+
+                if (displayActiveItems.isEmpty() && displayCompletedItems.isEmpty()) {
                     item {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
@@ -568,28 +643,31 @@ fun ListDetailScreen(
                         }
                     }
                 } else {
-                    itemsIndexed(scopedActiveItems, key = { _, item -> item.id }) { index, item ->
+                    itemsIndexed(displayActiveItems, key = { _, item -> item.id }) { index, item ->
+                        val isBeingDragged = (item.id == draggingItemId)
                         val childSubtasks = listItems.filter { it.parentId == item.id }
                         val hasSubtasks = childSubtasks.isNotEmpty()
                         val completedSubtasks = childSubtasks.count { it.isCompleted }
-
-                        val canMoveUp = index > 0
-                        val canMoveDown = index < scopedActiveItems.size - 1
 
                         if (hasSubtasks) {
                             ParentListItemCard(
                                 item = item,
                                 completedSubtasks = completedSubtasks,
                                 totalSubtasks = childSubtasks.size,
-                                canMoveUp = canMoveUp,
-                                canMoveDown = canMoveDown,
-                                onMoveUp = { ListRepository.moveItemUp(item.id) },
-                                onMoveDown = { ListRepository.moveItemDown(item.id) },
-                                onMoveToTop = { ListRepository.moveItemToTop(item.id) },
-                                onMoveToBottom = { ListRepository.moveItemToBottom(item.id) },
+                                isBeingDragged = isBeingDragged,
+                                dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                                dragHandleModifier = buildItemDragHandleModifier(item, displayActiveItems),
                                 onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
-                                onDrillDown = { breadcrumbStack.add(item) },
-                                onShowDetails = { selectedItemForDetails = item },
+                                onDrillDown = {
+                                    if (draggingItemId == null) {
+                                        breadcrumbStack.add(item)
+                                    }
+                                },
+                                onShowDetails = {
+                                    if (draggingItemId == null) {
+                                        selectedItemForDetails = item
+                                    }
+                                },
                                 onAddSubtask = { parentId ->
                                     val target = listItems.find { it.id == parentId } ?: item
                                     targetParentForMultiAdd = target
@@ -602,14 +680,15 @@ fun ListDetailScreen(
                         } else {
                             LeafListItemCard(
                                 item = item,
-                                canMoveUp = canMoveUp,
-                                canMoveDown = canMoveDown,
-                                onMoveUp = { ListRepository.moveItemUp(item.id) },
-                                onMoveDown = { ListRepository.moveItemDown(item.id) },
-                                onMoveToTop = { ListRepository.moveItemToTop(item.id) },
-                                onMoveToBottom = { ListRepository.moveItemToBottom(item.id) },
+                                isBeingDragged = isBeingDragged,
+                                dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                                dragHandleModifier = buildItemDragHandleModifier(item, displayActiveItems),
                                 onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
-                                onShowDetails = { selectedItemForDetails = item },
+                                onShowDetails = {
+                                    if (draggingItemId == null) {
+                                        selectedItemForDetails = item
+                                    }
+                                },
                                 onAddSubtask = { parentId ->
                                     val target = listItems.find { it.id == parentId } ?: item
                                     targetParentForMultiAdd = target
@@ -623,7 +702,7 @@ fun ListDetailScreen(
                     }
 
                     // 5. COMPLETED ITEMS SECTION (Collapsed by default)
-                    if (scopedCompletedItems.isNotEmpty()) {
+                    if (displayCompletedItems.isNotEmpty()) {
                         item {
                             Spacer(modifier = Modifier.height(10.dp))
 
@@ -661,7 +740,7 @@ fun ListDetailScreen(
                                             modifier = Modifier.size(16.dp)
                                         )
                                         Text(
-                                            text = "Completed (${scopedCompletedItems.size})",
+                                            text = "Completed (${displayCompletedItems.size})",
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = MaterialTheme.colorScheme.onSurface
@@ -681,28 +760,31 @@ fun ListDetailScreen(
                         }
 
                         if (isCompletedSectionExpanded) {
-                            itemsIndexed(scopedCompletedItems, key = { _, completedItem -> completedItem.id }) { index, completedItem ->
+                            itemsIndexed(displayCompletedItems, key = { _, completedItem -> completedItem.id }) { index, completedItem ->
+                                val isBeingDragged = (completedItem.id == draggingItemId)
                                 val childSubtasks = listItems.filter { it.parentId == completedItem.id }
                                 val hasSubtasks = childSubtasks.isNotEmpty()
                                 val completedCount = childSubtasks.count { it.isCompleted }
-
-                                val canMoveUp = index > 0
-                                val canMoveDown = index < scopedCompletedItems.size - 1
 
                                 if (hasSubtasks) {
                                     ParentListItemCard(
                                         item = completedItem,
                                         completedSubtasks = completedCount,
                                         totalSubtasks = childSubtasks.size,
-                                        canMoveUp = canMoveUp,
-                                        canMoveDown = canMoveDown,
-                                        onMoveUp = { ListRepository.moveItemUp(completedItem.id) },
-                                        onMoveDown = { ListRepository.moveItemDown(completedItem.id) },
-                                        onMoveToTop = { ListRepository.moveItemToTop(completedItem.id) },
-                                        onMoveToBottom = { ListRepository.moveItemToBottom(completedItem.id) },
+                                        isBeingDragged = isBeingDragged,
+                                        dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                                        dragHandleModifier = buildItemDragHandleModifier(completedItem, displayCompletedItems),
                                         onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
-                                        onDrillDown = { breadcrumbStack.add(completedItem) },
-                                        onShowDetails = { selectedItemForDetails = completedItem },
+                                        onDrillDown = {
+                                            if (draggingItemId == null) {
+                                                breadcrumbStack.add(completedItem)
+                                            }
+                                        },
+                                        onShowDetails = {
+                                            if (draggingItemId == null) {
+                                                selectedItemForDetails = completedItem
+                                            }
+                                        },
                                         onAddSubtask = { parentId ->
                                             val target = listItems.find { it.id == parentId } ?: completedItem
                                             targetParentForMultiAdd = target
@@ -715,14 +797,15 @@ fun ListDetailScreen(
                                 } else {
                                     LeafListItemCard(
                                         item = completedItem,
-                                        canMoveUp = canMoveUp,
-                                        canMoveDown = canMoveDown,
-                                        onMoveUp = { ListRepository.moveItemUp(completedItem.id) },
-                                        onMoveDown = { ListRepository.moveItemDown(completedItem.id) },
-                                        onMoveToTop = { ListRepository.moveItemToTop(completedItem.id) },
-                                        onMoveToBottom = { ListRepository.moveItemToBottom(completedItem.id) },
+                                        isBeingDragged = isBeingDragged,
+                                        dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                                        dragHandleModifier = buildItemDragHandleModifier(completedItem, displayCompletedItems),
                                         onToggleCompleted = { ListRepository.toggleItemCompleted(it) },
-                                        onShowDetails = { selectedItemForDetails = completedItem },
+                                        onShowDetails = {
+                                            if (draggingItemId == null) {
+                                                selectedItemForDetails = completedItem
+                                            }
+                                        },
                                         onAddSubtask = { parentId ->
                                             val target = listItems.find { it.id == parentId } ?: completedItem
                                             targetParentForMultiAdd = target
@@ -1071,12 +1154,9 @@ private fun ParentListItemCard(
     item: ListItem,
     completedSubtasks: Int,
     totalSubtasks: Int,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
-    onMoveToTop: () -> Unit,
-    onMoveToBottom: () -> Unit,
+    isBeingDragged: Boolean = false,
+    dragOffsetY: Float = 0f,
+    dragHandleModifier: Modifier = Modifier,
     onToggleCompleted: (id: String) -> Unit,
     onDrillDown: () -> Unit,
     onShowDetails: () -> Unit,
@@ -1091,12 +1171,22 @@ private fun ParentListItemCard(
 
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = KairoSurfaceContainer,
-        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.22f)),
+        color = if (isBeingDragged) KairoSurfaceContainerHigh else KairoSurfaceContainer,
+        border = BorderStroke(1.dp, if (isBeingDragged) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.22f)),
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (isBeingDragged) {
+                    Modifier
+                        .zIndex(2f)
+                        .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+                        .shadow(12.dp, RoundedCornerShape(16.dp))
+                } else {
+                    Modifier
+                }
+            )
             .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onDrillDown)
+            .clickable(onClick = { if (!isBeingDragged) onDrillDown() })
     ) {
         Row(
             modifier = Modifier
@@ -1104,30 +1194,13 @@ private fun ParentListItemCard(
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Reorder handle on the very left
-            ListReorderHandle(
-                canMoveUp = canMoveUp,
-                canMoveDown = canMoveDown,
-                onMoveUp = onMoveUp,
-                onMoveDown = onMoveDown,
-                onMoveToTop = onMoveToTop,
-                onMoveToBottom = onMoveToBottom
+            // Left Column: 6-dots Drag Indicator on top + Squircle Checkbox below it
+            ListCardLeadingControl(
+                isCompleted = item.isCompleted,
+                onToggleCompleted = { onToggleCompleted(item.id) },
+                isBeingDragged = isBeingDragged,
+                dragHandleModifier = dragHandleModifier
             )
-
-            // Checkbox to complete parent and all subtasks
-            IconButton(
-                onClick = { onToggleCompleted(item.id) },
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    imageVector = if (item.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                    contentDescription = "Toggle Complete",
-                    tint = if (item.isCompleted) Color(0xFF10B981) else KairoOutlineVariant,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(6.dp))
 
             // Middle block: Icon + Name + % on top, progress bar below them
             Column(
@@ -1288,12 +1361,9 @@ private fun ParentListItemCard(
 @Composable
 private fun LeafListItemCard(
     item: ListItem,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
-    onMoveToTop: () -> Unit,
-    onMoveToBottom: () -> Unit,
+    isBeingDragged: Boolean = false,
+    dragOffsetY: Float = 0f,
+    dragHandleModifier: Modifier = Modifier,
     onToggleCompleted: (id: String) -> Unit,
     onShowDetails: () -> Unit,
     onAddSubtask: (parentId: String) -> Unit,
@@ -1305,12 +1375,22 @@ private fun LeafListItemCard(
 
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = KairoSurfaceContainer,
-        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f)),
+        color = if (isBeingDragged) KairoSurfaceContainerHigh else KairoSurfaceContainer,
+        border = BorderStroke(1.dp, if (isBeingDragged) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.2f)),
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (isBeingDragged) {
+                    Modifier
+                        .zIndex(2f)
+                        .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+                        .shadow(12.dp, RoundedCornerShape(12.dp))
+                } else {
+                    Modifier
+                }
+            )
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onShowDetails)
+            .clickable(onClick = { if (!isBeingDragged) onShowDetails() })
     ) {
         Row(
             modifier = Modifier
@@ -1318,29 +1398,13 @@ private fun LeafListItemCard(
                 .padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Reorder handle on the very left
-            ListReorderHandle(
-                canMoveUp = canMoveUp,
-                canMoveDown = canMoveDown,
-                onMoveUp = onMoveUp,
-                onMoveDown = onMoveDown,
-                onMoveToTop = onMoveToTop,
-                onMoveToBottom = onMoveToBottom
+            // Left Column: 6-dots Drag Indicator on top + Squircle Checkbox below it
+            ListCardLeadingControl(
+                isCompleted = item.isCompleted,
+                onToggleCompleted = { onToggleCompleted(item.id) },
+                isBeingDragged = isBeingDragged,
+                dragHandleModifier = dragHandleModifier
             )
-
-            IconButton(
-                onClick = { onToggleCompleted(item.id) },
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    imageVector = if (item.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                    contentDescription = "Toggle Complete",
-                    tint = if (item.isCompleted) Color(0xFF10B981) else KairoOutlineVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(

@@ -47,16 +47,23 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.kairo.app.feature.lists.data.ListRepository
 import com.kairo.app.feature.lists.model.ListIconCatalog
 import com.kairo.app.feature.lists.model.ListIconDisplay
@@ -64,8 +71,9 @@ import com.kairo.app.feature.lists.model.ListWithStats
 import com.kairo.app.feature.lists.model.TaskList
 import com.kairo.app.feature.lists.ui.AdjustParentListDialog
 import com.kairo.app.feature.lists.ui.CreateListDialog
+import com.kairo.app.feature.lists.ui.ListCardLeadingControl
 import com.kairo.app.feature.lists.ui.ListDetailScreen
-import com.kairo.app.feature.lists.ui.ListReorderHandle
+import kotlin.math.roundToInt
 import com.kairo.app.ui.components.AppHeader
 import com.kairo.app.ui.components.SettingsDialog
 import com.kairo.app.ui.theme.KairoBackground
@@ -116,6 +124,61 @@ fun ListsScreen(modifier: Modifier = Modifier) {
                 val itemMatches = allItems.any { it.listId == stats.list.id && it.title.contains(searchQuery, ignoreCase = true) }
                 listMatches || itemMatches
             }
+        }
+    }
+
+    // Drag-to-reorder state for main lists
+    var draggingListId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var localReorderLists by remember { mutableStateOf<List<ListWithStats>?>(null) }
+
+    fun buildListDragHandleModifier(stats: ListWithStats, currentLists: List<ListWithStats>): Modifier {
+        return Modifier.pointerInput(stats.list.id) {
+            detectDragGestures(
+                onDragStart = {
+                    draggingListId = stats.list.id
+                    dragOffsetY = 0f
+                    localReorderLists = currentLists
+                },
+                onDrag = { change, dragAmount ->
+                    change.consume()
+                    dragOffsetY += dragAmount.y
+                    val current = localReorderLists
+                    val currentId = draggingListId
+                    if (current != null && currentId != null) {
+                        val currentIndex = current.indexOfFirst { it.list.id == currentId }
+                        val itemThreshold = 140f
+                        if (dragOffsetY > itemThreshold && currentIndex in 0 until current.lastIndex) {
+                            val mutable = current.toMutableList()
+                            val targetIndex = currentIndex + 1
+                            val item = mutable.removeAt(currentIndex)
+                            mutable.add(targetIndex, item)
+                            localReorderLists = mutable
+                            dragOffsetY -= itemThreshold
+                        } else if (dragOffsetY < -itemThreshold && currentIndex > 0) {
+                            val mutable = current.toMutableList()
+                            val targetIndex = currentIndex - 1
+                            val item = mutable.removeAt(currentIndex)
+                            mutable.add(targetIndex, item)
+                            localReorderLists = mutable
+                            dragOffsetY += itemThreshold
+                        }
+                    }
+                },
+                onDragEnd = {
+                    localReorderLists?.let { reordered ->
+                        ListRepository.reorderLists(reordered.map { it.list })
+                    }
+                    draggingListId = null
+                    dragOffsetY = 0f
+                    localReorderLists = null
+                },
+                onDragCancel = {
+                    draggingListId = null
+                    dragOffsetY = 0f
+                    localReorderLists = null
+                }
+            )
         }
     }
 
@@ -220,24 +283,27 @@ fun ListsScreen(modifier: Modifier = Modifier) {
                     }
                 }
             } else {
+                val displayLists = if (draggingListId != null) (localReorderLists ?: filteredLists) else filteredLists
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    itemsIndexed(filteredLists, key = { _, stats -> stats.list.id }) { index, stats ->
+                    itemsIndexed(displayLists, key = { _, stats -> stats.list.id }) { index, stats ->
+                        val isBeingDragged = (stats.list.id == draggingListId)
                         ListOverviewCard(
                             stats = stats,
-                            canMoveUp = index > 0,
-                            canMoveDown = index < filteredLists.size - 1,
-                            onMoveUp = { ListRepository.moveListUp(stats.list.id) },
-                            onMoveDown = { ListRepository.moveListDown(stats.list.id) },
-                            onMoveToTop = { ListRepository.moveListToTop(stats.list.id) },
-                            onMoveToBottom = { ListRepository.moveListToBottom(stats.list.id) },
+                            isBeingDragged = isBeingDragged,
+                            dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                            dragHandleModifier = buildListDragHandleModifier(stats, displayLists),
                             onToggleComplete = {
                                 val isAllDone = stats.totalCount > 0 && stats.completedCount == stats.totalCount
                                 ListRepository.checkAllItems(stats.list.id, !isAllDone)
                             },
-                            onClick = { selectedListId = stats.list.id },
+                            onClick = {
+                                if (draggingListId == null) {
+                                    selectedListId = stats.list.id
+                                }
+                            },
                             onEdit = { listToEdit = stats.list },
                             onAdjustParent = { listToAdjustParent = stats.list },
                             onDelete = { listToDelete = stats.list }
@@ -344,12 +410,9 @@ fun ListsScreen(modifier: Modifier = Modifier) {
 @Composable
 private fun ListOverviewCard(
     stats: ListWithStats,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
-    onMoveToTop: () -> Unit,
-    onMoveToBottom: () -> Unit,
+    isBeingDragged: Boolean = false,
+    dragOffsetY: Float = 0f,
+    dragHandleModifier: Modifier = Modifier,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
     onEdit: () -> Unit,
@@ -364,10 +427,20 @@ private fun ListOverviewCard(
 
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = KairoSurfaceContainer,
-        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.22f)),
+        color = if (isBeingDragged) KairoSurfaceContainerHigh else KairoSurfaceContainer,
+        border = BorderStroke(1.dp, if (isBeingDragged) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.22f)),
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (isBeingDragged) {
+                    Modifier
+                        .zIndex(2f)
+                        .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+                        .shadow(12.dp, RoundedCornerShape(16.dp))
+                } else {
+                    Modifier
+                }
+            )
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
     ) {
@@ -377,30 +450,13 @@ private fun ListOverviewCard(
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Reorder handle on the very left
-            ListReorderHandle(
-                canMoveUp = canMoveUp,
-                canMoveDown = canMoveDown,
-                onMoveUp = onMoveUp,
-                onMoveDown = onMoveDown,
-                onMoveToTop = onMoveToTop,
-                onMoveToBottom = onMoveToBottom
+            // Left Column: 6-dots Drag Indicator on top + Squircle Checkbox below it
+            ListCardLeadingControl(
+                isCompleted = isAllCompleted,
+                onToggleCompleted = onToggleComplete,
+                isBeingDragged = isBeingDragged,
+                dragHandleModifier = dragHandleModifier
             )
-
-            // Bi-directional completion checkbox
-            IconButton(
-                onClick = onToggleComplete,
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    imageVector = if (isAllCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                    contentDescription = "Toggle Complete",
-                    tint = if (isAllCompleted) Color(0xFF10B981) else KairoOutlineVariant,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(6.dp))
 
             // Main content block with Icon + Text + % on top, and progress bar below them
             Column(
