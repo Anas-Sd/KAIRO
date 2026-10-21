@@ -274,6 +274,31 @@ fun ListDetailScreen(
         }
     }
 
+    val headerTitle = currentParent?.title ?: currentList.name
+    val headerIcon = if (currentParent != null) {
+        if (currentParent.iconName.isNotBlank() && currentParent.iconName != "list") currentParent.iconName else "category"
+    } else {
+        currentList.iconName
+    }
+
+    val headerCompletedCount: Int
+    val headerTotalCount: Int
+    val headerPercentage: Int
+    val headerProgressFloat: Float
+
+    if (currentParent != null) {
+        val directChildren = listItems.filter { it.parentId == currentParent.id }
+        headerCompletedCount = directChildren.count { it.isCompleted }
+        headerTotalCount = directChildren.size
+        headerPercentage = if (headerTotalCount > 0) (headerCompletedCount * 100) / headerTotalCount else 0
+        headerProgressFloat = if (headerTotalCount > 0) headerCompletedCount.toFloat() / headerTotalCount.toFloat() else 0f
+    } else {
+        headerCompletedCount = currentListStats.completedCount
+        headerTotalCount = currentListStats.totalCount
+        headerPercentage = currentListStats.progressPercentage
+        headerProgressFloat = if (headerTotalCount > 0) headerCompletedCount.toFloat() / headerTotalCount.toFloat() else 0f
+    }
+
     Scaffold(
         topBar = {
             Surface(
@@ -328,99 +353,184 @@ fun ListDetailScreen(
                         }
                     }
                 } else {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .statusBarsPadding()
-                            .padding(horizontal = 8.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = {
-                            if (breadcrumbStack.isNotEmpty()) {
-                                breadcrumbStack.removeLast()
-                            } else {
-                                onBack()
-                            }
-                        }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        Box(
+                        Row(
                             modifier = Modifier
-                                .size(34.dp)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(KairoPrimary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            ListIconDisplay(
-                                iconKey = currentList.iconName,
-                                tint = KairoPrimary,
-                                modifier = Modifier.size(18.dp),
-                                emojiSize = 18.sp
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(10.dp))
-
-                        Text(
-                            text = currentList.name,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        // Plus (+) button to add multiple items at once
-                        IconButton(onClick = {
-                            targetParentForMultiAdd = currentParent
-                            showMultiAddDialog = true
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Add Items",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        // 3-dots Menu on the right of + (with Select option)
-                        Box {
-                            IconButton(onClick = { showTopMenu = true }) {
+                            IconButton(onClick = {
+                                if (breadcrumbStack.isNotEmpty()) {
+                                    breadcrumbStack.removeLast()
+                                } else {
+                                    onBack()
+                                }
+                            }) {
                                 Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "More Options",
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             }
 
-                            DropdownMenu(
-                                expanded = showTopMenu,
-                                onDismissRequest = { showTopMenu = false },
-                                modifier = Modifier.background(KairoSurfaceContainerHigh)
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(KairoPrimary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                DropdownMenuItem(
-                                    text = { Text("Select") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.SelectAll,
-                                            contentDescription = null,
-                                            tint = KairoPrimary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    },
-                                    onClick = {
-                                        showTopMenu = false
-                                        isSelectionMode = true
-                                        selectedItemIds = emptySet()
-                                    }
+                                ListIconDisplay(
+                                    iconKey = headerIcon,
+                                    tint = KairoPrimary,
+                                    modifier = Modifier.size(18.dp),
+                                    emojiSize = 18.sp
                                 )
                             }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = headerTitle,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (headerTotalCount > 0) {
+                                    Text(
+                                        text = "$headerCompletedCount of $headerTotalCount completed ($headerPercentage%)",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            // Plus (+) button to add multiple items at once
+                            IconButton(onClick = {
+                                targetParentForMultiAdd = currentParent
+                                showMultiAddDialog = true
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = if (currentParent != null) "Add Subtasks" else "Add Items",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            // 3-dots Menu on the right of + (with Select, Edit, Details, Delete)
+                            Box {
+                                IconButton(onClick = { showTopMenu = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "More Options",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
+                                DropdownMenu(
+                                    expanded = showTopMenu,
+                                    onDismissRequest = { showTopMenu = false },
+                                    modifier = Modifier.background(KairoSurfaceContainerHigh)
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Select") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.SelectAll,
+                                                contentDescription = null,
+                                                tint = KairoPrimary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        },
+                                        onClick = {
+                                            showTopMenu = false
+                                            isSelectionMode = true
+                                            selectedItemIds = emptySet()
+                                        }
+                                    )
+
+                                    if (currentParent != null) {
+                                        DropdownMenuItem(
+                                            text = { Text("Parent Details") },
+                                            leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
+                                            onClick = {
+                                                showTopMenu = false
+                                                selectedItemForDetails = currentParent
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Edit Parent") },
+                                            leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
+                                            onClick = {
+                                                showTopMenu = false
+                                                selectedItemForEdit = currentParent
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Adjust Parent") },
+                                            leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
+                                            onClick = {
+                                                showTopMenu = false
+                                                selectedItemForAdjustParent = currentParent
+                                            }
+                                        )
+                                        HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
+                                        DropdownMenuItem(
+                                            text = { Text("Delete Parent", color = KairoHighUrgent) },
+                                            leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
+                                            onClick = {
+                                                showTopMenu = false
+                                                selectedItemForDelete = currentParent
+                                            }
+                                        )
+                                    } else {
+                                        DropdownMenuItem(
+                                            text = { Text("Edit List") },
+                                            leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
+                                            onClick = {
+                                                showTopMenu = false
+                                                showEditListDialog = true
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Adjust Parent List") },
+                                            leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
+                                            onClick = {
+                                                showTopMenu = false
+                                                showAdjustParentListDialog = true
+                                            }
+                                        )
+                                        HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
+                                        DropdownMenuItem(
+                                            text = { Text("Delete List", color = KairoHighUrgent) },
+                                            leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
+                                            onClick = {
+                                                showTopMenu = false
+                                                showDeleteListDialog = true
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
+
+                        // Progress bar in the header itself just below title and actions
+                        LinearProgressIndicator(
+                            progress = { headerProgressFloat },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp),
+                            color = if (headerPercentage == 100) Color(0xFF10B981) else KairoPrimary,
+                            trackColor = if (headerTotalCount > 0) KairoSurfaceContainerLow else Color.Transparent
+                        )
                     }
                 }
             }
@@ -435,16 +545,15 @@ fun ListDetailScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
                     .then(if (isSelectionMode) Modifier.padding(bottom = 76.dp) else Modifier)
             ) {
-            // 1. Breadcrumbs Navigation Bar (shown when drilled into subtasks)
+            // Breadcrumbs Navigation Bar (shown when drilled into subtasks)
             if (breadcrumbStack.isNotEmpty()) {
                 ListBreadcrumbBar(
                     listName = currentList.name,
                     listIcon = currentList.iconName,
                     breadcrumbStack = breadcrumbStack,
-                    onNavigateBack = { breadcrumbStack.removeLast() },
                     onNavigateToCrumb = { index ->
                         if (index < 0) {
                             breadcrumbStack.clear()
@@ -456,254 +565,7 @@ fun ListDetailScreen(
                         }
                     }
                 )
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
-            // 2. Parent Header Card (shown when drilled into a parent task)
-            if (currentParent != null) {
-                var parentCardMenuExpanded by remember { mutableStateOf(false) }
-                val directChildren = listItems.filter { it.parentId == currentParent.id }
-                val completedChildren = directChildren.count { it.isCompleted }
-                val totalChildren = directChildren.size
-                val percentage = if (totalChildren > 0) (completedChildren * 100) / totalChildren else 0
-                val progressFloat = if (totalChildren > 0) completedChildren.toFloat() / totalChildren.toFloat() else 0f
-
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = KairoSurfaceContainer,
-                    border = BorderStroke(1.2.dp, KairoPrimary.copy(alpha = 0.45f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { selectedItemForDetails = currentParent }
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Checkbox to complete parent & all its subtasks
-                            IconButton(
-                                onClick = { ListRepository.toggleItemCompleted(currentParent.id) },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (currentParent.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                                    contentDescription = "Toggle Complete",
-                                    tint = if (currentParent.isCompleted) Color(0xFF10B981) else KairoOutlineVariant,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(6.dp))
-
-                            // 42.dp Icon container Box
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(KairoPrimary.copy(alpha = 0.12f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                ListIconDisplay(
-                                    iconKey = currentParent.iconName,
-                                    tint = KairoPrimary,
-                                    modifier = Modifier.size(22.dp),
-                                    emojiSize = 20.sp
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(10.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = currentParent.title,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    textDecoration = if (currentParent.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "$completedChildren of $totalChildren completed",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            // Progress percentage pill
-                            Surface(
-                                shape = RoundedCornerShape(100.dp),
-                                color = if (percentage == 100) Color(0xFF10B981).copy(alpha = 0.15f) else KairoPrimary.copy(alpha = 0.12f),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (percentage == 100) Color(0xFF10B981).copy(alpha = 0.4f) else KairoPrimary.copy(alpha = 0.35f)
-                                )
-                            ) {
-                                Text(
-                                    text = "$percentage%",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (percentage == 100) Color(0xFF10B981) else KairoPrimary,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(4.dp))
-
-                            // 3-dots Menu for Current Parent
-                            Box {
-                                IconButton(
-                                    onClick = { parentCardMenuExpanded = true },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.MoreVert,
-                                        contentDescription = "Parent Actions",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-
-                                DropdownMenu(
-                                    expanded = parentCardMenuExpanded,
-                                    onDismissRequest = { parentCardMenuExpanded = false },
-                                    modifier = Modifier.background(KairoSurfaceContainerHigh)
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("Add Subtask") },
-                                        leadingIcon = { Icon(Icons.Default.Add, null, tint = KairoPrimary) },
-                                        onClick = {
-                                            parentCardMenuExpanded = false
-                                            targetParentForMultiAdd = currentParent
-                                            showMultiAddDialog = true
-                                        }
-                                    )
-
-                                    DropdownMenuItem(
-                                        text = { Text("Adjust Parent") },
-                                        leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
-                                        onClick = {
-                                            parentCardMenuExpanded = false
-                                            selectedItemForAdjustParent = currentParent
-                                        }
-                                    )
-
-                                    DropdownMenuItem(
-                                        text = { Text("Details") },
-                                        leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
-                                        onClick = {
-                                            parentCardMenuExpanded = false
-                                            selectedItemForDetails = currentParent
-                                        }
-                                    )
-
-                                    DropdownMenuItem(
-                                        text = { Text("Edit") },
-                                        leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
-                                        onClick = {
-                                            parentCardMenuExpanded = false
-                                            selectedItemForEdit = currentParent
-                                        }
-                                    )
-
-                                    HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
-
-                                    DropdownMenuItem(
-                                        text = { Text("Delete", color = KairoHighUrgent) },
-                                        leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
-                                        onClick = {
-                                            parentCardMenuExpanded = false
-                                            selectedItemForDelete = currentParent
-                                        }
-                                    )
-                                }
-                            }
-                        }
-
-                        if (!currentParent.notes.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = currentParent.notes,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 38.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // 6.dp linear progress indicator matching Pic 1
-                        LinearProgressIndicator(
-                            progress = { progressFloat },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = if (percentage == 100) Color(0xFF10B981) else KairoPrimary,
-                            trackColor = KairoSurfaceContainerLow
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-            } else {
-                // Overall List Progress Card at Root
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = KairoSurfaceContainer,
-                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "${currentListStats.completedCount} of ${currentListStats.totalCount} completed",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Surface(
-                                shape = RoundedCornerShape(100.dp),
-                                color = if (currentListStats.progressPercentage == 100) Color(0xFF10B981).copy(alpha = 0.15f) else KairoPrimary.copy(alpha = 0.12f),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (currentListStats.progressPercentage == 100) Color(0xFF10B981).copy(alpha = 0.4f) else KairoPrimary.copy(alpha = 0.35f)
-                                )
-                            ) {
-                                Text(
-                                    text = "${currentListStats.progressPercentage}%",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (currentListStats.progressPercentage == 100) Color(0xFF10B981) else KairoPrimary,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        val progressFloat = if (currentListStats.totalCount > 0) {
-                            currentListStats.completedCount.toFloat() / currentListStats.totalCount.toFloat()
-                        } else 0f
-
-                        LinearProgressIndicator(
-                            progress = { progressFloat },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = if (currentListStats.progressPercentage == 100) Color(0xFF10B981) else KairoPrimary,
-                            trackColor = KairoSurfaceContainerLow
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             // Main Scrollable Items List
@@ -1441,7 +1303,6 @@ fun ListBreadcrumbBar(
     listName: String,
     listIcon: String,
     breadcrumbStack: List<ListItem>,
-    onNavigateBack: () -> Unit,
     onNavigateToCrumb: (index: Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1456,73 +1317,55 @@ fun ListBreadcrumbBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .horizontalScroll(scrollState)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            IconButton(
-                onClick = onNavigateBack,
-                modifier = Modifier.size(28.dp)
+            // Root crumb: List Name
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { onNavigateToCrumb(-1) }
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back to previous level",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(16.dp)
+                ListIconDisplay(
+                    iconKey = listIcon,
+                    tint = KairoPrimary,
+                    modifier = Modifier.size(14.dp),
+                    emojiSize = 14.sp
+                )
+                Text(
+                    text = listName,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = KairoPrimary
                 )
             }
 
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .horizontalScroll(scrollState),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                // Root crumb: List Name
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+            breadcrumbStack.forEachIndexed { index, parentItem ->
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = Color(0xFF6B687C),
+                    modifier = Modifier.size(14.dp)
+                )
+
+                val isLast = (index == breadcrumbStack.lastIndex)
+                Text(
+                    text = parentItem.title,
+                    fontSize = 12.sp,
+                    fontWeight = if (isLast) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isLast) MaterialTheme.colorScheme.onSurface else KairoPrimary,
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .clickable { onNavigateToCrumb(-1) }
-                        .padding(horizontal = 6.dp, vertical = 4.dp)
-                ) {
-                    ListIconDisplay(
-                        iconKey = listIcon,
-                        tint = KairoPrimary,
-                        modifier = Modifier.size(14.dp),
-                        emojiSize = 14.sp
-                    )
-                    Text(
-                        text = listName,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = KairoPrimary
-                    )
-                }
-
-                breadcrumbStack.forEachIndexed { index, parentItem ->
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        tint = Color(0xFF6B687C),
-                        modifier = Modifier.size(14.dp)
-                    )
-
-                    val isLast = (index == breadcrumbStack.lastIndex)
-                    Text(
-                        text = parentItem.title,
-                        fontSize = 12.sp,
-                        fontWeight = if (isLast) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isLast) MaterialTheme.colorScheme.onSurface else KairoPrimary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { onNavigateToCrumb(index) }
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                        .clickable { onNavigateToCrumb(index) }
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
