@@ -1,6 +1,5 @@
 package com.kairo.app.feature.lists.ui
 
-import android.app.DatePickerDialog
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,9 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddReaction
-import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -56,9 +53,6 @@ import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
 import com.kairo.app.ui.theme.KairoSurfaceContainer
 import com.kairo.app.ui.theme.KairoSurfaceContainerLow
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
 
 @Composable
 fun EditListItemDialog(
@@ -67,39 +61,11 @@ fun EditListItemDialog(
     onDismiss: () -> Unit,
     onConfirm: (title: String, iconName: String, notes: String?, targetDate: String?, targetDateMillis: Long?) -> Unit
 ) {
-    val context = LocalContext.current
     var title by remember { mutableStateOf(item.title) }
     var selectedIcon by remember { mutableStateOf(item.iconName) }
-    var notes by remember { mutableStateOf(item.notes ?: "") }
-    var targetDate by remember { mutableStateOf(item.targetDate) }
-    var targetDateMillis by remember { mutableStateOf(item.targetDateMillis) }
     var titleError by remember { mutableStateOf<String?>(null) }
     var showCustomEmojiDialog by remember { mutableStateOf(false) }
     var customEmojiInput by remember { mutableStateOf("") }
-
-    fun openDatePicker() {
-        val cal = Calendar.getInstance()
-        targetDateMillis?.let { cal.timeInMillis = it }
-        DatePickerDialog(
-            context,
-            { _, year, month, dayOfMonth ->
-                val chosen = Calendar.getInstance().apply {
-                    set(Calendar.YEAR, year)
-                    set(Calendar.MONTH, month)
-                    set(Calendar.DAY_OF_MONTH, dayOfMonth)
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }
-                targetDateMillis = chosen.timeInMillis
-                targetDate = SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(chosen.time)
-            },
-            cal.get(Calendar.YEAR),
-            cal.get(Calendar.MONTH),
-            cal.get(Calendar.DAY_OF_MONTH)
-        ).show()
-    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -113,7 +79,7 @@ fun EditListItemDialog(
                     .fillMaxWidth()
                     .padding(20.dp)
             ) {
-                // Header with current icon preview
+                // Header: for parent show icon container + title; for leaf show title only
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -123,19 +89,21 @@ fun EditListItemDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(KairoPrimary.copy(alpha = 0.14f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            ListIconDisplay(
-                                iconKey = selectedIcon,
-                                tint = KairoPrimary,
-                                modifier = Modifier.size(20.dp),
-                                emojiSize = 18.sp
-                            )
+                        if (hasSubtasks) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(KairoPrimary.copy(alpha = 0.14f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                ListIconDisplay(
+                                    iconKey = selectedIcon,
+                                    tint = KairoPrimary,
+                                    modifier = Modifier.size(20.dp),
+                                    emojiSize = 18.sp
+                                )
+                            }
                         }
                         Text(
                             text = if (hasSubtasks) "Edit Parent Task" else "Edit Item",
@@ -159,7 +127,7 @@ fun EditListItemDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Title Input
+                // Title Input - for leaf node, this is the ONLY editable field in the popup
                 OutlinedTextField(
                     value = title,
                     onValueChange = {
@@ -189,176 +157,100 @@ fun EditListItemDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                // Swiping Icons & Emoji Row ONLY for Parent Tasks (leaf nodes do not show icon picker)
+                if (hasSubtasks) {
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                // Swiping Icons & Emoji Row below the item name
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Custom Emoji Input Button (+ Emoji)
-                    item {
-                        val isCustomActive = selectedIcon.startsWith("emoji:") &&
-                                !ListIconCatalog.popularEmojis.contains(selectedIcon.removePrefix("emoji:"))
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Custom Emoji Input Button (+ Emoji)
+                        item {
+                            val isCustomActive = selectedIcon.startsWith("emoji:") &&
+                                    !ListIconCatalog.popularEmojis.contains(selectedIcon.removePrefix("emoji:"))
 
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isCustomActive) KairoPrimary else KairoSurfaceContainerLow,
-                            border = BorderStroke(
-                                1.dp,
-                                if (isCustomActive) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.25f)
-                            ),
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clickable {
-                                    customEmojiInput = if (isCustomActive) selectedIcon.removePrefix("emoji:") else ""
-                                    showCustomEmojiDialog = true
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isCustomActive) KairoPrimary else KairoSurfaceContainerLow,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isCustomActive) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.25f)
+                                ),
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clickable {
+                                        customEmojiInput = if (isCustomActive) selectedIcon.removePrefix("emoji:") else ""
+                                        showCustomEmojiDialog = true
+                                    }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (isCustomActive) {
+                                        Text(
+                                            text = selectedIcon.removePrefix("emoji:"),
+                                            fontSize = 18.sp,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.AddReaction,
+                                            contentDescription = "Custom Emoji",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                if (isCustomActive) {
+                            }
+                        }
+
+                        // Popular Emojis
+                        items(ListIconCatalog.popularEmojis) { emoji ->
+                            val emojiKey = "emoji:$emoji"
+                            val isSelected = selectedIcon == emojiKey || selectedIcon == emoji
+
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isSelected) KairoPrimary else KairoSurfaceContainerLow,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.2f)
+                                ),
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clickable { selectedIcon = emojiKey }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
                                     Text(
-                                        text = selectedIcon.removePrefix("emoji:"),
+                                        text = emoji,
                                         fontSize = 18.sp,
                                         textAlign = TextAlign.Center
                                     )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.AddReaction,
-                                        contentDescription = "Custom Emoji",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
-                                    )
                                 }
                             }
                         }
-                    }
 
-                    // Popular Emojis
-                    items(ListIconCatalog.popularEmojis) { emoji ->
-                        val emojiKey = "emoji:$emoji"
-                        val isSelected = selectedIcon == emojiKey || selectedIcon == emoji
+                        // Material Curated Icons
+                        items(ListIconCatalog.icons) { iconOption ->
+                            val isSelected = selectedIcon.equals(iconOption.key, ignoreCase = true)
 
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isSelected) KairoPrimary else KairoSurfaceContainerLow,
-                            border = BorderStroke(
-                                1.dp,
-                                if (isSelected) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.2f)
-                            ),
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clickable { selectedIcon = emojiKey }
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = emoji,
-                                    fontSize = 18.sp,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                    }
-
-                    // Material Curated Icons
-                    items(ListIconCatalog.icons) { iconOption ->
-                        val isSelected = selectedIcon.equals(iconOption.key, ignoreCase = true)
-
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isSelected) KairoPrimary else KairoSurfaceContainerLow,
-                            border = BorderStroke(
-                                1.dp,
-                                if (isSelected) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.2f)
-                            ),
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clickable { selectedIcon = iconOption.key }
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = iconOption.icon,
-                                    contentDescription = iconOption.label,
-                                    tint = if (isSelected) Color(0xFF1E1F26) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                if (!hasSubtasks) {
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Notes Input
-                    OutlinedTextField(
-                        value = notes,
-                        onValueChange = { notes = it },
-                        label = { Text("Notes (Optional)") },
-                        minLines = 2,
-                        maxLines = 4,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = KairoPrimary,
-                            cursorColor = KairoPrimary,
-                            focusedLabelColor = KairoPrimary,
-                            unfocusedContainerColor = KairoSurfaceContainerLow,
-                            focusedContainerColor = KairoSurfaceContainerLow
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Optional Target Date
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = KairoSurfaceContainerLow,
-                        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { openDatePicker() }
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.weight(1f)
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isSelected) KairoPrimary else KairoSurfaceContainerLow,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.2f)
+                                ),
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clickable { selectedIcon = iconOption.key }
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.CalendarToday,
-                                    contentDescription = null,
-                                    tint = if (targetDate != null) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = targetDate ?: "Set Target Date (Optional)",
-                                    fontSize = 13.sp,
-                                    color = if (targetDate != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            if (targetDate != null) {
-                                IconButton(
-                                    onClick = {
-                                        targetDate = null
-                                        targetDateMillis = null
-                                    },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
+                                Box(contentAlignment = Alignment.Center) {
                                     Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Clear date",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(14.dp)
+                                        imageVector = iconOption.icon,
+                                        contentDescription = iconOption.label,
+                                        tint = if (isSelected) Color(0xFF1E1F26) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
@@ -388,15 +280,15 @@ fun EditListItemDialog(
                         onClick = {
                             val cleanTitle = title.trim()
                             if (cleanTitle.isBlank()) {
-                                titleError = "Please enter an item name"
+                                titleError = if (hasSubtasks) "Please enter a parent task name" else "Please enter an item name"
                                 return@Button
                             }
                             onConfirm(
                                 cleanTitle,
-                                selectedIcon,
-                                if (hasSubtasks) null else notes.trim().takeIf { it.isNotBlank() },
-                                if (hasSubtasks) null else targetDate,
-                                if (hasSubtasks) null else targetDateMillis
+                                if (hasSubtasks) selectedIcon else item.iconName,
+                                item.notes,
+                                item.targetDate,
+                                item.targetDateMillis
                             )
                         },
                         modifier = Modifier
@@ -415,7 +307,7 @@ fun EditListItemDialog(
         }
     }
 
-    // Custom Emoji Dialog
+    // Custom Emoji Dialog (only used when editing parent task)
     if (showCustomEmojiDialog) {
         AlertDialog(
             onDismissRequest = { showCustomEmojiDialog = false },
