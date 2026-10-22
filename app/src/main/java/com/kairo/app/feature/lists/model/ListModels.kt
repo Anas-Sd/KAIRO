@@ -58,7 +58,8 @@ data class ListWithStats(
     val totalCount: Int,
     val completedCount: Int,
     val activeCount: Int,
-    val progressPercentage: Int
+    val progressPercentage: Int,
+    val isCompleted: Boolean = (totalCount > 0 && completedCount == totalCount)
 )
 
 data class ListIconOption(

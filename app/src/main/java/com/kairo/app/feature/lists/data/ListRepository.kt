@@ -26,8 +26,10 @@ object ListRepository {
     private const val PREFS_NAME = "kairo_lists_prefs"
     private const val KEY_LISTS = "saved_task_lists"
     private const val KEY_ITEMS = "saved_list_items"
+    private const val KEY_COMPLETED_EMPTY_LISTS = "saved_completed_empty_lists"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val _completedEmptyListIds = mutableSetOf<String>()
 
     private val prefs: SharedPreferences? by lazy {
         if (KairoApplication.isInitialized) {
@@ -199,6 +201,15 @@ object ListRepository {
                 }
             }
 
+            val completedEmptyJson = prefs?.getString(KEY_COMPLETED_EMPTY_LISTS, null)
+            _completedEmptyListIds.clear()
+            if (!completedEmptyJson.isNullOrBlank()) {
+                val array = JSONArray(completedEmptyJson)
+                for (i in 0 until array.length()) {
+                    _completedEmptyListIds.add(array.getString(i))
+                }
+            }
+
             _lists.value = loadedLists.sortedBy { it.position }
             _items.value = loadedItems.sortedBy { it.position }
             recalculateStats()
@@ -247,9 +258,13 @@ object ListRepository {
                     )
                 }
 
+                val emptyArray = JSONArray()
+                _completedEmptyListIds.forEach { emptyArray.put(it) }
+
                 prefs?.edit()
                     ?.putString(KEY_LISTS, listsArray.toString())
                     ?.putString(KEY_ITEMS, itemsArray.toString())
+                    ?.putString(KEY_COMPLETED_EMPTY_LISTS, emptyArray.toString())
                     ?.apply()
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving lists to disk: ${e.message}", e)
@@ -268,14 +283,22 @@ object ListRepository {
             val total = rootItems.size
             val completed = rootItems.count { it.isCompleted }
             val active = total - completed
-            val percentage = if (total > 0) ((completed.toDouble() / total.toDouble()) * 100).toInt() else 0
+            val isCompleted = (total > 0 && completed == total) || (total == 0 && _completedEmptyListIds.contains(list.id))
+            val percentage = if (total > 0) {
+                ((completed.toDouble() / total.toDouble()) * 100).toInt()
+            } else if (isCompleted) {
+                100
+            } else {
+                0
+            }
 
             ListWithStats(
                 list = list,
                 totalCount = total,
                 completedCount = completed,
                 activeCount = active,
-                progressPercentage = percentage
+                progressPercentage = percentage,
+                isCompleted = isCompleted
             )
         }
 
@@ -360,11 +383,27 @@ object ListRepository {
     fun deleteList(id: String) {
         _lists.value = _lists.value.filter { it.id != id }
         _items.value = _items.value.filter { it.listId != id }
+        _completedEmptyListIds.remove(id)
         recalculateStats()
         saveToDisk()
 
         scope.launch {
             SupabaseClient.deleteTaskList(id)
+        }
+    }
+
+    fun deleteLists(listIds: Set<String>) {
+        if (listIds.isEmpty()) return
+        _lists.value = _lists.value.filter { !listIds.contains(it.id) }
+        _items.value = _items.value.filter { !listIds.contains(it.listId) }
+        _completedEmptyListIds.removeAll(listIds)
+        recalculateStats()
+        saveToDisk()
+
+        scope.launch {
+            listIds.forEach { id ->
+                SupabaseClient.deleteTaskList(id)
+            }
         }
     }
 
@@ -693,7 +732,48 @@ object ListRepository {
         }
     }
 
+    fun setListCompleted(listId: String, completed: Boolean) {
+        if (completed) {
+            _completedEmptyListIds.add(listId)
+        } else {
+            _completedEmptyListIds.remove(listId)
+        }
+        val itemsInList = _items.value.filter { it.listId == listId }
+        if (itemsInList.isNotEmpty()) {
+            checkAllItems(listId, completed)
+        } else {
+            recalculateStats()
+            saveToDisk()
+        }
+    }
+
+    fun completeLists(listIds: Set<String>) {
+        if (listIds.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val updated = _items.value.map {
+            if (listIds.contains(it.listId)) {
+                it.copy(isCompleted = true, completedAt = now, updatedAt = now)
+            } else it
+        }
+        _items.value = updated
+        _completedEmptyListIds.addAll(listIds)
+        recalculateStats()
+        saveToDisk()
+
+        val affected = updated.filter { listIds.contains(it.listId) }
+        scope.launch {
+            if (affected.isNotEmpty()) {
+                SupabaseClient.upsertListItems(affected.map { it.toDto() })
+            }
+        }
+    }
+
     fun checkAllItems(listId: String, completed: Boolean) {
+        if (completed) {
+            _completedEmptyListIds.add(listId)
+        } else {
+            _completedEmptyListIds.remove(listId)
+        }
         val timestamp = if (completed) System.currentTimeMillis() else null
         val updated = _items.value.map {
             if (it.listId == listId) {

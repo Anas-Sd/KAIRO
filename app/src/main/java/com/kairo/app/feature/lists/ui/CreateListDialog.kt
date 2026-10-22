@@ -312,47 +312,26 @@ fun CreateListDialog(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    Row(
+                    OutlinedTextField(
+                        value = subtaskInput,
+                        onValueChange = { subtaskInput = it },
+                        placeholder = { Text("Type item & press Enter", fontSize = 12.sp) },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = subtaskInput,
-                            onValueChange = { subtaskInput = it },
-                            placeholder = { Text("Type item & press Enter", fontSize = 12.sp) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            keyboardOptions = KeyboardOptions.Default.copy(
-                                imeAction = ImeAction.Done
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onDone = { commitSubtask() }
-                            ),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = KairoPrimary,
-                                cursorColor = KairoPrimary,
-                                unfocusedContainerColor = KairoSurfaceContainerLow,
-                                focusedContainerColor = KairoSurfaceContainerLow
-                            )
+                        shape = RoundedCornerShape(10.dp),
+                        keyboardOptions = KeyboardOptions.Default.copy(
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { commitSubtask() }
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = KairoPrimary,
+                            cursorColor = KairoPrimary,
+                            unfocusedContainerColor = KairoSurfaceContainerLow,
+                            focusedContainerColor = KairoSurfaceContainerLow
                         )
-
-                        IconButton(
-                            onClick = { commitSubtask() },
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(KairoPrimary.copy(alpha = 0.15f))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Add item",
-                                tint = KairoPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
+                    )
 
                     // 2. Added items rendered as capsules side by side (FlowRow), not swiping, see all at once
                     if (subtasks.isNotEmpty()) {

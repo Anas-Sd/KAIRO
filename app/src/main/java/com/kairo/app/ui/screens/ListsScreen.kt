@@ -1,5 +1,6 @@
 package com.kairo.app.ui.screens
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -27,10 +28,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -45,6 +48,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,6 +65,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,11 +84,15 @@ import com.kairo.app.feature.lists.ui.ListCardLeadingControl
 import com.kairo.app.feature.lists.ui.ListDetailScreen
 import kotlin.math.roundToInt
 import com.kairo.app.ui.components.AppHeader
+import com.kairo.app.ui.components.SectionHeader
+import com.kairo.app.ui.components.SectionType
 import com.kairo.app.ui.components.SettingsDialog
 import com.kairo.app.ui.theme.KairoBackground
+import com.kairo.app.ui.theme.KairoError
 import com.kairo.app.ui.theme.KairoHighUrgent
 import com.kairo.app.ui.theme.KairoOutlineVariant
 import com.kairo.app.ui.theme.KairoPrimary
+import com.kairo.app.ui.theme.KairoSecondary
 import com.kairo.app.ui.theme.KairoSurfaceContainer
 import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import com.kairo.app.ui.theme.KairoSurfaceContainerLow
@@ -93,6 +102,8 @@ fun ListsScreen(
     resetTrigger: Int = 0,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+
     LaunchedEffect(Unit) {
         ListRepository.fetchFromSupabase()
     }
@@ -100,6 +111,13 @@ fun ListsScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+
+    // Multi-selection state
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedListIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var completedExpanded by remember { mutableStateOf(false) }
+    var showDeleteWarningDialog by remember { mutableStateOf(false) }
+    var showCompleteWarningDialog by remember { mutableStateOf(false) }
 
     // Navigation state to Dedicated List Details Page
     var selectedListId by remember { mutableStateOf<String?>(null) }
@@ -113,6 +131,8 @@ fun ListsScreen(
             initialDrillDownItemId = null
             isSearchActive = false
             searchQuery = ""
+            isSelectionMode = false
+            selectedListIds = emptySet()
             listState.animateScrollToItem(0)
         }
     }
@@ -126,7 +146,12 @@ fun ListsScreen(
     val allListsWithStats by ListRepository.listsWithStats.collectAsState()
     val allItems by ListRepository.items.collectAsState()
 
-    BackHandler(enabled = isSearchActive) {
+    BackHandler(enabled = isSelectionMode) {
+        isSelectionMode = false
+        selectedListIds = emptySet()
+    }
+
+    BackHandler(enabled = !isSelectionMode && isSearchActive) {
         isSearchActive = false
         searchQuery = ""
     }
@@ -222,344 +247,655 @@ fun ListsScreen(
 
     Scaffold(
         topBar = {
-            AppHeader(
-                searchQuery = searchQuery,
-                isSearchActive = isSearchActive,
-                onSearchQueryChange = { searchQuery = it },
-                onToggleSearch = {
-                    isSearchActive = !isSearchActive
-                    if (!isSearchActive) searchQuery = ""
-                },
-                onCloseSearch = {
-                    isSearchActive = false
-                    searchQuery = ""
-                },
-                searchPlaceholder = "Search lists & items...",
-                onSettingsClick = { showSettingsDialog = true }
-            )
+            if (isSelectionMode) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .background(KairoBackground)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        IconButton(onClick = {
+                            isSelectionMode = false
+                            selectedListIds = emptySet()
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Cancel selection",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Text(
+                            text = if (selectedListIds.isEmpty()) "Select lists" else "${selectedListIds.size} selected",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    // Select All / Deselect All
+                    TextButton(onClick = {
+                        selectedListIds = if (selectedListIds.size == allListsWithStats.size) {
+                            emptySet()
+                        } else {
+                            allListsWithStats.map { it.list.id }.toSet()
+                        }
+                    }) {
+                        Text(
+                            text = if (selectedListIds.size == allListsWithStats.size) "Deselect All" else "Select All",
+                            color = KairoPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            } else {
+                AppHeader(
+                    searchQuery = searchQuery,
+                    isSearchActive = isSearchActive,
+                    onSearchQueryChange = { searchQuery = it },
+                    onToggleSearch = {
+                        isSearchActive = !isSearchActive
+                        if (!isSearchActive) searchQuery = ""
+                    },
+                    onCloseSearch = {
+                        isSearchActive = false
+                        searchQuery = ""
+                    },
+                    searchPlaceholder = "Search lists & items...",
+                    onSettingsClick = { showSettingsDialog = true },
+                    moreMenuContent = { dismissMenu ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "Select",
+                                    fontWeight = FontWeight.Medium
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.SelectAll,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                dismissMenu()
+                                isSelectionMode = true
+                                selectedListIds = emptySet()
+                            }
+                        )
+                    }
+                )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showCreateDialog = true },
-                containerColor = KairoPrimary,
-                contentColor = Color(0xFF1E1F26),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.padding(bottom = 12.dp, end = 4.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "New List",
-                    modifier = Modifier.size(24.dp)
-                )
+            if (!isSelectionMode) {
+                FloatingActionButton(
+                    onClick = { showCreateDialog = true },
+                    containerColor = KairoPrimary,
+                    contentColor = Color(0xFF1E1F26),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.padding(bottom = 12.dp, end = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "New List",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
         },
         containerColor = KairoBackground
     ) { innerPadding ->
-        Column(
-            modifier = modifier
+        Box(
+            modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            val isSearching = searchQuery.isNotBlank()
-            val hasSearchMatches = matchingLists.isNotEmpty() || matchingItems.isNotEmpty()
+            Column(
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                val isSearching = searchQuery.isNotBlank()
+                val hasSearchMatches = matchingLists.isNotEmpty() || matchingItems.isNotEmpty()
 
-            if (isSearching && !hasSearchMatches) {
-                // Empty search results state
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                if (isSearching && !hasSearchMatches) {
+                    // Empty search results state
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(KairoPrimary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
-                                contentDescription = null,
-                                tint = KairoPrimary,
-                                modifier = Modifier.size(32.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(KairoPrimary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
+                                    contentDescription = null,
+                                    tint = KairoPrimary,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text(
+                                text = "No matching lists or items found",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = "Try searching for a different keyword",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp
                             )
                         }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Text(
-                            text = "No matching lists or items found",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Text(
-                            text = "Try searching for a different keyword",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp
-                        )
                     }
-                }
-            } else if (!isSearching && allListsWithStats.isEmpty()) {
-                // Empty lists state
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                } else if (!isSearching && allListsWithStats.isEmpty()) {
+                    // Empty lists state
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(KairoPrimary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
-                                contentDescription = null,
-                                tint = KairoPrimary,
-                                modifier = Modifier.size(32.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(KairoPrimary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
+                                    contentDescription = null,
+                                    tint = KairoPrimary,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text(
+                                text = "No lists yet",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
-                        }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
 
-                        Text(
-                            text = "No lists yet",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                            Text(
+                                text = "Create your first list to organize projects, packing, or groceries.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp
+                            )
 
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Text(
-                            text = "Create your first list to organize projects, packing, or groceries.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp
-                        )
-
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Button(
-                            onClick = { showCreateDialog = true },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary, contentColor = Color(0xFF1E1F26))
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Create List", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Button(
+                                onClick = { showCreateDialog = true },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary, contentColor = Color(0xFF1E1F26))
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Create List", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
                         }
                     }
-                }
-            } else if (isSearching) {
-                // Search Results: Lists section + Items section with breadcrumbs!
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    if (matchingLists.isNotEmpty()) {
-                        if (matchingItems.isNotEmpty()) {
+                } else if (isSearching) {
+                    // Search Results: Active Lists + Completed Lists (collapsed section) + Items with breadcrumbs
+                    val searchActiveLists = matchingLists.filter { !it.isCompleted }
+                    val searchCompletedLists = matchingLists.filter { it.isCompleted }
+
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (searchActiveLists.isNotEmpty()) {
                             item {
                                 Text(
-                                    text = "Lists (${matchingLists.size})",
+                                    text = "Lists (${searchActiveLists.size})",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(vertical = 4.dp)
                                 )
                             }
-                        }
-                        itemsIndexed(matchingLists, key = { _, stats -> "list_${stats.list.id}" }) { _, stats ->
-                            ListOverviewCard(
-                                stats = stats,
-                                isBeingDragged = false,
-                                dragOffsetY = 0f,
-                                dragHandleModifier = Modifier,
-                                onToggleComplete = {
-                                    val isAllDone = stats.totalCount > 0 && stats.completedCount == stats.totalCount
-                                    ListRepository.checkAllItems(stats.list.id, !isAllDone)
-                                },
-                                onClick = {
-                                    selectedListId = stats.list.id
-                                },
-                                onEdit = { listToEdit = stats.list },
-                                onAdjustParent = { listToAdjustParent = stats.list },
-                                onDelete = { listToDelete = stats.list }
-                            )
-                        }
-                    }
-
-                    if (matchingItems.isNotEmpty()) {
-                        item {
-                            if (matchingLists.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(6.dp))
+                            itemsIndexed(searchActiveLists, key = { _, stats -> "search_active_${stats.list.id}" }) { _, stats ->
+                                ListOverviewCard(
+                                    stats = stats,
+                                    isBeingDragged = false,
+                                    dragOffsetY = 0f,
+                                    dragHandleModifier = Modifier,
+                                    isSelectionMode = isSelectionMode,
+                                    isSelected = selectedListIds.contains(stats.list.id),
+                                    onSelectionChange = { checked ->
+                                        selectedListIds = if (checked) selectedListIds + stats.list.id else selectedListIds - stats.list.id
+                                    },
+                                    onToggleComplete = {
+                                        ListRepository.setListCompleted(stats.list.id, !stats.isCompleted)
+                                    },
+                                    onClick = {
+                                        selectedListId = stats.list.id
+                                    },
+                                    onEdit = { listToEdit = stats.list },
+                                    onAdjustParent = { listToAdjustParent = stats.list },
+                                    onDelete = { listToDelete = stats.list }
+                                )
                             }
-                            Text(
-                                text = "Items (${matchingItems.size})",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            )
                         }
 
-                        itemsIndexed(matchingItems, key = { _, item -> "item_${item.id}" }) { _, item ->
-                            val breadcrumbPath = remember(item.id, allItems) {
-                                ListRepository.getBreadcrumbPath(item.id, allItems)
-                            }
-
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = KairoSurfaceContainer,
-                                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable {
-                                        selectedListId = item.listId
-                                        initialDrillDownItemId = item.id
+                        if (searchCompletedLists.isNotEmpty()) {
+                            val isSearchCompletedAllSelected = searchCompletedLists.all { selectedListIds.contains(it.list.id) }
+                            item(key = "search_section_completed_lists_header") {
+                                SectionHeader(
+                                    title = "Completed",
+                                    countText = "${searchCompletedLists.size} completed",
+                                    sectionType = SectionType.COMPLETED,
+                                    isExpanded = completedExpanded,
+                                    onToggle = { completedExpanded = !completedExpanded },
+                                    showCheckbox = isSelectionMode,
+                                    isChecked = isSearchCompletedAllSelected,
+                                    onCheckedChange = { checked ->
+                                        val ids = searchCompletedLists.map { it.list.id }.toSet()
+                                        selectedListIds = if (checked) selectedListIds + ids else selectedListIds - ids
                                     }
-                            ) {
-                                Row(
+                                )
+                            }
+
+                            if (completedExpanded) {
+                                itemsIndexed(searchCompletedLists, key = { _, stats -> "search_completed_${stats.list.id}" }) { _, stats ->
+                                    ListOverviewCard(
+                                        stats = stats,
+                                        isBeingDragged = false,
+                                        dragOffsetY = 0f,
+                                        dragHandleModifier = Modifier,
+                                        isSelectionMode = isSelectionMode,
+                                        isSelected = selectedListIds.contains(stats.list.id),
+                                        onSelectionChange = { checked ->
+                                             selectedListIds = if (checked) selectedListIds + stats.list.id else selectedListIds - stats.list.id
+                                        },
+                                        onToggleComplete = {
+                                            ListRepository.setListCompleted(stats.list.id, !stats.isCompleted)
+                                        },
+                                        onClick = {
+                                            selectedListId = stats.list.id
+                                        },
+                                        onEdit = { listToEdit = stats.list },
+                                        onAdjustParent = { listToAdjustParent = stats.list },
+                                        onDelete = { listToDelete = stats.list }
+                                    )
+                                }
+                            }
+                        }
+
+                        if (matchingItems.isNotEmpty()) {
+                            item {
+                                if (matchingLists.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                }
+                                Text(
+                                    text = "Items (${matchingItems.size})",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            }
+
+                            itemsIndexed(matchingItems, key = { _, item -> "item_${item.id}" }) { _, item ->
+                                val breadcrumbPath = remember(item.id, allItems) {
+                                    ListRepository.getBreadcrumbPath(item.id, allItems)
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = KairoSurfaceContainer,
+                                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f)),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // Squircle Checkbox
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = if (item.isCompleted) Color(0xFF10B981) else Color.Transparent,
-                                        border = BorderStroke(
-                                            1.5.dp,
-                                            if (item.isCompleted) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                        ),
-                                        modifier = Modifier
-                                            .size(20.dp)
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .clickable { ListRepository.toggleItemCompleted(item.id) }
-                                    ) {
-                                        if (item.isCompleted) {
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(14.dp)
-                                            )
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            selectedListId = item.listId
+                                            initialDrillDownItemId = item.id
                                         }
-                                    }
-
-                                    Spacer(modifier = Modifier.width(10.dp))
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = item.title,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = if (item.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                                            textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-
-                                        if (breadcrumbPath.isNotEmpty()) {
-                                            Spacer(modifier = Modifier.height(3.dp))
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Squircle Checkbox
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (item.isCompleted) Color(0xFF10B981) else Color.Transparent,
+                                            border = BorderStroke(
+                                                1.5.dp,
+                                                if (item.isCompleted) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                            ),
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .clickable { ListRepository.toggleItemCompleted(item.id) }
+                                        ) {
+                                            if (item.isCompleted) {
                                                 Icon(
-                                                    imageVector = Icons.Default.AccountTree,
+                                                    imageVector = Icons.Default.Check,
                                                     contentDescription = null,
-                                                    tint = KairoPrimary,
-                                                    modifier = Modifier.size(11.dp)
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(14.dp)
                                                 )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.width(10.dp))
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = item.title,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = if (item.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                                                textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+
+                                            if (breadcrumbPath.isNotEmpty()) {
+                                                Spacer(modifier = Modifier.height(3.dp))
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                 ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.AccountTree,
+                                                        contentDescription = null,
+                                                        tint = KairoPrimary,
+                                                        modifier = Modifier.size(11.dp)
+                                                    )
+                                                    Text(
+                                                        text = breadcrumbPath.joinToString("  ›  "),
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = KairoPrimary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+
+                                            if (!item.notes.isNullOrBlank()) {
+                                                Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
-                                                    text = breadcrumbPath.joinToString("  ›  "),
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = KairoPrimary,
+                                                    text = item.notes,
+                                                    fontSize = 12.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
                                             }
                                         }
 
-                                        if (!item.notes.isNullOrBlank()) {
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = item.notes,
-                                                fontSize = 12.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.ChevronRight,
+                                            contentDescription = "Go to item",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
+                                }
+                            }
+                        }
 
-                                    Icon(
-                                        imageVector = Icons.Default.ChevronRight,
-                                        contentDescription = "Go to item",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
+                        item {
+                            Spacer(modifier = Modifier.height(72.dp))
+                        }
+                    }
+                } else {
+                    // Main List View: Active Lists (with drag reorder) + Collapsed Completed Lists
+                    val activeLists = matchingLists.filter { !it.isCompleted }
+                    val completedLists = matchingLists.filter { it.isCompleted }
+                    val displayActiveLists = if (draggingListId != null) (localReorderLists ?: activeLists) else activeLists
+
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (displayActiveLists.isNotEmpty()) {
+                            itemsIndexed(displayActiveLists, key = { _, stats -> "list_${stats.list.id}" }) { index, stats ->
+                                val isBeingDragged = (stats.list.id == draggingListId)
+                                ListOverviewCard(
+                                    stats = stats,
+                                    isBeingDragged = isBeingDragged,
+                                    dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                                    dragHandleModifier = if (!isSelectionMode) buildListDragHandleModifier(stats, displayActiveLists) else Modifier,
+                                    isSelectionMode = isSelectionMode,
+                                    isSelected = selectedListIds.contains(stats.list.id),
+                                    onSelectionChange = { checked ->
+                                        selectedListIds = if (checked) selectedListIds + stats.list.id else selectedListIds - stats.list.id
+                                    },
+                                    onToggleComplete = {
+                                        ListRepository.setListCompleted(stats.list.id, !stats.isCompleted)
+                                    },
+                                    onClick = {
+                                        if (draggingListId == null) {
+                                            selectedListId = stats.list.id
+                                        }
+                                    },
+                                    onEdit = { listToEdit = stats.list },
+                                    onAdjustParent = { listToAdjustParent = stats.list },
+                                    onDelete = { listToDelete = stats.list }
+                                )
+                            }
+                        }
+
+                        if (completedLists.isNotEmpty()) {
+                            val isCompletedAllSelected = completedLists.all { selectedListIds.contains(it.list.id) }
+                            item(key = "section_completed_lists_header") {
+                                SectionHeader(
+                                    title = "Completed",
+                                    countText = "${completedLists.size} completed",
+                                    sectionType = SectionType.COMPLETED,
+                                    isExpanded = completedExpanded,
+                                    onToggle = { completedExpanded = !completedExpanded },
+                                    showCheckbox = isSelectionMode,
+                                    isChecked = isCompletedAllSelected,
+                                    onCheckedChange = { checked ->
+                                        val ids = completedLists.map { it.list.id }.toSet()
+                                        selectedListIds = if (checked) selectedListIds + ids else selectedListIds - ids
+                                    }
+                                )
+                            }
+
+                            if (completedExpanded) {
+                                itemsIndexed(completedLists, key = { _, stats -> "completed_list_${stats.list.id}" }) { _, stats ->
+                                    ListOverviewCard(
+                                        stats = stats,
+                                        isBeingDragged = false,
+                                        dragOffsetY = 0f,
+                                        dragHandleModifier = Modifier,
+                                        isSelectionMode = isSelectionMode,
+                                        isSelected = selectedListIds.contains(stats.list.id),
+                                        onSelectionChange = { checked ->
+                                            selectedListIds = if (checked) selectedListIds + stats.list.id else selectedListIds - stats.list.id
+                                        },
+                                        onToggleComplete = {
+                                            ListRepository.setListCompleted(stats.list.id, !stats.isCompleted)
+                                        },
+                                        onClick = {
+                                            selectedListId = stats.list.id
+                                        },
+                                        onEdit = { listToEdit = stats.list },
+                                        onAdjustParent = { listToAdjustParent = stats.list },
+                                        onDelete = { listToDelete = stats.list }
                                     )
                                 }
                             }
                         }
-                    }
 
-                    item {
-                        Spacer(modifier = Modifier.height(72.dp))
+                        item {
+                            Spacer(modifier = Modifier.height(80.dp))
+                        }
                     }
                 }
-            } else {
-                val displayLists = if (draggingListId != null) (localReorderLists ?: matchingLists) else matchingLists
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    itemsIndexed(displayLists, key = { _, stats -> stats.list.id }) { index, stats ->
-                        val isBeingDragged = (stats.list.id == draggingListId)
-                        ListOverviewCard(
-                            stats = stats,
-                            isBeingDragged = isBeingDragged,
-                            dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
-                            dragHandleModifier = buildListDragHandleModifier(stats, displayLists),
-                            onToggleComplete = {
-                                val isAllDone = stats.totalCount > 0 && stats.completedCount == stats.totalCount
-                                ListRepository.checkAllItems(stats.list.id, !isAllDone)
-                            },
-                            onClick = {
-                                if (draggingListId == null) {
-                                    selectedListId = stats.list.id
-                                }
-                            },
-                            onEdit = { listToEdit = stats.list },
-                            onAdjustParent = { listToAdjustParent = stats.list },
-                            onDelete = { listToDelete = stats.list }
-                        )
-                    }
+            }
 
-                    item {
-                        Spacer(modifier = Modifier.height(72.dp))
+            // Selection Bottom Action Bar (Complete & Delete)
+            if (isSelectionMode) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    color = KairoSurfaceContainerHigh,
+                    tonalElevation = 8.dp,
+                    shadowElevation = 8.dp,
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Left: Selected count badge
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (selectedListIds.isNotEmpty()) KairoPrimary.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.08f),
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = if (selectedListIds.isNotEmpty()) KairoPrimary.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.1f)
+                                )
+                            ) {
+                                Text(
+                                    text = "${selectedListIds.size}",
+                                    color = if (selectedListIds.isNotEmpty()) KairoPrimary else Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                            Text(
+                                text = if (selectedListIds.size == 1) "list selected" else "lists selected",
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        // Right: Actions
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Complete Button
+                            Surface(
+                                onClick = {
+                                    if (selectedListIds.isEmpty()) {
+                                        Toast.makeText(context, "No lists selected", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        showCompleteWarningDialog = true
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = KairoSecondary.copy(alpha = 0.18f),
+                                border = BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.5f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = KairoSecondary,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = "Complete",
+                                        color = KairoSecondary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+
+                            // Delete Button
+                            Surface(
+                                onClick = {
+                                    if (selectedListIds.isEmpty()) {
+                                        Toast.makeText(context, "No lists selected", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        showDeleteWarningDialog = true
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = KairoError.copy(alpha = 0.18f),
+                                border = BorderStroke(1.dp, KairoError.copy(alpha = 0.5f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = null,
+                                        tint = KairoError,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = "Delete",
+                                        color = KairoError,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -653,6 +989,106 @@ fun ListsScreen(
             }
         )
     }
+
+    // Batch Delete Confirmation Dialog
+    if (showDeleteWarningDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteWarningDialog = false },
+            title = {
+                Text(
+                    text = "Delete ${selectedListIds.size} list${if (selectedListIds.size > 1) "s" else ""}?",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "You are deleting ${selectedListIds.size} list${if (selectedListIds.size > 1) "s" else ""} and all their items. Are you sure you want to delete them permanently?",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val count = selectedListIds.size
+                        ListRepository.deleteLists(selectedListIds)
+                        isSelectionMode = false
+                        selectedListIds = emptySet()
+                        showDeleteWarningDialog = false
+                        Toast.makeText(context, "$count list(s) deleted", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text(
+                        text = "Yes, Delete",
+                        color = KairoError,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteWarningDialog = false }
+                ) {
+                    Text(
+                        text = "Cancel",
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            },
+            containerColor = KairoSurfaceContainerHigh,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    // Batch Complete Confirmation Dialog
+    if (showCompleteWarningDialog) {
+        AlertDialog(
+            onDismissRequest = { showCompleteWarningDialog = false },
+            title = {
+                Text(
+                    text = "Complete ${selectedListIds.size} list${if (selectedListIds.size > 1) "s" else ""}?",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "This will mark all ${selectedListIds.size} selected list(s) and their items as completed.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val count = selectedListIds.size
+                        ListRepository.completeLists(selectedListIds)
+                        isSelectionMode = false
+                        selectedListIds = emptySet()
+                        showCompleteWarningDialog = false
+                        Toast.makeText(context, "$count list(s) completed", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text(
+                        text = "Yes, Complete",
+                        color = KairoSecondary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showCompleteWarningDialog = false }
+                ) {
+                    Text(
+                        text = "Cancel",
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            },
+            containerColor = KairoSurfaceContainerHigh,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
 }
 
 @Composable
@@ -661,6 +1097,9 @@ private fun ListOverviewCard(
     isBeingDragged: Boolean = false,
     dragOffsetY: Float = 0f,
     dragHandleModifier: Modifier = Modifier,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onSelectionChange: (Boolean) -> Unit = {},
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
     onEdit: () -> Unit,
@@ -668,15 +1107,20 @@ private fun ListOverviewCard(
     onDelete: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-    val isAllCompleted = stats.totalCount > 0 && stats.completedCount == stats.totalCount
+    val isAllCompleted = stats.isCompleted
     val progressFloat = if (stats.totalCount > 0) {
         stats.completedCount.toFloat() / stats.totalCount.toFloat()
-    } else 0f
+    } else if (isAllCompleted) 1f else 0f
 
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = if (isBeingDragged) KairoSurfaceContainerHigh else KairoSurfaceContainer,
-        border = BorderStroke(1.dp, if (isBeingDragged) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.22f)),
+        border = BorderStroke(
+            1.dp,
+            if (isBeingDragged) KairoPrimary
+            else if (isSelectionMode && isSelected) KairoPrimary.copy(alpha = 0.5f)
+            else KairoOutlineVariant.copy(alpha = 0.22f)
+        ),
         modifier = Modifier
             .fillMaxWidth()
             .then(
@@ -690,7 +1134,13 @@ private fun ListOverviewCard(
                 }
             )
             .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
+            .clickable {
+                if (isSelectionMode) {
+                    onSelectionChange(!isSelected)
+                } else {
+                    onClick()
+                }
+            }
     ) {
         Row(
             modifier = Modifier
@@ -698,12 +1148,15 @@ private fun ListOverviewCard(
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left Column: 6-dots Drag Indicator on top + Squircle Checkbox below it
+            // Left Column: 6-dots Drag Indicator on top + Squircle Checkbox below it (or Selection checkbox)
             ListCardLeadingControl(
                 isCompleted = isAllCompleted,
                 onToggleCompleted = onToggleComplete,
                 isBeingDragged = isBeingDragged,
-                dragHandleModifier = dragHandleModifier
+                dragHandleModifier = dragHandleModifier,
+                isSelectionMode = isSelectionMode,
+                isSelected = isSelected,
+                onSelectionChange = onSelectionChange
             )
 
             // Main content block with Icon + Text + % on top, and progress bar below them
@@ -784,51 +1237,53 @@ private fun ListOverviewCard(
 
             Spacer(modifier = Modifier.width(6.dp))
 
-            // 3-dots Menu on the far right
-            Box {
-                IconButton(
-                    onClick = { menuExpanded = true },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Options",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+            // 3-dots Menu on the far right (hidden in selection mode)
+            if (!isSelectionMode) {
+                Box {
+                    IconButton(
+                        onClick = { menuExpanded = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
 
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
-                    modifier = Modifier.background(KairoSurfaceContainerHigh)
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Edit List") },
-                        leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
-                        onClick = {
-                            menuExpanded = false
-                            onEdit()
-                        }
-                    )
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                        modifier = Modifier.background(KairoSurfaceContainerHigh)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Edit List") },
+                            leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
+                            onClick = {
+                                menuExpanded = false
+                                onEdit()
+                            }
+                        )
 
-                    DropdownMenuItem(
-                        text = { Text("Adjust Parent") },
-                        leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
-                        onClick = {
-                            menuExpanded = false
-                            onAdjustParent()
-                        }
-                    )
+                        DropdownMenuItem(
+                            text = { Text("Adjust Parent") },
+                            leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
+                            onClick = {
+                                menuExpanded = false
+                                onAdjustParent()
+                            }
+                        )
 
-                    DropdownMenuItem(
-                        text = { Text("Delete List", color = KairoHighUrgent) },
-                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = KairoHighUrgent) },
-                        onClick = {
-                            menuExpanded = false
-                            onDelete()
-                        }
-                    )
+                        DropdownMenuItem(
+                            text = { Text("Delete List", color = KairoHighUrgent) },
+                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = KairoHighUrgent) },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete()
+                            }
+                        )
+                    }
                 }
             }
         }

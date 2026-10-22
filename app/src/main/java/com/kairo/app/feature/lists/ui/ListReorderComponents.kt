@@ -53,6 +53,9 @@ fun ListCardLeadingControl(
     onToggleCompleted: () -> Unit,
     isBeingDragged: Boolean = false,
     dragHandleModifier: Modifier = Modifier,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onSelectionChange: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -60,48 +63,78 @@ fun ListCardLeadingControl(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = modifier.padding(end = 10.dp)
     ) {
-        // Drag Handle (6 dots: DragIndicator)
-        Box(
-            modifier = Modifier
-                .size(22.dp)
-                .then(dragHandleModifier),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.DragIndicator,
-                contentDescription = "Drag to reorder",
-                tint = if (isBeingDragged) KairoPrimary else KairoOutline,
-                modifier = Modifier.size(18.dp)
-            )
+        // Drag Handle (6 dots: DragIndicator) - only shown when not in selection mode
+        if (!isSelectionMode) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .then(dragHandleModifier),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DragIndicator,
+                    contentDescription = "Drag to reorder",
+                    tint = if (isBeingDragged) KairoPrimary else KairoOutline,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
 
-        // Squircle Checkbox (21.dp with 6.dp rounded corners matching TaskCard)
-        val checkboxBg by animateColorAsState(
-            targetValue = if (isCompleted) Color(0xFF10B981) else KairoSurfaceContainerHighest,
-            animationSpec = tween(durationMillis = 180),
-            label = "listCheckboxBg"
-        )
+        if (isSelectionMode) {
+            Box(
+                modifier = Modifier
+                    .size(21.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(
+                        if (isSelected) KairoPrimary else Color.White.copy(alpha = 0.05f),
+                        shape = RoundedCornerShape(6.dp)
+                    )
+                    .border(
+                        1.dp,
+                        if (isSelected) KairoPrimary else Color.White.copy(alpha = 0.35f),
+                        RoundedCornerShape(6.dp)
+                    )
+                    .clickable { onSelectionChange?.invoke(!isSelected) },
+                contentAlignment = Alignment.Center
+            ) {
+                if (isSelected) {
+                    Icon(
+                        imageVector = Icons.Default.Done,
+                        contentDescription = "Selected",
+                        tint = Color.Black,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        } else {
+            // Squircle Checkbox (21.dp with 6.dp rounded corners matching TaskCard)
+            val checkboxBg by animateColorAsState(
+                targetValue = if (isCompleted) Color(0xFF10B981) else KairoSurfaceContainerHighest,
+                animationSpec = tween(durationMillis = 180),
+                label = "listCheckboxBg"
+            )
 
-        Box(
-            modifier = Modifier
-                .size(21.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(checkboxBg, shape = RoundedCornerShape(6.dp))
-                .border(
-                    1.dp,
-                    if (isCompleted) Color.Transparent else KairoOutlineVariant.copy(alpha = 0.45f),
-                    RoundedCornerShape(6.dp)
-                )
-                .clickable { onToggleCompleted() },
-            contentAlignment = Alignment.Center
-        ) {
-            if (isCompleted) {
-                Icon(
-                    imageVector = Icons.Default.Done,
-                    contentDescription = "Completed",
-                    tint = Color.White,
-                    modifier = Modifier.size(14.dp)
-                )
+            Box(
+                modifier = Modifier
+                    .size(21.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(checkboxBg, shape = RoundedCornerShape(6.dp))
+                    .border(
+                        1.dp,
+                        if (isCompleted) Color.Transparent else KairoOutlineVariant.copy(alpha = 0.45f),
+                        RoundedCornerShape(6.dp)
+                    )
+                    .clickable { onToggleCompleted() },
+                contentAlignment = Alignment.Center
+            ) {
+                if (isCompleted) {
+                    Icon(
+                        imageVector = Icons.Default.Done,
+                        contentDescription = "Completed",
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             }
         }
     }
