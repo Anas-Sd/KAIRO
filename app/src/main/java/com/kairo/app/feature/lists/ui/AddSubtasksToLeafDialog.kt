@@ -320,50 +320,29 @@ fun AddSubtasksToLeafDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Row(
+                OutlinedTextField(
+                    value = subtaskInputText,
+                    onValueChange = {
+                        subtaskInputText = it
+                        subtaskError = null
+                    },
+                    placeholder = { Text("Type subtask name & press Enter", fontSize = 12.sp) },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = subtaskInputText,
-                        onValueChange = {
-                            subtaskInputText = it
-                            subtaskError = null
-                        },
-                        placeholder = { Text("Type subtask name & press Enter", fontSize = 12.sp) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        keyboardOptions = KeyboardOptions.Default.copy(
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = { commitSubtask() }
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = KairoPrimary,
-                            cursorColor = KairoPrimary,
-                            unfocusedContainerColor = KairoSurfaceContainerLow,
-                            focusedContainerColor = KairoSurfaceContainerLow
-                        )
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = KeyboardOptions.Default.copy(
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = { commitSubtask() }
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = KairoPrimary,
+                        cursorColor = KairoPrimary,
+                        unfocusedContainerColor = KairoSurfaceContainerLow,
+                        focusedContainerColor = KairoSurfaceContainerLow
                     )
-
-                    IconButton(
-                        onClick = { commitSubtask() },
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(KairoPrimary.copy(alpha = 0.15f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add subtask",
-                            tint = KairoPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
+                )
 
                 if (subtaskError != null) {
                     Spacer(modifier = Modifier.height(4.dp))

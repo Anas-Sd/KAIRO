@@ -185,55 +185,34 @@ fun AddMultipleItemsDialog(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // Input Field + Add Pill Button
-                Row(
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = {
+                        inputText = it
+                        inputError = null
+                    },
+                    placeholder = {
+                        Text(
+                            text = if (parentItem != null) "Type subtask & press Enter" else "Type item & press Enter",
+                            fontSize = 12.sp
+                        )
+                    },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = inputText,
-                        onValueChange = {
-                            inputText = it
-                            inputError = null
-                        },
-                        placeholder = {
-                            Text(
-                                text = if (parentItem != null) "Type subtask & press Enter" else "Type item & press Enter",
-                                fontSize = 12.sp
-                            )
-                        },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
-                        keyboardOptions = KeyboardOptions.Default.copy(
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = { commitInput() }
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = KairoPrimary,
-                            cursorColor = KairoPrimary,
-                            unfocusedContainerColor = KairoSurfaceContainerLow,
-                            focusedContainerColor = KairoSurfaceContainerLow
-                        )
+                    shape = RoundedCornerShape(10.dp),
+                    keyboardOptions = KeyboardOptions.Default.copy(
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = { commitInput() }
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = KairoPrimary,
+                        cursorColor = KairoPrimary,
+                        unfocusedContainerColor = KairoSurfaceContainerLow,
+                        focusedContainerColor = KairoSurfaceContainerLow
                     )
-
-                    IconButton(
-                        onClick = { commitInput() },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(KairoPrimary.copy(alpha = 0.15f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add to list",
-                            tint = KairoPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
+                )
 
                 if (inputError != null) {
                     Spacer(modifier = Modifier.height(4.dp))
