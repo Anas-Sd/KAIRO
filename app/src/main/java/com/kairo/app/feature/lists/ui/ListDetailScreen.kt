@@ -287,6 +287,7 @@ fun ListDetailScreen(
     var selectedItemIds by remember { mutableStateOf(emptySet<String>()) }
     var showCompleteConfirmDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showAdjustParentGroupDialog by remember { mutableStateOf(false) }
 
     // Dialog states
     var showEditListDialog by remember { mutableStateOf(false) }
@@ -987,10 +988,10 @@ fun ListDetailScreen(
                         )
                     }
 
-                    // Right: Actions (Complete & Delete)
+                    // Right: Actions (Complete, Adjust & Delete)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         // Complete Button
                         Surface(
@@ -1006,9 +1007,9 @@ fun ListDetailScreen(
                             border = BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.5f))
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
@@ -1019,6 +1020,41 @@ fun ListDetailScreen(
                                 Text(
                                     text = "Complete",
                                     color = KairoSecondary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        }
+
+                        // Adjust Parent Button
+                        Surface(
+                            onClick = {
+                                if (selectedItemIds.isEmpty()) {
+                                    Toast.makeText(context, "No items selected", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showAdjustParentGroupDialog = true
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            color = KairoPrimary.copy(alpha = 0.18f),
+                            border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AccountTree,
+                                    contentDescription = null,
+                                    tint = KairoPrimary,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "Adjust",
+                                    color = KairoPrimary,
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 12.sp,
                                     maxLines = 1,
@@ -1041,9 +1077,9 @@ fun ListDetailScreen(
                             border = BorderStroke(1.dp, KairoError.copy(alpha = 0.5f))
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
@@ -1295,6 +1331,32 @@ if (showDeleteConfirmDialog) {
                     }
                 }
                 selectedItemForAdjustParent = null
+            }
+        )
+    }
+
+    // Adjust Parent Group Dialog (Batch Move)
+    if (showAdjustParentGroupDialog) {
+        val selectedItems = remember(selectedItemIds, listItems) {
+            listItems.filter { selectedItemIds.contains(it.id) }
+        }
+        AdjustParentGroupDialog(
+            items = selectedItems,
+            allItemsInList = listItems,
+            onDismiss = { showAdjustParentGroupDialog = false },
+            onMoveConfirmed = { newParentId, moveSubtasks ->
+                val count = selectedItemIds.size
+                ListRepository.adjustItemsParent(selectedItemIds, newParentId, moveSubtasks)
+                val affectedInBreadcrumbs = breadcrumbStack.indexOfFirst { selectedItemIds.contains(it.id) }
+                if (affectedInBreadcrumbs != -1) {
+                    while (breadcrumbStack.size > affectedInBreadcrumbs) {
+                        breadcrumbStack.removeLast()
+                    }
+                }
+                isSelectionMode = false
+                selectedItemIds = emptySet()
+                showAdjustParentGroupDialog = false
+                Toast.makeText(context, "$count item(s) moved", Toast.LENGTH_SHORT).show()
             }
         )
     }

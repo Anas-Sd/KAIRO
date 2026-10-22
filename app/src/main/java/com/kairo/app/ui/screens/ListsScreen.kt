@@ -79,6 +79,7 @@ import com.kairo.app.feature.lists.model.ListIconDisplay
 import com.kairo.app.feature.lists.model.ListWithStats
 import com.kairo.app.feature.lists.model.TaskList
 import com.kairo.app.feature.lists.ui.AdjustParentListDialog
+import com.kairo.app.feature.lists.ui.AdjustParentListsDialog
 import com.kairo.app.feature.lists.ui.CreateListDialog
 import com.kairo.app.feature.lists.ui.ListCardLeadingControl
 import com.kairo.app.feature.lists.ui.ListDetailScreen
@@ -118,6 +119,7 @@ fun ListsScreen(
     var completedExpanded by remember { mutableStateOf(false) }
     var showDeleteWarningDialog by remember { mutableStateOf(false) }
     var showCompleteWarningDialog by remember { mutableStateOf(false) }
+    var showAdjustParentListsDialog by remember { mutableStateOf(false) }
 
     // Navigation state to Dedicated List Details Page
     var selectedListId by remember { mutableStateOf<String?>(null) }
@@ -133,6 +135,7 @@ fun ListsScreen(
             searchQuery = ""
             isSelectionMode = false
             selectedListIds = emptySet()
+            showAdjustParentListsDialog = false
             listState.animateScrollToItem(0)
         }
     }
@@ -149,6 +152,7 @@ fun ListsScreen(
     BackHandler(enabled = isSelectionMode) {
         isSelectionMode = false
         selectedListIds = emptySet()
+        showAdjustParentListsDialog = false
     }
 
     BackHandler(enabled = !isSelectionMode && isSearchActive) {
@@ -821,10 +825,10 @@ fun ListsScreen(
                             )
                         }
 
-                        // Right: Actions
+                        // Right: Actions (Complete, Adjust & Delete)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             // Complete Button
                             Surface(
@@ -840,9 +844,9 @@ fun ListsScreen(
                                 border = BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.5f))
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Check,
@@ -853,6 +857,41 @@ fun ListsScreen(
                                     Text(
                                         text = "Complete",
                                         color = KairoSecondary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+
+                            // Adjust Parent Button
+                            Surface(
+                                onClick = {
+                                    if (selectedListIds.isEmpty()) {
+                                        Toast.makeText(context, "No lists selected", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        showAdjustParentListsDialog = true
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = KairoPrimary.copy(alpha = 0.18f),
+                                border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.5f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AccountTree,
+                                        contentDescription = null,
+                                        tint = KairoPrimary,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = "Adjust",
+                                        color = KairoPrimary,
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 12.sp,
                                         maxLines = 1,
@@ -875,9 +914,9 @@ fun ListsScreen(
                                 border = BorderStroke(1.dp, KairoError.copy(alpha = 0.5f))
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
@@ -932,7 +971,7 @@ fun ListsScreen(
         )
     }
 
-    // Adjust Parent List Dialog
+    // Adjust Parent List Dialog (Single list via card action)
     if (listToAdjustParent != null) {
         AdjustParentListDialog(
             currentList = listToAdjustParent!!,
@@ -941,6 +980,28 @@ fun ListsScreen(
             onConfirmMove = { targetListId ->
                 ListRepository.moveListIntoList(listToAdjustParent!!.id, targetListId)
                 listToAdjustParent = null
+            }
+        )
+    }
+
+    // Adjust Parent for Selected Lists Dialog (Batch Move via Selection)
+    if (showAdjustParentListsDialog) {
+        val selectedLists = allListsWithStats
+            .filter { selectedListIds.contains(it.list.id) }
+            .map { it.list }
+        AdjustParentListsDialog(
+            selectedLists = selectedLists,
+            allLists = allListsWithStats.map { it.list },
+            onDismiss = { showAdjustParentListsDialog = false },
+            onConfirmMove = { targetListId ->
+                val count = selectedListIds.size
+                val targetList = allListsWithStats.find { it.list.id == targetListId }?.list
+                ListRepository.moveListsIntoList(selectedListIds, targetListId)
+                selectedListIds = emptySet()
+                isSelectionMode = false
+                showAdjustParentListsDialog = false
+                val targetName = targetList?.name ?: "target list"
+                Toast.makeText(context, "$count list(s) moved under $targetName", Toast.LENGTH_SHORT).show()
             }
         )
     }

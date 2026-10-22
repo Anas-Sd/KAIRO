@@ -66,20 +66,48 @@ fun AdjustParentListItemDialog(
     onMoveConfirmed: (newParentId: String?, moveSubtasks: Boolean) -> Unit,
     onConvertToStandalone: () -> Unit = {}
 ) {
+    AdjustParentGroupDialog(
+        items = listOf(item),
+        allItemsInList = allItemsInList,
+        onDismiss = onDismiss,
+        onMoveConfirmed = onMoveConfirmed,
+        onConvertToStandalone = onConvertToStandalone
+    )
+}
+
+@Composable
+fun AdjustParentGroupDialog(
+    items: List<ListItem>,
+    allItemsInList: List<ListItem>,
+    onDismiss: () -> Unit,
+    onMoveConfirmed: (newParentId: String?, moveSubtasks: Boolean) -> Unit,
+    onConvertToStandalone: (() -> Unit)? = null
+) {
+    if (items.isEmpty()) {
+        onDismiss()
+        return
+    }
+
+    val isSingleItem = items.size == 1
+    val singleItem = items.firstOrNull()
+
     var searchQuery by remember { mutableStateOf("") }
-    var selectedParentId by remember { mutableStateOf<String?>(item.parentId) }
-    var hasPickedTarget by remember { mutableStateOf(false) }
+    var selectedParentId by remember { mutableStateOf<String?>(if (isSingleItem) singleItem?.parentId else null) }
     var targetParentId by remember { mutableStateOf<String?>(null) }
     var showMoveOptionsModal by remember { mutableStateOf(false) }
 
-    val hasDirectSubtasks = remember(item, allItemsInList) {
-        allItemsInList.any { it.parentId == item.id }
+    val itemIds = remember(items) { items.map { it.id }.toSet() }
+
+    val hasDirectSubtasks = remember(items, allItemsInList) {
+        items.any { sel ->
+            allItemsInList.any { it.parentId == sel.id && !itemIds.contains(it.id) }
+        }
     }
 
-    // Exclude self and all descendants to prevent loops
-    val loopForbiddenIds = remember(item, allItemsInList) {
-        val descendants = ListRepository.getDescendantIds(item.id, allItemsInList)
-        (descendants + item.id).toSet()
+    // Exclude selected items and all their descendants to prevent loops
+    val loopForbiddenIds = remember(items, allItemsInList) {
+        val descendants = items.flatMap { ListRepository.getDescendantIds(it.id, allItemsInList) }.toSet()
+        itemIds + descendants
     }
 
     val eligibleParents = remember(allItemsInList, loopForbiddenIds, searchQuery) {
@@ -132,7 +160,7 @@ fun AdjustParentListItemDialog(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Move '${item.title}'",
+                                text = if (isSingleItem) "Move '${singleItem!!.title}'" else "Move ${items.size} selected items",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -221,13 +249,13 @@ fun AdjustParentListItemDialog(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
                                     Text(
-                                        text = "Top-Level Item",
+                                        text = "Top-Level Items",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = if (isRootSelected) KairoPrimary else MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "No parent (stands as main item)",
+                                        text = "No parent (stands as main list items)",
                                         fontSize = 10.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -236,49 +264,51 @@ fun AdjustParentListItemDialog(
                         }
                     }
 
-                    // Option: Convert to Standalone List (Below this list)
-                    item {
-                        val isStandaloneSelected = selectedParentId == "__STANDALONE__"
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isStandaloneSelected) KairoPrimary.copy(alpha = 0.12f) else KairoSurfaceContainerLow,
-                            border = BorderStroke(
-                                1.dp,
-                                if (isStandaloneSelected) KairoPrimary.copy(alpha = 0.5f) else KairoOutlineVariant.copy(alpha = 0.18f)
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedParentId = "__STANDALONE__" }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                    // Option: Convert to Standalone List (Single item only)
+                    if (isSingleItem && onConvertToStandalone != null) {
+                        item {
+                            val isStandaloneSelected = selectedParentId == "__STANDALONE__"
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isStandaloneSelected) KairoPrimary.copy(alpha = 0.12f) else KairoSurfaceContainerLow,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isStandaloneSelected) KairoPrimary.copy(alpha = 0.5f) else KairoOutlineVariant.copy(alpha = 0.18f)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedParentId = "__STANDALONE__" }
                             ) {
-                                RadioButton(
-                                    selected = isStandaloneSelected,
-                                    onClick = { selectedParentId = "__STANDALONE__" },
-                                    colors = RadioButtonDefaults.colors(selectedColor = KairoPrimary)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
-                                    contentDescription = null,
-                                    tint = if (isStandaloneSelected) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = "Standalone List",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (isStandaloneSelected) KairoPrimary else MaterialTheme.colorScheme.onSurface
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = isStandaloneSelected,
+                                        onClick = { selectedParentId = "__STANDALONE__" },
+                                        colors = RadioButtonDefaults.colors(selectedColor = KairoPrimary)
                                     )
-                                    Text(
-                                        text = "Make a main list placed below current list",
-                                        fontSize = 10.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
+                                        contentDescription = null,
+                                        tint = if (isStandaloneSelected) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
                                     )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = "Standalone List",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isStandaloneSelected) KairoPrimary else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Make a main list placed below current list",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -350,11 +380,11 @@ fun AdjustParentListItemDialog(
                     Button(
                         onClick = {
                             if (selectedParentId == "__STANDALONE__") {
-                                onConvertToStandalone()
+                                onConvertToStandalone?.invoke()
                                 onDismiss()
                                 return@Button
                             }
-                            if (selectedParentId == item.parentId) {
+                            if (isSingleItem && selectedParentId == singleItem!!.parentId) {
                                 onDismiss()
                                 return@Button
                             }
@@ -381,7 +411,7 @@ fun AdjustParentListItemDialog(
         }
     }
 
-    // Modal when item has subtasks: "Move with all subtasks" or "Move only this item"
+    // Modal when item(s) have subtasks: "Move with all subtasks" or "Move only these items"
     if (showMoveOptionsModal) {
         AlertDialog(
             onDismissRequest = { showMoveOptionsModal = false },
@@ -397,7 +427,11 @@ fun AdjustParentListItemDialog(
             },
             text = {
                 Text(
-                    text = "'${item.title}' has subtasks attached to it. Do you want to move its subtasks along with it, or keep them with the current parent?",
+                    text = if (isSingleItem) {
+                        "'${singleItem!!.title}' has subtasks attached to it. Do you want to move its subtasks along with it, or keep them with the current parent?"
+                    } else {
+                        "Some selected items have subtasks attached to them. Do you want to move their subtasks along with them, or keep them with their current parents?"
+                    },
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -422,7 +456,7 @@ fun AdjustParentListItemDialog(
                     },
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("Move only this item", fontSize = 12.sp)
+                    Text(if (isSingleItem) "Move only this item" else "Move only selected items", fontSize = 12.sp)
                 }
             }
         )

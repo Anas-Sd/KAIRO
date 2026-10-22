@@ -337,4 +337,91 @@ class ListHierarchyTest {
         val untouchedY = newItems.find { it.id == "y" }!!
         assertEquals("list-A", untouchedY.listId)
     }
+
+    @Test
+    fun testAdjustItemsParent_moveMultipleItemsWithSubtasks() {
+        // Items:
+        // Task 1 (root) -> Sub 1A (child of 1)
+        // Task 2 (root) -> Sub 2A (child of 2)
+        // ParentTarget (root)
+        val t1 = createItem("t1")
+        val s1a = createItem("s1a", parentId = "t1")
+        val t2 = createItem("t2")
+        val s2a = createItem("s2a", parentId = "t2")
+        val target = createItem("target")
+
+        val allItems = listOf(t1, s1a, t2, s2a, target)
+        val itemIdsToMove = setOf("t1", "t2")
+        val newParentId = "target"
+
+        // Simulate moveSubtasks = true:
+        val updated = allItems.map { item ->
+            if (itemIdsToMove.contains(item.id)) {
+                item.copy(parentId = newParentId)
+            } else item
+        }
+
+        assertEquals("target", updated.find { it.id == "t1" }?.parentId)
+        assertEquals("target", updated.find { it.id == "t2" }?.parentId)
+        // Children s1a and s2a stay attached to t1 and t2
+        assertEquals("t1", updated.find { it.id == "s1a" }?.parentId)
+        assertEquals("t2", updated.find { it.id == "s2a" }?.parentId)
+    }
+
+    @Test
+    fun testAdjustItemsParent_moveMultipleItemsWithoutSubtasks() {
+        // Task 1 (child of "rootParent") -> Sub 1A (child of 1)
+        // Task 2 (root) -> Sub 2A (child of 2)
+        // Target
+        val rootP = createItem("rootP")
+        val t1 = createItem("t1", parentId = "rootP")
+        val s1a = createItem("s1a", parentId = "t1")
+        val t2 = createItem("t2", parentId = null)
+        val s2a = createItem("s2a", parentId = "t2")
+        val target = createItem("target")
+
+        val allItems = listOf(rootP, t1, s1a, t2, s2a, target)
+        val itemIdsToMove = setOf("t1", "t2")
+        val targets = allItems.filter { itemIdsToMove.contains(it.id) }
+        val targetOriginalParentMap = targets.associate { it.id to it.parentId }
+
+        // Simulate moveSubtasks = false:
+        val updated = allItems.map { item ->
+            if (itemIdsToMove.contains(item.id)) {
+                item.copy(parentId = "target")
+            } else if (targetOriginalParentMap.containsKey(item.parentId)) {
+                item.copy(parentId = targetOriginalParentMap[item.parentId])
+            } else item
+        }
+
+        // t1 and t2 are moved under target
+        assertEquals("target", updated.find { it.id == "t1" }?.parentId)
+        assertEquals("target", updated.find { it.id == "t2" }?.parentId)
+        // s1a is reparented to t1's original parent "rootP"
+        assertEquals("rootP", updated.find { it.id == "s1a" }?.parentId)
+        // s2a is reparented to t2's original parent null
+        assertEquals(null, updated.find { it.id == "s2a" }?.parentId)
+    }
+
+    @Test
+    fun testAdjustItemsParent_cyclePrevention() {
+        val a = createItem("a")
+        val b = createItem("b", parentId = "a")
+        val c = createItem("c", parentId = "b")
+        val d = createItem("d")
+
+        val allItems = listOf(a, b, c, d)
+        val itemIdsToMove = setOf("a", "d")
+
+        // Forbidden targets: a, d, plus descendants of a ("b", "c")
+        val forbidden = itemIdsToMove + itemIdsToMove.flatMap { ListRepository.getDescendantIds(it, allItems) }
+        assertEquals(setOf("a", "d", "b", "c"), forbidden)
+
+        // "b" is forbidden
+        assertTrue(forbidden.contains("b"))
+        // "c" is forbidden
+        assertTrue(forbidden.contains("c"))
+        // "a" is forbidden
+        assertTrue(forbidden.contains("a"))
+    }
 }

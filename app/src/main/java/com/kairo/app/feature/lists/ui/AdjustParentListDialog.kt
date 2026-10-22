@@ -61,12 +61,37 @@ fun AdjustParentListDialog(
     onDismiss: () -> Unit,
     onConfirmMove: (targetListId: String) -> Unit
 ) {
+    AdjustParentListsDialog(
+        selectedLists = listOf(currentList),
+        allLists = allLists,
+        onDismiss = onDismiss,
+        onConfirmMove = onConfirmMove
+    )
+}
+
+@Composable
+fun AdjustParentListsDialog(
+    selectedLists: List<TaskList>,
+    allLists: List<TaskList>,
+    onDismiss: () -> Unit,
+    onConfirmMove: (targetListId: String) -> Unit
+) {
+    if (selectedLists.isEmpty()) {
+        onDismiss()
+        return
+    }
+
+    val isSingleList = selectedLists.size == 1
+    val singleList = selectedLists.firstOrNull()
+
     var searchQuery by remember { mutableStateOf("") }
     var selectedTargetListId by remember { mutableStateOf<String?>(null) }
 
-    val eligibleLists = remember(allLists, currentList, searchQuery) {
+    val selectedListIds = remember(selectedLists) { selectedLists.map { it.id }.toSet() }
+
+    val eligibleLists = remember(allLists, selectedListIds, searchQuery) {
         allLists.filter { list ->
-            list.id != currentList.id &&
+            !selectedListIds.contains(list.id) &&
                     (searchQuery.isBlank() || list.name.contains(searchQuery, ignoreCase = true))
         }
     }
@@ -114,7 +139,7 @@ fun AdjustParentListDialog(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Move '${currentList.name}' under another list",
+                                text = if (isSingleList) "Move '${singleList!!.name}' under another list" else "Move ${selectedLists.size} lists under another list",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,

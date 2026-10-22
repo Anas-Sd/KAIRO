@@ -458,55 +458,66 @@ object ListRepository {
         }
     }
 
-    fun moveListIntoList(sourceListId: String, targetListId: String) {
-        if (sourceListId == targetListId) return
+    fun moveListsIntoList(sourceListIds: Set<String>, targetListId: String) {
+        val validSourceIds = sourceListIds.filter { it != targetListId }.toSet()
+        if (validSourceIds.isEmpty()) return
         val currentLists = _lists.value
-        val sourceList = currentLists.find { it.id == sourceListId } ?: return
         val targetList = currentLists.find { it.id == targetListId } ?: return
+        val sourceLists = currentLists.filter { validSourceIds.contains(it.id) }
+        if (sourceLists.isEmpty()) return
 
         val currentItems = _items.value
-        val sourceItems = currentItems.filter { it.listId == sourceListId }
         val targetItems = currentItems.filter { it.listId == targetListId }
+        var nextPosition = targetItems.size
+        val now = System.currentTimeMillis()
 
-        // 1. Create a parent item in targetList representing sourceList
-        val parentItem = ListItem(
-            id = UUID.randomUUID().toString(),
-            listId = targetListId,
-            parentId = null,
-            title = sourceList.name,
-            iconName = sourceList.iconName,
-            position = targetItems.size,
-            createdAt = System.currentTimeMillis(),
-            updatedAt = System.currentTimeMillis()
-        )
+        val allNewParentItems = mutableListOf<ListItem>()
+        val allMigratedItems = mutableListOf<ListItem>()
 
-        // 2. Transfer all source items into targetList:
-        // Root items of sourceList now have parentId = parentItem.id
-        // Sub-items of sourceList keep their existing parentId within sourceList
-        val migratedItems = sourceItems.map { item ->
-            val newParentId = if (item.parentId == null) parentItem.id else item.parentId
-            item.copy(
+        sourceLists.forEach { sourceList ->
+            val sourceItems = currentItems.filter { it.listId == sourceList.id }
+            val parentItem = ListItem(
+                id = UUID.randomUUID().toString(),
                 listId = targetListId,
-                parentId = newParentId,
-                updatedAt = System.currentTimeMillis()
+                parentId = null,
+                title = sourceList.name,
+                iconName = sourceList.iconName,
+                position = nextPosition++,
+                createdAt = now,
+                updatedAt = now
             )
+            allNewParentItems.add(parentItem)
+
+            val migrated = sourceItems.map { item ->
+                val newParentId = if (item.parentId == null) parentItem.id else item.parentId
+                item.copy(
+                    listId = targetListId,
+                    parentId = newParentId,
+                    updatedAt = now
+                )
+            }
+            allMigratedItems.addAll(migrated)
         }
 
-        // 3. Remove sourceList from _lists
-        _lists.value = currentLists.filter { it.id != sourceListId }
+        // Remove source lists from _lists
+        _lists.value = currentLists.filter { !validSourceIds.contains(it.id) }
 
-        // 4. Update _items: remove old source items, add parentItem and migratedItems
-        val remainingItems = currentItems.filter { it.listId != sourceListId }
-        _items.value = remainingItems + parentItem + migratedItems
+        // Update _items: remove old source items, add new parent items and migrated items
+        val remainingItems = currentItems.filter { !validSourceIds.contains(it.listId) }
+        _items.value = remainingItems + allNewParentItems + allMigratedItems
+        _completedEmptyListIds.removeAll(validSourceIds)
 
         recalculateStats()
         saveToDisk()
 
         scope.launch {
-            SupabaseClient.deleteTaskList(sourceListId)
-            SupabaseClient.upsertListItem(parentItem.toDto())
-            SupabaseClient.upsertListItems(migratedItems.map { it.toDto() })
+            validSourceIds.forEach { SupabaseClient.deleteTaskList(it) }
+            SupabaseClient.upsertListItems((allNewParentItems + allMigratedItems).map { it.toDto() })
         }
+    }
+
+    fun moveListIntoList(sourceListId: String, targetListId: String) {
+        moveListsIntoList(setOf(sourceListId), targetListId)
     }
 
     // ==========================================
@@ -920,48 +931,48 @@ object ListRepository {
         }
     }
 
-    fun adjustItemParent(itemId: String, newParentId: String?, moveSubtasks: Boolean) {
+    fun adjustItemsParent(itemIds: Set<String>, newParentId: String?, moveSubtasks: Boolean) {
+        if (itemIds.isEmpty()) return
         val allCurrent = _items.value
-        val target = allCurrent.find { it.id == itemId } ?: return
+        val targets = allCurrent.filter { itemIds.contains(it.id) }
+        if (targets.isEmpty()) return
 
-        // Prevent cycle: newParentId cannot be in target's descendants
+        // Prevent cycle: newParentId cannot be in any target's descendants, nor can it be any target itself
         if (newParentId != null) {
-            val descendants = getDescendantIds(itemId, allCurrent)
-            if (descendants.contains(newParentId) || newParentId == itemId) {
-                Log.w(TAG, "Cannot reparent item to its own descendant")
+            val allForbidden = itemIds + itemIds.flatMap { getDescendantIds(it, allCurrent) }
+            if (allForbidden.contains(newParentId)) {
+                Log.w(TAG, "Cannot reparent item to one of itself or its descendants")
                 return
             }
         }
 
         val affectedItems = mutableListOf<ListItem>()
+        val now = System.currentTimeMillis()
+
         if (moveSubtasks) {
-            // Move target under newParentId; children remain attached to target
-            val updated = allCurrent.map {
-                if (it.id == itemId) {
-                    val itm = it.copy(parentId = newParentId, updatedAt = System.currentTimeMillis())
+            // Move targets under newParentId; children remain attached to targets
+            val updated = allCurrent.map { item ->
+                if (itemIds.contains(item.id)) {
+                    val itm = item.copy(parentId = newParentId, updatedAt = now)
                     affectedItems.add(itm)
                     itm
-                } else it
+                } else item
             }
             _items.value = updated
         } else {
-            // Leave subtasks attached to target's original parent, move only target
-            val originalParent = target.parentId
-            val updated = allCurrent.map {
-                when (it.id) {
-                    itemId -> {
-                        val itm = it.copy(parentId = newParentId, updatedAt = System.currentTimeMillis())
-                        affectedItems.add(itm)
-                        itm
-                    }
-                    else -> {
-                        if (it.parentId == itemId) {
-                            val itm = it.copy(parentId = originalParent, updatedAt = System.currentTimeMillis())
-                            affectedItems.add(itm)
-                            itm
-                        } else it
-                    }
-                }
+            // Leave subtasks attached to the respective target's original parent, move only target items
+            val targetOriginalParentMap = targets.associate { it.id to it.parentId }
+            val updated = allCurrent.map { item ->
+                if (itemIds.contains(item.id)) {
+                    val itm = item.copy(parentId = newParentId, updatedAt = now)
+                    affectedItems.add(itm)
+                    itm
+                } else if (targetOriginalParentMap.containsKey(item.parentId)) {
+                    val newChildParent = targetOriginalParentMap[item.parentId]
+                    val itm = item.copy(parentId = newChildParent, updatedAt = now)
+                    affectedItems.add(itm)
+                    itm
+                } else item
             }
             _items.value = updated
         }
@@ -972,6 +983,10 @@ object ListRepository {
         scope.launch {
             SupabaseClient.upsertListItems(affectedItems.map { it.toDto() })
         }
+    }
+
+    fun adjustItemParent(itemId: String, newParentId: String?, moveSubtasks: Boolean) {
+        adjustItemsParent(setOf(itemId), newParentId, moveSubtasks)
     }
 
     fun getDescendantIds(itemId: String, allItems: List<ListItem> = _items.value): Set<String> {
