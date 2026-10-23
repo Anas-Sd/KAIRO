@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.ExpandMore
@@ -46,6 +47,7 @@ enum class SectionType {
     SNOOZED,
     OVERDUE,
     TODAY,
+    TOMORROW,
     UPCOMING,
     COMPLETED
 }
@@ -125,6 +127,14 @@ fun SectionHeader(
                         imageVector = Icons.Default.Today,
                         contentDescription = "Today",
                         tint = KairoPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                SectionType.TOMORROW -> {
+                    Icon(
+                        imageVector = Icons.Default.CalendarToday,
+                        contentDescription = "Tomorrow",
+                        tint = Color(0xFF818CF8),
                         modifier = Modifier.size(18.dp)
                     )
                 }

@@ -655,7 +655,74 @@ fun TasksScreen(
                     }
                 }
 
-                // 3. UPCOMING SECTION
+                // 3. TOMORROW SECTION
+                val tomorrowList = if (draggingTaskId != null && localReorderList?.any { task -> uiState.tomorrowTasks.any { it.id == task.id } } == true) {
+                    localReorderList ?: uiState.tomorrowTasks
+                } else uiState.tomorrowTasks
+
+                if (tomorrowList.isNotEmpty()) {
+                    val isTomorrowAllSelected = tomorrowList.isNotEmpty() && tomorrowList.all { selectedTaskIds.contains(it.id) }
+                    item(key = "section_tomorrow_header") {
+                        SectionHeader(
+                            title = "Tomorrow",
+                            countText = "${tomorrowList.size} scheduled",
+                            sectionType = SectionType.TOMORROW,
+                            isExpanded = uiState.tomorrowExpanded,
+                            onToggle = { viewModel.toggleTomorrow() },
+                            showCheckbox = isSelectionMode,
+                            isChecked = isTomorrowAllSelected,
+                            onCheckedChange = { checked ->
+                                val ids = tomorrowList.map { it.id }.toSet()
+                                selectedTaskIds = if (checked) selectedTaskIds + ids else selectedTaskIds - ids
+                            }
+                        )
+                    }
+
+                    if (uiState.tomorrowExpanded) {
+                        items(tomorrowList, key = { it.id }) { task ->
+                            val hasSubtasks = uiState.allTasks.any { it.parentId == task.id }
+                            val subtaskProgress = if (hasSubtasks) TaskRepository.getSubtaskProgress(task.id, uiState.allTasks) else null
+                            val parentTitle = if (uiState.breadcrumbStack.isEmpty() && task.parentId != null) {
+                                TaskRepository.getParentTask(task, uiState.allTasks)?.title
+                            } else null
+                            val isBeingDragged = (task.id == draggingTaskId)
+
+                            TaskCard(
+                                task = task,
+                                hasSubtasks = hasSubtasks,
+                                subtaskProgress = subtaskProgress,
+                                parentTitle = parentTitle,
+                                onToggleCompletion = {
+                                    viewModel.toggleTask(task.id)
+                                    val msg = if (task.isCompleted) "Task marked as active" else "Task completed"
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                },
+                                onDeleteTask = { viewModel.openDeleteConfirm(task) },
+                                onShowDetails = { viewModel.showTaskDetails(task) },
+                                onEditTask = { viewModel.showEditTask(task) },
+                                onAddSubtask = { viewModel.openAddSubtask(task) },
+                                onAdjustParent = { viewModel.openAdjustParent(task) },
+                                onDrillDown = { viewModel.drillDown(task) },
+                                onNavigateToParent = { parentId -> viewModel.navigateToParent(parentId) },
+                                onReactivateForToday = {
+                                    viewModel.reactivateTaskForToday(task.id)
+                                    Toast.makeText(context, "Task reactivated for Today", Toast.LENGTH_SHORT).show()
+                                },
+                                dragHandleModifier = buildDragHandleModifier(task, tomorrowList),
+                                isBeingDragged = isBeingDragged,
+                                dragOffsetY = if (isBeingDragged) dragOffsetY else 0f,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedTaskIds.contains(task.id),
+                                onSelectionChange = { checked ->
+                                    selectedTaskIds = if (checked) selectedTaskIds + task.id else selectedTaskIds - task.id
+                                },
+                                modifier = Modifier.animateItem()
+                            )
+                        }
+                    }
+                }
+
+                // 4. UPCOMING SECTION
                 val upcomingList = if (draggingTaskId != null && localReorderList?.any { task -> uiState.upcomingTasks.any { it.id == task.id } } == true) {
                     localReorderList ?: uiState.upcomingTasks
                 } else uiState.upcomingTasks
@@ -722,7 +789,7 @@ fun TasksScreen(
                     }
                 }
 
-                // 4. COMPLETED SECTION
+                // 5. COMPLETED SECTION
                 val completedList = if (draggingTaskId != null && localReorderList?.any { task -> uiState.completedTasks.any { it.id == task.id } } == true) {
                     localReorderList ?: uiState.completedTasks
                 } else uiState.completedTasks
@@ -792,8 +859,8 @@ fun TasksScreen(
                 }
 
                 // Empty state if all sections are empty due to filtering
-                if (uiState.overdueTasks.isEmpty() && uiState.todayTasks.isEmpty() &&
-                    uiState.upcomingTasks.isEmpty() && uiState.completedTasks.isEmpty()
+                if (uiState.snoozedTasks.isEmpty() && uiState.overdueTasks.isEmpty() && uiState.todayTasks.isEmpty() &&
+                    uiState.tomorrowTasks.isEmpty() && uiState.upcomingTasks.isEmpty() && uiState.completedTasks.isEmpty()
                 ) {
                     item {
                         Box(
@@ -851,7 +918,7 @@ fun TasksScreen(
                     uiState.breadcrumbStack.isNotEmpty()
 
                 val tasksToExport = if (isFiltered) {
-                    (uiState.snoozedTasks + uiState.overdueTasks + uiState.todayTasks + uiState.upcomingTasks + uiState.completedTasks).distinctBy { it.id }
+                    (uiState.snoozedTasks + uiState.overdueTasks + uiState.todayTasks + uiState.tomorrowTasks + uiState.upcomingTasks + uiState.completedTasks).distinctBy { it.id }
                 } else {
                     uiState.allTasks
                 }

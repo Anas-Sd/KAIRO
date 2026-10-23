@@ -28,6 +28,7 @@ data class UiToggles(
     val snoozedExpanded: Boolean = true,
     val overdueExpanded: Boolean = false,
     val todayExpanded: Boolean = false,
+    val tomorrowExpanded: Boolean = false,
     val upcomingExpanded: Boolean = false,
     val completedExpanded: Boolean = false,
     val isSearchActive: Boolean = false,
@@ -46,6 +47,7 @@ data class TasksUiState(
     val snoozedTasks: List<Task> = emptyList(),
     val overdueTasks: List<Task> = emptyList(),
     val todayTasks: List<Task> = emptyList(),
+    val tomorrowTasks: List<Task> = emptyList(),
     val upcomingTasks: List<Task> = emptyList(),
     val completedTasks: List<Task> = emptyList(),
     val allTasks: List<Task> = emptyList(),
@@ -54,6 +56,7 @@ data class TasksUiState(
     val snoozedExpanded: Boolean = true,
     val overdueExpanded: Boolean = false,
     val todayExpanded: Boolean = false,
+    val tomorrowExpanded: Boolean = false,
     val upcomingExpanded: Boolean = false,
     val completedExpanded: Boolean = false,
     val searchQuery: String = "",
@@ -207,17 +210,28 @@ class TaskViewModel(
         if (isOverdue(task)) return false
         if (task.dueDate.contains("Tomorrow", ignoreCase = true)) return true
 
-        val tomorrowStart = Calendar.getInstance().apply {
+        val tomorrowCal = Calendar.getInstance().apply {
             add(Calendar.DAY_OF_YEAR, 1)
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        val tomorrowEnd = tomorrowStart + 86400000L
+        }
+        val tomorrowStart = tomorrowCal.timeInMillis
+        val dayAfterCal = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 2)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val tomorrowEnd = dayAfterCal.timeInMillis
 
-        val taskDue = getEffectiveDueDateMillis(task)
-        return taskDue in tomorrowStart until tomorrowEnd
+        if (task.dueDate.isNotBlank() || task.dueDateMillis != null) {
+            val taskDue = getEffectiveDueDateMillis(task)
+            return taskDue in tomorrowStart until tomorrowEnd
+        }
+        return false
     }
 
     private fun isUpcoming(task: Task): Boolean {
@@ -225,6 +239,7 @@ class TaskViewModel(
         if (isSnoozed(task)) return false
         if (isOverdue(task)) return false
         if (isToday(task)) return false
+        if (isTomorrow(task)) return false
         return true
     }
 
@@ -312,6 +327,7 @@ class TaskViewModel(
         val snoozed = list.filter { isSnoozed(it) }.sortedByDescending { maxOf(it.updatedAt, it.createdAt) }
         val overdue = sortTasks(list.filter { isOverdue(it) }, sort)
         val today = sortTasks(list.filter { isToday(it) }, sort)
+        val tomorrow = sortTasks(list.filter { isTomorrow(it) }, sort)
         val upcoming = sortTasks(list.filter { isUpcoming(it) }, sort)
         val completed = list.filter { it.isCompleted }.sortedByDescending { maxOf(it.completedAt ?: 0L, it.updatedAt, it.createdAt) }
 
@@ -319,6 +335,7 @@ class TaskViewModel(
             snoozedTasks = snoozed,
             overdueTasks = overdue,
             todayTasks = today,
+            tomorrowTasks = tomorrow,
             upcomingTasks = upcoming,
             completedTasks = completed,
             allTasks = tasks,
@@ -327,6 +344,7 @@ class TaskViewModel(
             snoozedExpanded = toggles.snoozedExpanded,
             overdueExpanded = toggles.overdueExpanded,
             todayExpanded = toggles.todayExpanded,
+            tomorrowExpanded = toggles.tomorrowExpanded,
             upcomingExpanded = toggles.upcomingExpanded,
             completedExpanded = toggles.completedExpanded,
             searchQuery = search,
@@ -519,6 +537,7 @@ class TaskViewModel(
                     snoozedExpanded = true,
                     overdueExpanded = false,
                     todayExpanded = false,
+                    tomorrowExpanded = false,
                     upcomingExpanded = false,
                     completedExpanded = false
                 )
@@ -536,6 +555,7 @@ class TaskViewModel(
                     overdueExpanded = true,
                     snoozedExpanded = false,
                     todayExpanded = false,
+                    tomorrowExpanded = false,
                     upcomingExpanded = false,
                     completedExpanded = false
                 )
@@ -553,11 +573,30 @@ class TaskViewModel(
                     todayExpanded = true,
                     snoozedExpanded = false,
                     overdueExpanded = false,
+                    tomorrowExpanded = false,
                     upcomingExpanded = false,
                     completedExpanded = false
                 )
             } else {
                 it.copy(todayExpanded = false)
+            }
+        }
+    }
+
+    fun toggleTomorrow() {
+        _uiToggles.update {
+            val willExpand = !it.tomorrowExpanded
+            if (willExpand) {
+                it.copy(
+                    tomorrowExpanded = true,
+                    snoozedExpanded = false,
+                    overdueExpanded = false,
+                    todayExpanded = false,
+                    upcomingExpanded = false,
+                    completedExpanded = false
+                )
+            } else {
+                it.copy(tomorrowExpanded = false)
             }
         }
     }
@@ -571,6 +610,7 @@ class TaskViewModel(
                     snoozedExpanded = false,
                     overdueExpanded = false,
                     todayExpanded = false,
+                    tomorrowExpanded = false,
                     completedExpanded = false
                 )
             } else {
@@ -588,6 +628,7 @@ class TaskViewModel(
                     snoozedExpanded = false,
                     overdueExpanded = false,
                     todayExpanded = false,
+                    tomorrowExpanded = false,
                     upcomingExpanded = false
                 )
             } else {
