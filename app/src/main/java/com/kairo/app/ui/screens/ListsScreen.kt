@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.SelectAll
@@ -83,6 +84,7 @@ import com.kairo.app.feature.lists.ui.AdjustParentListsDialog
 import com.kairo.app.feature.lists.ui.CreateListDialog
 import com.kairo.app.feature.lists.ui.ListCardLeadingControl
 import com.kairo.app.feature.lists.ui.ListDetailScreen
+import com.kairo.app.feature.lists.ui.TaskListDetailsBottomSheet
 import kotlin.math.roundToInt
 import com.kairo.app.ui.components.AppHeader
 import com.kairo.app.ui.components.SectionHeader
@@ -142,6 +144,7 @@ fun ListsScreen(
 
     // Dialog state for creating / editing list
     var showCreateDialog by remember { mutableStateOf(false) }
+    var listForDetails by remember { mutableStateOf<ListWithStats?>(null) }
     var listToEdit by remember { mutableStateOf<TaskList?>(null) }
     var listToAdjustParent by remember { mutableStateOf<TaskList?>(null) }
     var listToDelete by remember { mutableStateOf<TaskList?>(null) }
@@ -512,9 +515,11 @@ fun ListsScreen(
                                     onClick = {
                                         selectedListId = stats.list.id
                                     },
+                                    onDetails = { listForDetails = stats },
                                     onEdit = { listToEdit = stats.list },
                                     onAdjustParent = { listToAdjustParent = stats.list },
-                                    onDelete = { listToDelete = stats.list }
+                                    onDelete = { listToDelete = stats.list },
+                                    modifier = Modifier.animateItem()
                                 )
                             }
                         }
@@ -555,9 +560,11 @@ fun ListsScreen(
                                         onClick = {
                                             selectedListId = stats.list.id
                                         },
+                                        onDetails = { listForDetails = stats },
                                         onEdit = { listToEdit = stats.list },
                                         onAdjustParent = { listToAdjustParent = stats.list },
-                                        onDelete = { listToDelete = stats.list }
+                                        onDelete = { listToDelete = stats.list },
+                                        modifier = Modifier.animateItem()
                                     )
                                 }
                             }
@@ -698,7 +705,7 @@ fun ListsScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         if (displayActiveLists.isNotEmpty()) {
-                            itemsIndexed(displayActiveLists, key = { _, stats -> "list_${stats.list.id}" }) { index, stats ->
+                            itemsIndexed(displayActiveLists, key = { _, stats -> stats.list.id }) { index, stats ->
                                 val isBeingDragged = (stats.list.id == draggingListId)
                                 ListOverviewCard(
                                     stats = stats,
@@ -718,9 +725,11 @@ fun ListsScreen(
                                             selectedListId = stats.list.id
                                         }
                                     },
+                                    onDetails = { listForDetails = stats },
                                     onEdit = { listToEdit = stats.list },
                                     onAdjustParent = { listToAdjustParent = stats.list },
-                                    onDelete = { listToDelete = stats.list }
+                                    onDelete = { listToDelete = stats.list },
+                                    modifier = Modifier.animateItem()
                                 )
                             }
                         }
@@ -744,7 +753,7 @@ fun ListsScreen(
                             }
 
                             if (completedExpanded) {
-                                itemsIndexed(completedLists, key = { _, stats -> "completed_list_${stats.list.id}" }) { _, stats ->
+                                itemsIndexed(completedLists, key = { _, stats -> stats.list.id }) { _, stats ->
                                     ListOverviewCard(
                                         stats = stats,
                                         isBeingDragged = false,
@@ -761,9 +770,11 @@ fun ListsScreen(
                                         onClick = {
                                             selectedListId = stats.list.id
                                         },
+                                        onDetails = { listForDetails = stats },
                                         onEdit = { listToEdit = stats.list },
                                         onAdjustParent = { listToAdjustParent = stats.list },
-                                        onDelete = { listToDelete = stats.list }
+                                        onDelete = { listToDelete = stats.list },
+                                        modifier = Modifier.animateItem()
                                     )
                                 }
                             }
@@ -944,6 +955,15 @@ fun ListsScreen(
     // Settings Modal
     if (showSettingsDialog) {
         SettingsDialog(onDismissRequest = { showSettingsDialog = false })
+    }
+
+    // List Details Bottom Sheet (Strictly View-Only)
+    if (listForDetails != null) {
+        TaskListDetailsBottomSheet(
+            list = listForDetails!!.list,
+            listStats = listForDetails!!,
+            onDismiss = { listForDetails = null }
+        )
     }
 
     // Create List Dialog
@@ -1163,9 +1183,11 @@ private fun ListOverviewCard(
     onSelectionChange: (Boolean) -> Unit = {},
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
+    onDetails: () -> Unit = {},
     onEdit: () -> Unit,
     onAdjustParent: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val isAllCompleted = stats.isCompleted
@@ -1182,7 +1204,7 @@ private fun ListOverviewCard(
             else if (isSelectionMode && isSelected) KairoPrimary.copy(alpha = 0.5f)
             else KairoOutlineVariant.copy(alpha = 0.22f)
         ),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .then(
                 if (isBeingDragged) {
@@ -1318,6 +1340,15 @@ private fun ListOverviewCard(
                         onDismissRequest = { menuExpanded = false },
                         modifier = Modifier.background(KairoSurfaceContainerHigh)
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Details") },
+                            leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
+                            onClick = {
+                                menuExpanded = false
+                                onDetails()
+                            }
+                        )
+
                         DropdownMenuItem(
                             text = { Text("Edit List") },
                             leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },

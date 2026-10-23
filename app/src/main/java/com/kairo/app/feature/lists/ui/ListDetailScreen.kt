@@ -433,76 +433,6 @@ fun ListDetailScreen(
                                     selectedItemIds = emptySet()
                                 }
                             )
-
-                            if (currentParent != null) {
-                                DropdownMenuItem(
-                                    text = { Text("Parent Details") },
-                                    leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
-                                    onClick = {
-                                        dismissMenu()
-                                        selectedItemForDetails = currentParent
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Edit Parent") },
-                                    leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
-                                    onClick = {
-                                        dismissMenu()
-                                        selectedItemForEdit = currentParent
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Adjust Parent") },
-                                    leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
-                                    onClick = {
-                                        dismissMenu()
-                                        selectedItemForAdjustParent = currentParent
-                                    }
-                                )
-                                HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
-                                DropdownMenuItem(
-                                    text = { Text("Delete Parent", color = KairoHighUrgent) },
-                                    leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
-                                    onClick = {
-                                        dismissMenu()
-                                        selectedItemForDelete = currentParent
-                                    }
-                                )
-                            } else {
-                                DropdownMenuItem(
-                                    text = { Text("List Details") },
-                                    leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
-                                    onClick = {
-                                        dismissMenu()
-                                        showListDetailsSheet = true
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Edit List") },
-                                    leadingIcon = { Icon(Icons.Default.Edit, null, tint = KairoPrimary) },
-                                    onClick = {
-                                        dismissMenu()
-                                        showEditListDialog = true
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Adjust Parent List") },
-                                    leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
-                                    onClick = {
-                                        dismissMenu()
-                                        showAdjustParentListDialog = true
-                                    }
-                                )
-                                HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
-                                DropdownMenuItem(
-                                    text = { Text("Delete List", color = KairoHighUrgent) },
-                                    leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
-                                    onClick = {
-                                        dismissMenu()
-                                        showDeleteListDialog = true
-                                    }
-                                )
-                            }
                         }
                     )
                 }
@@ -737,7 +667,8 @@ fun ListDetailScreen(
                                 },
                                 onAdjustParent = { selectedItemForAdjustParent = it },
                                 onEdit = { selectedItemForEdit = it },
-                                onDelete = { selectedItemForDelete = it }
+                                onDelete = { selectedItemForDelete = it },
+                                modifier = Modifier.animateItem()
                             )
                         } else {
                             LeafListItemCard(
@@ -772,7 +703,8 @@ fun ListDetailScreen(
                                 },
                                 onAdjustParent = { selectedItemForAdjustParent = it },
                                 onEdit = { selectedItemForEdit = it },
-                                onDelete = { selectedItemForDelete = it }
+                                onDelete = { selectedItemForDelete = it },
+                                modifier = Modifier.animateItem()
                             )
                         }
                     }
@@ -894,7 +826,8 @@ fun ListDetailScreen(
                                         },
                                         onAdjustParent = { selectedItemForAdjustParent = it },
                                         onEdit = { selectedItemForEdit = it },
-                                        onDelete = { selectedItemForDelete = it }
+                                        onDelete = { selectedItemForDelete = it },
+                                        modifier = Modifier.animateItem()
                                     )
                                 } else {
                                     LeafListItemCard(
@@ -929,7 +862,8 @@ fun ListDetailScreen(
                                         },
                                         onAdjustParent = { selectedItemForAdjustParent = it },
                                         onEdit = { selectedItemForEdit = it },
-                                        onDelete = { selectedItemForDelete = it }
+                                        onDelete = { selectedItemForDelete = it },
+                                        modifier = Modifier.animateItem()
                                     )
                                 }
                             }
@@ -1552,7 +1486,8 @@ private fun ParentListItemCard(
     onAddSubtask: (parentId: String) -> Unit,
     onAdjustParent: (item: ListItem) -> Unit,
     onEdit: (item: ListItem) -> Unit,
-    onDelete: (item: ListItem) -> Unit
+    onDelete: (item: ListItem) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var itemMenuExpanded by remember { mutableStateOf(false) }
     val percentage = if (totalSubtasks > 0) (completedSubtasks * 100) / totalSubtasks else 0
@@ -1565,7 +1500,7 @@ private fun ParentListItemCard(
             1.2.dp,
             if (isSelected) KairoPrimary else if (isBeingDragged) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.22f)
         ),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .then(
                 if (isBeingDragged) {
@@ -1801,7 +1736,8 @@ private fun LeafListItemCard(
     onAddSubtask: (parentId: String) -> Unit,
     onAdjustParent: (item: ListItem) -> Unit,
     onEdit: (item: ListItem) -> Unit,
-    onDelete: (item: ListItem) -> Unit
+    onDelete: (item: ListItem) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var itemMenuExpanded by remember { mutableStateOf(false) }
 
@@ -1812,7 +1748,7 @@ private fun LeafListItemCard(
             1.2.dp,
             if (isSelected) KairoPrimary else if (isBeingDragged) KairoPrimary else KairoOutlineVariant.copy(alpha = 0.2f)
         ),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .then(
                 if (isBeingDragged) {
