@@ -144,7 +144,7 @@ fun TaskCard(
     }
 
     val checkboxBg by animateColorAsState(
-        targetValue = if (isLocallyCompleted) KairoPrimaryContainer else KairoSurfaceContainerHighest,
+        targetValue = if (isLocallyCompleted) KairoPrimaryContainer else Color.Transparent,
         animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow),
         label = "checkboxBg"
     )
@@ -265,8 +265,8 @@ fun TaskCard(
                             .scale(bounceScale.value)
                             .background(checkboxBg, shape = RoundedCornerShape(6.dp))
                             .border(
-                                1.dp,
-                                if (isLocallyCompleted) Color.Transparent else KairoOutlineVariant.copy(alpha = 0.45f),
+                                1.5.dp,
+                                if (isLocallyCompleted) Color.Transparent else Color.White.copy(alpha = 0.45f),
                                 RoundedCornerShape(6.dp)
                             )
                             .clickable { handleToggle() },

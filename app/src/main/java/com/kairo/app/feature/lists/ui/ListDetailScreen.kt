@@ -50,6 +50,8 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -76,7 +78,10 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
+import com.kairo.app.feature.sync.SyncManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -168,6 +173,7 @@ fun ListDetailScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     val activeItems = remember(listItems) {
         listItems.filter { !it.isCompleted }
@@ -349,102 +355,66 @@ fun ListDetailScreen(
 
     Scaffold(
         topBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(KairoBackground)
+            var headerMoreMenuExpanded by remember { mutableStateOf(false) }
+
+            Surface(
+                color = KairoSurfaceContainer,
+                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f))
             ) {
-                // Main Header of Anas (date, search, settings, and 3 dots)
-                if (isSelectionMode) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                ) {
+                    if (isSelectionMode) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .padding(horizontal = 16.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            IconButton(onClick = {
-                                isSelectionMode = false
-                                selectedItemIds = emptySet()
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Cancel selection",
-                                    tint = MaterialTheme.colorScheme.onSurface
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                IconButton(onClick = {
+                                    isSelectionMode = false
+                                    selectedItemIds = emptySet()
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Cancel selection",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                Text(
+                                    text = if (selectedItemIds.isEmpty()) "Select items" else "${selectedItemIds.size} selected",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            Text(
-                                text = if (selectedItemIds.isEmpty()) "Select items" else "${selectedItemIds.size} selected",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
 
-                        val visibleItemIds = (scopedActiveItems + scopedCompletedItems).map { it.id }.toSet()
-                        TextButton(onClick = {
-                            selectedItemIds = if (selectedItemIds.size == visibleItemIds.size) {
-                                emptySet()
-                            } else {
-                                visibleItemIds
-                            }
-                        }) {
-                            Text(
-                                text = if (selectedItemIds.size == visibleItemIds.size && visibleItemIds.isNotEmpty()) "Deselect All" else "Select All",
-                                color = KairoPrimary,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
-                } else {
-                    AppHeader(
-                        searchQuery = searchQuery,
-                        isSearchActive = isSearchActive,
-                        onSearchQueryChange = { searchQuery = it },
-                        onToggleSearch = {
-                            isSearchActive = !isSearchActive
-                            if (!isSearchActive) searchQuery = ""
-                        },
-                        onCloseSearch = {
-                            isSearchActive = false
-                            searchQuery = ""
-                        },
-                        searchPlaceholder = if (currentParent != null) "Search in ${currentParent.title}..." else "Search in ${currentList.name}...",
-                        onSettingsClick = { showSettingsDialog = true },
-                        moreMenuContent = { dismissMenu ->
-                            DropdownMenuItem(
-                                text = { Text("Select") },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.SelectAll,
-                                        contentDescription = null,
-                                        tint = KairoPrimary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                },
-                                onClick = {
-                                    dismissMenu()
-                                    isSelectionMode = true
-                                    selectedItemIds = emptySet()
+                            val visibleItemIds = (scopedActiveItems + scopedCompletedItems).map { it.id }.toSet()
+                            TextButton(onClick = {
+                                selectedItemIds = if (selectedItemIds.size == visibleItemIds.size) {
+                                    emptySet()
+                                } else {
+                                    visibleItemIds
                                 }
-                            )
+                            }) {
+                                Text(
+                                    text = if (selectedItemIds.size == visibleItemIds.size && visibleItemIds.isNotEmpty()) "Deselect All" else "Select All",
+                                    color = KairoPrimary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp
+                                )
+                            }
                         }
-                    )
-                }
-
-                // List Sub-header with Back, Icon, Current Parent/List Name, Progress Count, and (+) button (NO 3-dots!)
-                Surface(
-                    color = KairoSurfaceContainer,
-                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f))
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                    } else {
+                        // Single Unified List Detail Header
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -500,7 +470,19 @@ fun ListDetailScreen(
                                 }
                             }
 
-                            // Plus (+) button to add multiple items at once (NO 3-dots beside it!)
+                            // 1. Search toggle button
+                            IconButton(onClick = {
+                                isSearchActive = !isSearchActive
+                                if (!isSearchActive) searchQuery = ""
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Search",
+                                    tint = if (isSearchActive) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            // 2. Plus (+) button to add items/subtasks
                             IconButton(onClick = {
                                 targetParentForMultiAdd = currentParent
                                 showMultiAddDialog = true
@@ -509,6 +491,108 @@ fun ListDetailScreen(
                                     imageVector = Icons.Default.Add,
                                     contentDescription = if (currentParent != null) "Add Subtasks" else "Add Items",
                                     tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            // 3. Header 3-dots Menu (Refresh + Select)
+                            Box {
+                                IconButton(onClick = { headerMoreMenuExpanded = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "List Options",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                DropdownMenu(
+                                    expanded = headerMoreMenuExpanded,
+                                    onDismissRequest = { headerMoreMenuExpanded = false },
+                                    modifier = Modifier.background(KairoSurfaceContainerHigh)
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Refresh") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Refresh,
+                                                contentDescription = null,
+                                                tint = KairoPrimary
+                                            )
+                                        },
+                                        onClick = {
+                                            headerMoreMenuExpanded = false
+                                            coroutineScope.launch {
+                                                SyncManager.performSync(forceCheckNetwork = true)
+                                                ListRepository.fetchFromSupabase()
+                                            }
+                                        }
+                                    )
+
+                                    DropdownMenuItem(
+                                        text = { Text("Select") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.SelectAll,
+                                                contentDescription = null,
+                                                tint = KairoPrimary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        },
+                                        onClick = {
+                                            headerMoreMenuExpanded = false
+                                            isSelectionMode = true
+                                            selectedItemIds = emptySet()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Expandable Search Bar inside the list header
+                        androidx.compose.animation.AnimatedVisibility(visible = isSearchActive) {
+                            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
+                                OutlinedTextField(
+                                    value = searchQuery,
+                                    onValueChange = { searchQuery = it },
+                                    placeholder = {
+                                        Text(
+                                            text = if (currentParent != null) "Search in ${currentParent.title}..." else "Search in ${currentList.name}...",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                            fontSize = 13.sp
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Search,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        IconButton(onClick = {
+                                            if (searchQuery.isNotEmpty()) {
+                                                searchQuery = ""
+                                            } else {
+                                                isSearchActive = false
+                                            }
+                                        }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Close search",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    },
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = KairoPrimary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
@@ -889,14 +973,14 @@ fun ListDetailScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Left: Selected count badge
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
@@ -910,22 +994,22 @@ fun ListDetailScreen(
                                 text = "${selectedItemIds.size}",
                                 color = if (selectedItemIds.isNotEmpty()) KairoPrimary else Color.White,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                             )
                         }
                         Text(
-                            text = if (selectedItemIds.size == 1) "item selected" else "items selected",
+                            text = "selected",
                             color = Color.White.copy(alpha = 0.85f),
                             fontWeight = FontWeight.Medium,
-                            fontSize = 13.sp
+                            fontSize = 12.sp
                         )
                     }
 
                     // Right: Actions (Complete, Adjust & Delete)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         // Complete Button
                         Surface(
@@ -936,26 +1020,26 @@ fun ListDetailScreen(
                                     showCompleteConfirmDialog = true
                                 }
                             },
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = KairoSecondary.copy(alpha = 0.18f),
                             border = BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.5f))
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = null,
                                     tint = KairoSecondary,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier.size(14.dp)
                                 )
                                 Text(
                                     text = "Complete",
                                     color = KairoSecondary,
                                     fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.5.sp,
                                     maxLines = 1,
                                     softWrap = false
                                 )
@@ -971,26 +1055,26 @@ fun ListDetailScreen(
                                     showAdjustParentGroupDialog = true
                                 }
                             },
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = KairoPrimary.copy(alpha = 0.18f),
                             border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.5f))
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.AccountTree,
                                     contentDescription = null,
                                     tint = KairoPrimary,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier.size(14.dp)
                                 )
                                 Text(
                                     text = "Adjust",
                                     color = KairoPrimary,
                                     fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.5.sp,
                                     maxLines = 1,
                                     softWrap = false
                                 )
@@ -1006,26 +1090,26 @@ fun ListDetailScreen(
                                     showDeleteConfirmDialog = true
                                 }
                             },
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = KairoError.copy(alpha = 0.18f),
                             border = BorderStroke(1.dp, KairoError.copy(alpha = 0.5f))
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
                                     contentDescription = null,
                                     tint = KairoError,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier.size(14.dp)
                                 )
                                 Text(
                                     text = "Delete",
                                     color = KairoError,
                                     fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.5.sp,
                                     maxLines = 1,
                                     softWrap = false
                                 )

@@ -803,14 +803,14 @@ fun ListsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Left: Selected count badge
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
@@ -824,22 +824,22 @@ fun ListsScreen(
                                     text = "${selectedListIds.size}",
                                     color = if (selectedListIds.isNotEmpty()) KairoPrimary else Color.White,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                                 )
                             }
                             Text(
-                                text = if (selectedListIds.size == 1) "list selected" else "lists selected",
+                                text = "selected",
                                 color = Color.White.copy(alpha = 0.85f),
                                 fontWeight = FontWeight.Medium,
-                                fontSize = 13.sp
+                                fontSize = 12.sp
                             )
                         }
 
                         // Right: Actions (Complete, Adjust & Delete)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
                             // Complete Button
                             Surface(
@@ -850,26 +850,26 @@ fun ListsScreen(
                                         showCompleteWarningDialog = true
                                     }
                                 },
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(8.dp),
                                 color = KairoSecondary.copy(alpha = 0.18f),
                                 border = BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.5f))
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Check,
                                         contentDescription = null,
                                         tint = KairoSecondary,
-                                        modifier = Modifier.size(15.dp)
+                                        modifier = Modifier.size(14.dp)
                                     )
                                     Text(
                                         text = "Complete",
                                         color = KairoSecondary,
                                         fontWeight = FontWeight.SemiBold,
-                                        fontSize = 12.sp,
+                                        fontSize = 11.5.sp,
                                         maxLines = 1,
                                         softWrap = false
                                     )
@@ -885,26 +885,26 @@ fun ListsScreen(
                                         showAdjustParentListsDialog = true
                                     }
                                 },
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(8.dp),
                                 color = KairoPrimary.copy(alpha = 0.18f),
                                 border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.5f))
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.AccountTree,
                                         contentDescription = null,
                                         tint = KairoPrimary,
-                                        modifier = Modifier.size(15.dp)
+                                        modifier = Modifier.size(14.dp)
                                     )
                                     Text(
                                         text = "Adjust",
                                         color = KairoPrimary,
                                         fontWeight = FontWeight.SemiBold,
-                                        fontSize = 12.sp,
+                                        fontSize = 11.5.sp,
                                         maxLines = 1,
                                         softWrap = false
                                     )
@@ -920,26 +920,26 @@ fun ListsScreen(
                                         showDeleteWarningDialog = true
                                     }
                                 },
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(8.dp),
                                 color = KairoError.copy(alpha = 0.18f),
                                 border = BorderStroke(1.dp, KairoError.copy(alpha = 0.5f))
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
                                         contentDescription = null,
                                         tint = KairoError,
-                                        modifier = Modifier.size(15.dp)
+                                        modifier = Modifier.size(14.dp)
                                     )
                                     Text(
                                         text = "Delete",
                                         color = KairoError,
                                         fontWeight = FontWeight.SemiBold,
-                                        fontSize = 12.sp,
+                                        fontSize = 11.5.sp,
                                         maxLines = 1,
                                         softWrap = false
                                     )

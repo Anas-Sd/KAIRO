@@ -1013,7 +1013,7 @@ fun HabitDetailScreen(
                 habit = currentHabit
             )
 
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(110.dp))
         }
     }
 
@@ -1627,6 +1627,7 @@ fun MonthlyHeatmapSection(
                             val canDecrement = dayValue > 0
                             val canIncrement = dayValue < target
 
+                            // Stepper Row: -1 and +1
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1644,12 +1645,12 @@ fun MonthlyHeatmapSection(
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        modifier = Modifier.padding(vertical = 9.dp),
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.Remove, contentDescription = "-1", tint = if (canDecrement) Color.White else Color.Gray.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Icon(Icons.Default.Remove, contentDescription = "-1", tint = if (canDecrement) Color.White else Color.Gray.copy(alpha = 0.4f), modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Text("-1", color = if (canDecrement) Color.White else Color.Gray.copy(alpha = 0.4f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
@@ -1670,16 +1671,23 @@ fun MonthlyHeatmapSection(
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        modifier = Modifier.padding(vertical = 9.dp),
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.Add, contentDescription = "+1", tint = if (canIncrement) KairoPrimary else Color.Gray.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Icon(Icons.Default.Add, contentDescription = "+1", tint = if (canIncrement) KairoPrimary else Color.Gray.copy(alpha = 0.4f), modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Text("+1", color = if (canIncrement) KairoPrimary else Color.Gray.copy(alpha = 0.4f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
+                            }
 
+                            // Status Actions Row: Done ($target), Missed, Clear
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 // Target Full Value
                                 Surface(
                                     onClick = {
@@ -1691,10 +1699,10 @@ fun MonthlyHeatmapSection(
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (isDateDone) KairoSecondary else KairoSecondary.copy(alpha = 0.15f),
                                     border = androidx.compose.foundation.BorderStroke(1.dp, KairoSecondary.copy(alpha = 0.4f)),
-                                    modifier = Modifier.weight(1.3f)
+                                    modifier = Modifier.weight(1.2f)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        modifier = Modifier.padding(vertical = 9.dp),
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -1704,12 +1712,14 @@ fun MonthlyHeatmapSection(
                                             tint = if (isDateDone) Color(0xFF003822) else KairoSecondary,
                                             modifier = Modifier.size(14.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Text(
                                             text = "Done ($target)",
                                             color = if (isDateDone) Color(0xFF003822) else KairoSecondary,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            softWrap = false
                                         )
                                     }
                                 }
@@ -1732,7 +1742,7 @@ fun MonthlyHeatmapSection(
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        modifier = Modifier.padding(vertical = 9.dp),
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -1742,12 +1752,14 @@ fun MonthlyHeatmapSection(
                                             tint = if (isTargetMissed) Color(0xFF4E2600) else Color(0xFFCBD5E1),
                                             modifier = Modifier.size(14.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Text(
                                             text = "Missed",
                                             color = if (isTargetMissed) Color(0xFF4E2600) else Color(0xFFCBD5E1),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            softWrap = false
                                         )
                                     }
                                 }
@@ -1764,13 +1776,20 @@ fun MonthlyHeatmapSection(
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(vertical = 8.dp),
+                                            modifier = Modifier.padding(vertical = 9.dp),
                                             horizontalArrangement = Arrangement.Center,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Icon(Icons.Default.RestartAlt, contentDescription = null, tint = Color(0xFFCBD5E1), modifier = Modifier.size(14.dp))
-                                            Spacer(modifier = Modifier.width(3.dp))
-                                            Text("Clear", color = Color(0xFFCBD5E1), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Clear",
+                                                color = Color(0xFFCBD5E1),
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                maxLines = 1,
+                                                softWrap = false
+                                            )
                                         }
                                     }
                                 }
