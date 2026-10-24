@@ -36,6 +36,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.kairo.app.feature.tasks.alarm.FullScreenAlarmPermissionManager
 import com.kairo.app.ui.theme.KairoPrimary
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -163,12 +167,36 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private var syncJob: Job? = null
+
     override fun onResume() {
         super.onResume()
+        triggerAllSyncs()
+
+        // Continuous foreground sync loop every 3 seconds while app is active
+        syncJob?.cancel()
+        syncJob = lifecycleScope.launch {
+            while (true) {
+                delay(3000)
+                triggerAllSyncs()
+            }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        syncJob?.cancel()
+        syncJob = null
+    }
+
+    private fun triggerAllSyncs() {
         try {
+            com.kairo.app.feature.sync.SyncManager.triggerSync()
+            com.kairo.app.feature.lists.data.ListRepository.fetchFromSupabase()
+            com.kairo.app.feature.habits.data.HabitRepository.fetchFromSupabase()
             com.kairo.app.feature.habits.data.HabitRepository.autoMarkMissedPastDays()
         } catch (e: Throwable) {
-            android.util.Log.e("MainActivity", "Error auto-marking missed habit days: ${e.message}", e)
+            android.util.Log.e("MainActivity", "Error triggering background syncs: ${e.message}", e)
         }
     }
 }
