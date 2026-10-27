@@ -52,6 +52,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +71,7 @@ import com.kairo.app.data.local.LocalTaskDatabase
 import com.kairo.app.data.model.Priority
 import com.kairo.app.data.model.Task
 import com.kairo.app.data.model.TaskAlarmLog
+import com.kairo.app.data.repository.TaskRepository
 import com.kairo.app.ui.theme.KairoError
 import com.kairo.app.ui.theme.KairoErrorContainer
 import com.kairo.app.ui.theme.KairoOnErrorContainer
@@ -497,6 +500,172 @@ fun TaskDetailsBottomSheet(
                             color = Color(0xFF918EA2),
                             lineHeight = 15.sp
                         )
+                    }
+                }
+            }
+
+            // Section: Recurrence History (Completed vs Missed)
+            val allTasks by TaskRepository.tasks.collectAsState(initial = emptyList())
+            val recurrenceSnapshots = remember(task.id, allTasks) {
+                allTasks.filter { it.id.startsWith("snapshot_${task.id}_") }
+                    .sortedByDescending { it.dueDateMillis ?: it.createdAt }
+            }
+            val repeatTypeStr = task.repeatType?.trim().orEmpty()
+            val isRepeatingTask = repeatTypeStr.isNotBlank() && !repeatTypeStr.equals("NONE", ignoreCase = true)
+
+            if (isRepeatingTask || recurrenceSnapshots.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "RECURRENCE HISTORY",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF918EA2),
+                        letterSpacing = 0.8.sp
+                    )
+                    if (recurrenceSnapshots.isNotEmpty()) {
+                        Text(
+                            text = "${recurrenceSnapshots.size} past record${if (recurrenceSnapshots.size != 1) "s" else ""}",
+                            fontSize = 11.sp,
+                            color = Color(0xFFC5C0FF),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = KairoSurfaceContainerHighest.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.25f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Current scheduled occurrence
+                        val currentFormattedDate = com.kairo.app.ui.utils.DateUtils.formatDisplayDate(task.dueDate, task.dueDateMillis)
+                        val currentFormattedTime = com.kairo.app.ui.utils.DateUtils.formatDisplayTime(task.dueTime)
+                        val currentTimeString = if (!currentFormattedTime.isNullOrBlank()) " • $currentFormattedTime" else ""
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = KairoSurfaceContainerHighest.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, Color(0xFF26E0BA).copy(alpha = 0.3f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .background(Color(0xFF26E0BA), RoundedCornerShape(4.dp))
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "$currentFormattedDate$currentTimeString",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = "Current Schedule",
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF918EA2)
+                                        )
+                                    }
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFF26E0BA).copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = if (task.isCompleted) "COMPLETED" else "ACTIVE",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF26E0BA),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Past snapshots (Completed vs Missed)
+                        recurrenceSnapshots.forEach { snap ->
+                            val isDone = snap.isCompleted
+                            val snapDateStr = com.kairo.app.ui.utils.DateUtils.formatDisplayDate(snap.dueDate, snap.dueDateMillis)
+                            val snapTimeStr = com.kairo.app.ui.utils.DateUtils.formatDisplayTime(snap.dueTime)?.let { " • $it" } ?: ""
+
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = KairoSurfaceContainerHighest.copy(alpha = 0.25f),
+                                border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.15f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .background(
+                                                    if (isDone) Color(0xFF26E0BA) else Color(0xFFEF4444),
+                                                    RoundedCornerShape(4.dp)
+                                                )
+                                        )
+                                        Column {
+                                            Text(
+                                                text = "$snapDateStr$snapTimeStr",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = Color(0xFFE2E8F0)
+                                            )
+                                            Text(
+                                                text = if (isDone) {
+                                                    snap.completedAt?.let { "Completed at ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(it))}" } ?: "Completed"
+                                                } else {
+                                                    "Missed"
+                                                },
+                                                fontSize = 10.sp,
+                                                color = Color(0xFF918EA2)
+                                            )
+                                        }
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (isDone) Color(0xFF26E0BA).copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f)
+                                    ) {
+                                        Text(
+                                            text = if (isDone) "DONE" else "MISSED",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDone) Color(0xFF26E0BA) else Color(0xFFEF4444),
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

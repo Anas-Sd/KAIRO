@@ -18,17 +18,7 @@ internal object AlarmScheduler {
 
     private const val TAG = "AlarmScheduler"
 
-    fun calculateTriggerMillis(dueDate: String, dueTime: String?, dueDateMillis: Long?): Long? {
-        val calendar = Calendar.getInstance()
-
-        // 1. Determine base date using DateUtils
-        val baseMillis = dueDateMillis ?: com.kairo.app.ui.utils.DateUtils.parseDueDateMillis(dueDate)
-        val dueCal = Calendar.getInstance().apply { timeInMillis = baseMillis }
-        val targetYear = dueCal.get(Calendar.YEAR)
-        val targetMonth = dueCal.get(Calendar.MONTH)
-        val targetDay = dueCal.get(Calendar.DAY_OF_MONTH)
-
-        // 2. Parse time (e.g. "09:41", "10:45 AM", "7:30 PM", "21:30")
+    fun parseTimeHourMinute(dueTime: String?): Pair<Int, Int> {
         var targetHour = 9
         var targetMinute = 0
 
@@ -73,6 +63,21 @@ internal object AlarmScheduler {
                 }
             }
         }
+        return Pair(targetHour, targetMinute)
+    }
+
+    fun calculateTriggerMillis(dueDate: String, dueTime: String?, dueDateMillis: Long?): Long? {
+        val calendar = Calendar.getInstance()
+
+        // 1. Determine base date using DateUtils
+        val baseMillis = dueDateMillis ?: com.kairo.app.ui.utils.DateUtils.parseDueDateMillis(dueDate)
+        val dueCal = Calendar.getInstance().apply { timeInMillis = baseMillis }
+        val targetYear = dueCal.get(Calendar.YEAR)
+        val targetMonth = dueCal.get(Calendar.MONTH)
+        val targetDay = dueCal.get(Calendar.DAY_OF_MONTH)
+
+        // 2. Parse time (e.g. "09:41", "10:45 AM", "7:30 PM", "21:30")
+        val (targetHour, targetMinute) = parseTimeHourMinute(dueTime)
 
         val targetCalendar = Calendar.getInstance().apply {
             set(Calendar.YEAR, targetYear)
@@ -87,13 +92,87 @@ internal object AlarmScheduler {
         return targetCalendar.timeInMillis
     }
 
+    /**
+     * Calculates the next upcoming occurrence in the future for a recurring task.
+     * Prevents recurring task alarms from being dropped when previous occurrences were not marked complete.
+     */
+    fun calculateNextFutureTriggerMillis(
+        dueTime: String?,
+        repeatType: String?,
+        repeatDays: String?,
+        repeatDates: String?,
+        now: Long = System.currentTimeMillis()
+    ): Long? {
+        if (repeatType.isNullOrBlank() || repeatType.equals("NONE", ignoreCase = true)) return null
+
+        val (targetHour, targetMinute) = parseTimeHourMinute(dueTime)
+
+        val cal = Calendar.getInstance().apply {
+            timeInMillis = now
+            set(Calendar.HOUR_OF_DAY, targetHour)
+            set(Calendar.MINUTE, targetMinute)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        // If today's scheduled time has already elapsed, start checking from tomorrow
+        val startCandidate = if (cal.timeInMillis <= now) {
+            Calendar.getInstance().apply {
+                timeInMillis = cal.timeInMillis
+                add(Calendar.DAY_OF_YEAR, 1)
+            }
+        } else {
+            cal
+        }
+
+        when (repeatType.uppercase(Locale.US)) {
+            "EVERYDAY", "DAILY" -> {
+                return startCandidate.timeInMillis
+            }
+            "DAYS" -> {
+                val dayMap = mapOf(
+                    "SUN" to Calendar.SUNDAY,
+                    "MON" to Calendar.MONDAY,
+                    "TUE" to Calendar.TUESDAY,
+                    "WED" to Calendar.WEDNESDAY,
+                    "THU" to Calendar.THURSDAY,
+                    "FRI" to Calendar.FRIDAY,
+                    "SAT" to Calendar.SATURDAY
+                )
+                val targetDays = repeatDays?.split(",")
+                    ?.map { it.trim().uppercase(Locale.US) }
+                    ?.mapNotNull { dayMap[it] }
+                    ?.toSet()
+
+                if (targetDays.isNullOrEmpty() || targetDays.size == 7) {
+                    return startCandidate.timeInMillis
+                }
+
+                val candidateCal = Calendar.getInstance().apply { timeInMillis = startCandidate.timeInMillis }
+                for (i in 0..14) {
+                    if (targetDays.contains(candidateCal.get(Calendar.DAY_OF_WEEK))) {
+                        return candidateCal.timeInMillis
+                    }
+                    candidateCal.add(Calendar.DAY_OF_YEAR, 1)
+                }
+                return startCandidate.timeInMillis
+            }
+            "MONTHLY_DATES", "BOTH_MONTHLY" -> {
+                return startCandidate.timeInMillis
+            }
+            else -> {
+                return startCandidate.timeInMillis
+            }
+        }
+    }
+
     fun scheduleAlarm(context: Context, task: Task, overrideTriggerMillis: Long? = null) {
         if (task.isCompleted) {
             cancelAlarm(context, task.id)
             return
         }
 
-        val triggerTime = overrideTriggerMillis ?: calculateTriggerMillis(task.dueDate, task.dueTime, task.dueDateMillis)
+        var triggerTime = overrideTriggerMillis ?: calculateTriggerMillis(task.dueDate, task.dueTime, task.dueDateMillis)
         if (triggerTime == null) {
             Log.w(TAG, "Cannot determine trigger time for task: ${task.title}")
             return
@@ -101,8 +180,20 @@ internal object AlarmScheduler {
 
         val now = System.currentTimeMillis()
         if (triggerTime <= now - 60000L) {
-            Log.d(TAG, "Alarm time already passed for task: ${task.title}, skipping.")
-            return
+            // For recurring tasks: if the past occurrence wasn't checked off, calculate the next future alarm
+            if (!task.repeatType.isNullOrBlank() && !task.repeatType.equals("NONE", ignoreCase = true)) {
+                val nextFuture = calculateNextFutureTriggerMillis(task.dueTime, task.repeatType, task.repeatDays, task.repeatDates, now)
+                if (nextFuture != null && nextFuture > now - 60000L) {
+                    triggerTime = nextFuture
+                    Log.i(TAG, "Recurring task '${task.title}' past scheduled time; auto-arming next future occurrence at $triggerTime")
+                } else {
+                    Log.d(TAG, "Alarm time already passed for task: ${task.title}, skipping.")
+                    return
+                }
+            } else {
+                Log.d(TAG, "Alarm time already passed for task: ${task.title}, skipping.")
+                return
+            }
         }
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return

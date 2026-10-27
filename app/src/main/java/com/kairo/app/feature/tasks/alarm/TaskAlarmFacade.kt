@@ -34,6 +34,19 @@ object TaskAlarmFacade {
     }
 
     /**
+     * Calculate the next future occurrence timestamp for a recurring task.
+     */
+    fun calculateNextFutureTriggerMillis(
+        dueTime: String?,
+        repeatType: String?,
+        repeatDays: String?,
+        repeatDates: String?,
+        now: Long = System.currentTimeMillis()
+    ): Long? {
+        return AlarmScheduler.calculateNextFutureTriggerMillis(dueTime, repeatType, repeatDays, repeatDates, now)
+    }
+
+    /**
      * Stop active alarm ringing audio, vibration, and clear foreground notification.
      */
     fun stopAlarmRinging(context: Context) {

@@ -235,6 +235,14 @@ object DateUtils {
         if (trigger != null && trigger > now) {
             return trigger
         }
+        if (!task.repeatType.isNullOrBlank() && !task.repeatType.equals("NONE", ignoreCase = true)) {
+            val nextFuture = com.kairo.app.feature.tasks.alarm.TaskAlarmFacade.calculateNextFutureTriggerMillis(
+                task.dueTime, task.repeatType, task.repeatDays, task.repeatDates, now
+            )
+            if (nextFuture != null && nextFuture > now) {
+                return nextFuture
+            }
+        }
         return null
     }
 

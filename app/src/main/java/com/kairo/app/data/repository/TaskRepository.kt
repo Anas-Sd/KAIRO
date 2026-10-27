@@ -77,8 +77,9 @@ object TaskRepository {
         }
         _tasks.value = sanitizedList
         Log.d("TaskRepository", "Loaded ${sanitizedList.size} tasks immediately from local SQLite database")
+        processOverdueRecurringTasks()
         TaskLocationFacade.syncGeofencesWithActiveTasks(KairoApplication.instance)
-        com.kairo.app.feature.tasks.alarm.DirectBootAlarmStore.syncFromTasks(KairoApplication.instance, sanitizedList)
+        com.kairo.app.feature.tasks.alarm.DirectBootAlarmStore.syncFromTasks(KairoApplication.instance, _tasks.value)
     }
 
     fun clearTasksLocally() {
@@ -949,6 +950,97 @@ object TaskRepository {
 
     fun commitUndo() {
         _undoAction.value = null
+    }
+
+    /**
+     * Automatically inspects uncompleted recurring tasks that are overdue from past days.
+     * Records a "MISSED" snapshot in history for past occurrences and rolls the active master
+     * task over to Today, re-arming its alarm so it always rings on schedule.
+     */
+    fun processOverdueRecurringTasks(): Int {
+        val now = System.currentTimeMillis()
+        val allTasks = _tasks.value
+        val todayStart = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val overdueRecurring = allTasks.filter { task ->
+            !task.isCompleted &&
+            !task.id.startsWith("snapshot_") &&
+            !task.repeatType.isNullOrBlank() &&
+            !task.repeatType.equals("NONE", ignoreCase = true) &&
+            ((task.dueDateMillis ?: com.kairo.app.ui.utils.DateUtils.parseDueDateMillis(task.dueDate)) < todayStart)
+        }
+
+        if (overdueRecurring.isEmpty()) return 0
+
+        val newSnapshots = mutableListOf<Task>()
+        val updatedMasters = mutableListOf<Task>()
+        val userCode = AuthManager.getUserCode() ?: ""
+
+        for (target in overdueRecurring) {
+            val pastMillis = target.dueDateMillis ?: com.kairo.app.ui.utils.DateUtils.parseDueDateMillis(target.dueDate)
+            val snapshotId = "snapshot_${target.id}_$pastMillis"
+
+            // 1. Snapshot as MISSED if not already recorded
+            if (allTasks.none { it.id == snapshotId } && newSnapshots.none { it.id == snapshotId }) {
+                val missedSnapshot = target.copy(
+                    id = snapshotId,
+                    isCompleted = false,
+                    completedAt = null,
+                    dueDate = if (target.dueDate.equals("SNOOZED", ignoreCase = true)) {
+                        com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, pastMillis)
+                    } else target.dueDate,
+                    section = TaskSection.COMPLETED,
+                    repeatType = null,
+                    notes = if (target.notes.isNullOrBlank()) "[MISSED]" else "[MISSED] ${target.notes}",
+                    updatedAt = now
+                )
+                newSnapshots.add(missedSnapshot)
+            }
+
+            // 2. Advance active target task to Today
+            val targetDueDateStr = com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, todayStart)
+            val nextSection = determineOpenSection(targetDueDateStr, todayStart, target.dueTime)
+            val rolledOver = target.copy(
+                dueDate = targetDueDateStr,
+                dueDateMillis = todayStart,
+                section = nextSection,
+                snoozeUntilMillis = null,
+                isCompleted = false,
+                completedAt = null,
+                updatedAt = now
+            )
+            updatedMasters.add(rolledOver)
+        }
+
+        val masterMap = updatedMasters.associateBy { it.id }
+        val updatedList = allTasks.map { task ->
+            masterMap[task.id] ?: task
+        }.toMutableList()
+        updatedList.addAll(newSnapshots)
+
+        _tasks.value = updatedList
+
+        // Persist to local SQLite and sync queue
+        for (snap in newSnapshots) {
+            localDb.saveTask(snap, userCode, syncStatus = "PENDING")
+            localDb.enqueueSyncAction(snap.id, "INSERT", json.encodeToString(TaskDto.fromDomain(snap, userCode)), userCode)
+            val originId = snap.id.removePrefix("snapshot_").substringBeforeLast("_")
+            localDb.insertAlarmLog(originId, "MISSED", "Past occurrence marked as missed")
+        }
+
+        for (m in updatedMasters) {
+            localDb.saveTask(m, userCode, syncStatus = "PENDING")
+            localDb.enqueueSyncAction(m.id, "UPDATE", json.encodeToString(TaskDto.fromDomain(m, userCode)), userCode)
+            AlarmScheduler.scheduleAlarm(KairoApplication.instance, m)
+        }
+
+        Log.i("TaskRepository", "Processed ${overdueRecurring.size} overdue recurring tasks. Created ${newSnapshots.size} missed snapshots and rolled masters to Today.")
+        return overdueRecurring.size
     }
 
     fun getTaskById(taskId: String): Task? {
