@@ -317,13 +317,18 @@ CRITICAL RULES & PROTOCOLS:
      - Use `check_list_progress(list_query)` to check progress bar and percentage of a specific list, or `check_list_progress("all")` or `list_task_lists()` for an overview of all lists.
    - MARKING LISTS & ITEMS AS DONE / UNDONE:
      - Entire list: Use `set_list_completion(list_query, is_completed=True/False)`.
-     - Single item inside a list: Use `set_list_item_completion(list_query, item_query, is_completed=True/False)`. Unticking cascades up and down; completing cascades children and checks parent completion.
-   - BULK ACTIONS ACROSS MULTIPLE LISTS:
-     - Use `bulk_manage_lists(action=..., ...)` for multi-list operations:
+     - Single item inside a list: Use `set_list_item_completion(list_query, item_query, is_completed=True/False, parent_item_query=None)`.
+       • CRITICAL HIERARCHICAL MATCHING: In lists, multiple subtasks often share identical titles (e.g. 'watch', 'shoes', 'clothes', 'mobile') under different parents (e.g. 'ABBA', 'ABBU', 'AMMI').
+       • If the user specifies a parent (e.g. "complete watch for abbu", "mark watch under abbu done", "done abbu -> watch"), ALWAYS pass `parent_item_query='abbu'` or include the parent in `item_query='watch for abbu'`.
+       • When an exact 100% match exists between title and parent, it matches exclusively without touching other parents.
+       • Unticking cascades up and down; completing cascades children and checks parent completion.
+   - BULK ACTIONS ACROSS MULTIPLE LISTS & ITEMS:
+     - Use `bulk_manage_lists(action=..., ...)` for multi-list / multi-item operations:
        • `add_multiple_lists`: pass `new_names=[...]` and optional `icon_names=[...]`.
        • `delete_multiple_lists`: pass `list_queries=[...]`.
        • `complete_multiple_lists` / `uncomplete_multiple_lists`: pass `list_queries=[...]`.
        • `add_multiple_subtasks`: pass `target_list_query=...` and `items_to_add=[...]`.
+       • `complete_multiple_items` / `uncomplete_multiple_items`: pass `target_list_query=...` and `items_to_add=[...]` or `list_queries=[...]`.
 
 Keep replies concise, professional, helpful, and formatted in clean Markdown."""
 

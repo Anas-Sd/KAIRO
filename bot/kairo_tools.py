@@ -2972,27 +2972,153 @@ def resolve_list_by_query(query: str, all_lists: list = None) -> tuple[dict | No
         return scored[0][1], [item[1] for item in scored[1:4]]
     return None, [item[1] for item in scored[:3]]
 
-def resolve_list_item_by_query(query: str, items_in_list: list) -> tuple[dict | None, list]:
-    """Resolves a list item inside a list using fuzzy matching."""
+def parse_item_and_parent_query(query: str) -> tuple[str, str | None]:
+    """
+    Parses hierarchical expressions like:
+    - 'watch for abbu' -> ('watch', 'abbu')
+    - 'watch under abba' -> ('watch', 'abba')
+    - 'watch in abbu' -> ('watch', 'abbu')
+    - 'watch inside abbu' -> ('watch', 'abbu')
+    - 'watch of abbu' -> ('watch', 'abbu')
+    - 'abbu -> watch' -> ('watch', 'abbu')
+    - 'abbu > watch' -> ('watch', 'abbu')
+    - 'abbu / watch' -> ('watch', 'abbu')
+    - 'abbu : watch' -> ('watch', 'abbu')
+    """
+    q = query.strip()
+    m = re.match(r'^(.*?)\s+(?:for|under|in|inside|of)\s+(.*?)$', q, re.IGNORECASE)
+    if m:
+        item_q = m.group(1).strip()
+        parent_q = m.group(2).strip()
+        if item_q and parent_q:
+            return item_q, parent_q
+
+    m2 = re.match(r'^(.*?)\s*(?:->|>|/|:)\s*(.*?)$', q)
+    if m2:
+        parent_q = m2.group(1).strip()
+        item_q = m2.group(2).strip()
+        if item_q and parent_q:
+            return item_q, parent_q
+
+    return q, None
+
+def get_list_item_breadcrumb(item: dict, all_items: list) -> str:
+    """Returns 'Parent > Item' or just 'Item'."""
+    by_id = {i["id"]: i for i in all_items}
+    chain = [item.get("title", "Untitled")]
+    curr = by_id.get(item.get("parent_id"))
+    visited = {item.get("id")}
+    while curr and curr["id"] not in visited:
+        visited.add(curr["id"])
+        chain.insert(0, curr.get("title", "Untitled"))
+        curr = by_id.get(curr.get("parent_id"))
+    return " > ".join(chain)
+
+def resolve_list_item_by_query(query: str, items_in_list: list, parent_query: str = None) -> tuple[dict | None, list]:
+    """
+    Resolves a list item inside a list using hierarchy-aware fuzzy and exact matching.
+    Returns (matched_item, candidate_matches).
+    """
     if not items_in_list or not query:
         return None, []
 
-    q = query.strip()
+    raw_query = query.strip()
+    extracted_item_q, detected_parent_q = parse_item_and_parent_query(raw_query)
+
+    effective_parent_q = (parent_query.strip() if parent_query else None) or detected_parent_q
+    effective_item_q = extracted_item_q if detected_parent_q and not parent_query else raw_query
+
+    # Exact ID match
     for itm in items_in_list:
-        if itm.get("id") == q:
+        if itm.get("id") == raw_query:
             return itm, []
 
-    for itm in items_in_list:
-        if itm.get("title", "").strip().lower() == q.lower():
-            return itm, []
+    by_id = {i["id"]: i for i in items_in_list}
 
+    # Case A: Parent is specified (either via parent_query or parsed from string like "watch for abbu")
+    if effective_parent_q:
+        p_q_clean = effective_parent_q.strip().lower()
+        i_q_clean = effective_item_q.strip().lower()
+
+        # Find candidate parents
+        scored_parents = []
+        for p in items_in_list:
+            p_score = score_match(p_q_clean, p.get("title", ""))
+            if p_score >= 0.50:
+                scored_parents.append((p_score, p))
+        scored_parents.sort(key=lambda x: x[0], reverse=True)
+
+        candidate_parent_ids = {p["id"]: score for score, p in scored_parents}
+
+        # Check for 100% exact match in parent AND item title
+        exact_parent_item_matches = []
+        for itm in items_in_list:
+            pid = itm.get("parent_id")
+            if pid and pid in candidate_parent_ids:
+                p_item = by_id[pid]
+                p_title = p_item.get("title", "").strip().lower()
+                i_title = itm.get("title", "").strip().lower()
+                if p_title == p_q_clean and i_title == i_q_clean:
+                    exact_parent_item_matches.append(itm)
+
+        if len(exact_parent_item_matches) == 1:
+            return exact_parent_item_matches[0], []
+        elif len(exact_parent_item_matches) > 1:
+            return None, exact_parent_item_matches
+
+        # If no 100% exact pair, do composite scoring for items under matching parents
+        scored_items = []
+        for itm in items_in_list:
+            pid = itm.get("parent_id")
+            p_score = candidate_parent_ids.get(pid, 0.0) if pid else 0.0
+            i_score = score_match(i_q_clean, itm.get("title", ""))
+
+            # Composite score heavily favors matching both item and parent
+            if p_score > 0:
+                total_score = (i_score * 0.65) + (p_score * 0.35)
+                # Boost if item title is exact match
+                if itm.get("title", "").strip().lower() == i_q_clean:
+                    total_score += 0.20
+            else:
+                total_score = i_score * 0.40  # heavily penalize items under wrong parent
+
+            scored_items.append((total_score, itm))
+
+        scored_items.sort(key=lambda x: x[0], reverse=True)
+        if scored_items and scored_items[0][0] >= 0.60:
+            best_score = scored_items[0][0]
+            # Check if there's an ambiguous tie
+            close_matches = [itm for s, itm in scored_items if s >= best_score - 0.05 and s >= 0.60]
+            if len(close_matches) > 1:
+                return None, close_matches
+            return scored_items[0][1], [item[1] for item in scored_items[1:4]]
+        return None, [item[1] for item in scored_items[:3]]
+
+    # Case B: No parent specified.
+    # Check exact title match across all items in list
+    q_clean = raw_query.lower()
+    exact_matches = [itm for itm in items_in_list if itm.get("title", "").strip().lower() == q_clean]
+
+    if len(exact_matches) == 1:
+        # Unique exact match!
+        return exact_matches[0], []
+    elif len(exact_matches) > 1:
+        # Ambiguous! Multiple items have the EXACT same name under different parents!
+        # Do NOT pick arbitrarily! Return candidates so user/bot is forced to disambiguate.
+        return None, exact_matches
+
+    # If no exact match, fuzzy score
     scored = []
     for itm in items_in_list:
-        s = score_match(q, itm.get("title", ""))
+        s = score_match(q_clean, itm.get("title", ""))
         scored.append((s, itm))
     scored.sort(key=lambda x: x[0], reverse=True)
 
-    if scored and scored[0][0] >= 0.45:
+    if scored and scored[0][0] >= 0.60:
+        best_score = scored[0][0]
+        close_matches = [itm for s, itm in scored if s >= best_score - 0.05]
+        if len(close_matches) > 1:
+            return None, close_matches
         return scored[0][1], [item[1] for item in scored[1:4]]
     return None, [item[1] for item in scored[:3]]
 
@@ -3233,6 +3359,13 @@ def add_subtask_to_list(
     if parent_item_query and parent_item_query.strip().lower() not in ("none", "root", "null"):
         p_item, p_cand = resolve_list_item_by_query(parent_item_query, items)
         if not p_item:
+            if p_cand:
+                c_lines = [f"• *{get_list_item_breadcrumb(c, items)}*" for c in p_cand]
+                return (
+                    f"⚠️ Multiple parent items matched '{parent_item_query}' inside list '{target_list.get('name')}':\n\n"
+                    + "\n".join(c_lines)
+                    + "\n\nPlease specify which parent item you meant."
+                )
             return f"Could not find parent item '{parent_item_query}' inside list '{target_list.get('name')}'."
         parent_id = p_item["id"]
         parent_title = p_item.get("title")
@@ -3406,7 +3539,14 @@ def adjust_parent_for_list(
         target_item, i_cand = resolve_list_item_by_query(item_query, items)
         if not target_item:
             if i_cand:
-                return f"Could not find item '{item_query}' in list '{source_list.get('name')}'. Did you mean: {', '.join(c.get('title') for c in i_cand[:3])}?"
+                c_lines = [f"• *{get_list_item_breadcrumb(c, items)}*" for c in i_cand]
+                sample_p_id = i_cand[0].get("parent_id")
+                sample_p_name = next((p.get("title") for p in items if p["id"] == sample_p_id), "ParentName") if sample_p_id else "ParentName"
+                return (
+                    f"⚠️ Multiple matching items found for '{item_query}' in list *'{source_list.get('name')}'*:\n\n"
+                    + "\n".join(c_lines)
+                    + f"\n\nPlease specify which one by including the parent (e.g. `adjust parent for {item_query} under {sample_p_name}`)."
+                )
             return f"Could not find item '{item_query}' in list '{source_list.get('name')}'."
 
         item_id = target_item["id"]
@@ -3417,6 +3557,13 @@ def adjust_parent_for_list(
         if new_parent_item_query and new_parent_item_query.strip().lower() not in ("none", "root", "remove", "null"):
             p_item, p_cand = resolve_list_item_by_query(new_parent_item_query, items)
             if not p_item:
+                if p_cand:
+                    c_lines = [f"• *{get_list_item_breadcrumb(c, items)}*" for c in p_cand]
+                    return (
+                        f"⚠️ Multiple parent items matched '{new_parent_item_query}' in list *'{source_list.get('name')}'*:\n\n"
+                        + "\n".join(c_lines)
+                        + "\n\nPlease specify which parent item you meant."
+                    )
                 return f"Could not find parent item '{new_parent_item_query}' in list '{source_list.get('name')}'."
             if p_item["id"] == item_id:
                 return "ERROR: An item cannot be its own parent."
@@ -3536,12 +3683,18 @@ def set_list_completion(list_query: str, is_completed: bool) -> str:
     except Exception as e:
         return f"Error setting list completion: {e}"
 
-def set_list_item_completion(list_query: str, item_query: str, is_completed: bool) -> str:
+def set_list_item_completion(
+    list_query: str,
+    item_query: str,
+    is_completed: bool,
+    parent_item_query: str = None
+) -> str:
     """
     Marks a single item within a list as completed (done) or active (undone) with bidirectional cascading.
     - list_query: Name or ID of the list.
-    - item_query: Title or ID of the item.
+    - item_query: Title or ID of the item (e.g. 'watch', or 'watch for abbu').
     - is_completed: True for completed, False for active.
+    - parent_item_query: Optional parent title (e.g. 'ABBU' or 'ABBA') to disambiguate subtasks with identical titles.
     """
     all_lists = fetch_all_task_lists_for_user()
     target_list, candidates = resolve_list_by_query(list_query, all_lists)
@@ -3552,10 +3705,17 @@ def set_list_item_completion(list_query: str, item_query: str, is_completed: boo
 
     list_id = target_list["id"]
     items = fetch_all_list_items_for_user(list_id)
-    target_item, i_cand = resolve_list_item_by_query(item_query, items)
+    target_item, i_cand = resolve_list_item_by_query(item_query, items, parent_query=parent_item_query)
     if not target_item:
         if i_cand:
-            return f"Could not find item '{item_query}' in list '{target_list.get('name')}'. Did you mean: {', '.join(c.get('title') for c in i_cand[:3])}?"
+            c_lines = [f"• *{get_list_item_breadcrumb(c, items)}*" for c in i_cand]
+            sample_p_id = i_cand[0].get("parent_id")
+            sample_p_name = next((p.get("title") for p in items if p["id"] == sample_p_id), "ParentName") if sample_p_id else "ParentName"
+            return (
+                f"⚠️ Multiple matching items found for '{item_query}' in list *'{target_list.get('name')}'*:\n\n"
+                + "\n".join(c_lines)
+                + f"\n\nPlease specify which one by including the parent (e.g. `complete {item_query} for {sample_p_name}`)."
+            )
         return f"Could not find item '{item_query}' in list '{target_list.get('name')}'."
 
     item_id = target_item["id"]
@@ -3617,7 +3777,8 @@ def set_list_item_completion(list_query: str, item_query: str, is_completed: boo
         dispatch_alarm_wakeup()
         status_word = "completed" if is_completed else "marked as active (undone)"
         icon = "✅" if is_completed else "🔄"
-        return f"{icon} Item *'{target_item.get('title')}'* in list *'{target_list.get('name')}'* {status_word} ({len(affected_ids)} item(s) affected with cascade)."
+        item_path = get_list_item_breadcrumb(target_item, items)
+        return f"{icon} Item *'{item_path}'* in list *'{target_list.get('name')}'* {status_word} ({len(affected_ids)} item(s) affected with cascade)."
     except Exception as e:
         return f"Error updating item completion: {e}"
 
@@ -3786,7 +3947,28 @@ def bulk_manage_lists(
                 added.append(f"• {t}")
         return f"✅ Added {len(added)} items to list *'{target_list.get('name')}'*:\n" + "\n".join(added)
 
-    return f"ERROR: Unknown action '{action}'. Supported actions: 'add_multiple_lists', 'delete_multiple_lists', 'complete_multiple_lists', 'uncomplete_multiple_lists', 'add_multiple_subtasks'."
+    elif act in ("complete_multiple_items", "mark_done_multiple_items", "uncomplete_multiple_items", "reopen_multiple_items"):
+        is_comp = act in ("complete_multiple_items", "mark_done_multiple_items")
+        if not target_list_query:
+            return "ERROR: Provide `target_list_query` to specify destination list."
+        items_targets = items_to_add or list_queries
+        if not items_targets:
+            return "ERROR: Provide items to mark (list of strings or list of {'title': ..., 'parent_item_query': ...})."
+        results = []
+        for itm in items_targets:
+            if isinstance(itm, str):
+                t = itm
+                p = None
+            else:
+                t = itm.get("title", "")
+                p = itm.get("parent_item_query")
+            if t:
+                r = set_list_item_completion(list_query=target_list_query, item_query=t, is_completed=is_comp, parent_item_query=p)
+                results.append(f"• {r}")
+        action_word = "Completed" if is_comp else "Reopened"
+        return f"Bulk {action_word} Items Results:\n" + "\n".join(results)
+
+    return f"ERROR: Unknown action '{action}'. Supported actions: 'add_multiple_lists', 'delete_multiple_lists', 'complete_multiple_lists', 'uncomplete_multiple_lists', 'add_multiple_subtasks', 'complete_multiple_items', 'uncomplete_multiple_items'."
 
 # Export tool list for Gemini API
 TOOLS = [
