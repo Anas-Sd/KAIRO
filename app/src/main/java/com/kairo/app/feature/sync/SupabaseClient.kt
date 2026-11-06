@@ -666,4 +666,46 @@ object SupabaseClient {
             }
         }
     }
+
+    suspend fun getSystemTaskNotes(taskId: String): Result<String?> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encodedId = java.net.URLEncoder.encode(taskId, "UTF-8")
+            val url = "$SUPABASE_URL/rest/v1/tasks?id=eq.$encodedId&select=notes"
+            val request = Request.Builder()
+                .url(url)
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .get()
+                .build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string().orEmpty()
+            if (response.isSuccessful) {
+                val arr = org.json.JSONArray(body)
+                if (arr.length() > 0) {
+                    val obj = arr.getJSONObject(0)
+                    if (obj.has("notes") && !obj.isNull("notes")) {
+                        obj.getString("notes")
+                    } else null
+                } else null
+            } else null
+        }
+    }
+
+    suspend fun saveSystemTaskNotes(taskId: String, userCode: String, title: String, notesJson: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val taskDto = TaskDto(
+                id = taskId,
+                userCode = userCode,
+                title = title,
+                notes = notesJson,
+                dueDate = "2099-01-01",
+                dueTime = "12:00",
+                section = "TODAY",
+                isCompleted = false,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+            insertTask(taskDto).getOrThrow()
+        }
+    }
 }

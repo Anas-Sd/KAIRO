@@ -32,6 +32,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.SelectAll
@@ -58,6 +60,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -84,6 +87,8 @@ import com.kairo.app.feature.lists.ui.AdjustParentListsDialog
 import com.kairo.app.feature.lists.ui.CreateListDialog
 import com.kairo.app.feature.lists.ui.ListCardLeadingControl
 import com.kairo.app.feature.lists.ui.ListDetailScreen
+import com.kairo.app.feature.lists.ui.ListPinDialog
+import com.kairo.app.feature.lists.ui.PinDialogMode
 import com.kairo.app.feature.lists.ui.TaskListDetailsBottomSheet
 import kotlin.math.roundToInt
 import com.kairo.app.ui.components.AppHeader
@@ -149,8 +154,14 @@ fun ListsScreen(
     var listToAdjustParent by remember { mutableStateOf<TaskList?>(null) }
     var listToDelete by remember { mutableStateOf<TaskList?>(null) }
 
+    // PIN lock dialog state
+    var pinTargetList by remember { mutableStateOf<TaskList?>(null) }
+    var pinDialogMode by remember { mutableStateOf<PinDialogMode?>(null) }
+
     val allListsWithStats by ListRepository.listsWithStats.collectAsState()
     val allItems by ListRepository.items.collectAsState()
+    val lockedListPins by ListRepository.lockedListPins.collectAsState()
+    val unlockedListIds by ListRepository.unlockedListIds.collectAsState()
 
     BackHandler(enabled = isSelectionMode) {
         isSelectionMode = false
@@ -169,6 +180,10 @@ fun ListsScreen(
             listId = selectedListId!!,
             initialDrillDownItemId = initialDrillDownItemId,
             onBack = {
+                val currentId = selectedListId
+                if (currentId != null) {
+                    ListRepository.lockListAgain(currentId)
+                }
                 selectedListId = null
                 initialDrillDownItemId = null
             }
@@ -499,6 +514,8 @@ fun ListsScreen(
                                 )
                             }
                             itemsIndexed(searchActiveLists, key = { _, stats -> "search_active_${stats.list.id}" }) { _, stats ->
+                                val isLocked = ListRepository.isListLocked(stats.list.id)
+                                val hasPin = ListRepository.hasPin(stats.list.id)
                                 ListOverviewCard(
                                     stats = stats,
                                     isBeingDragged = false,
@@ -506,6 +523,8 @@ fun ListsScreen(
                                     dragHandleModifier = Modifier,
                                     isSelectionMode = isSelectionMode,
                                     isSelected = selectedListIds.contains(stats.list.id),
+                                    isLocked = isLocked,
+                                    hasPin = hasPin,
                                     onSelectionChange = { checked ->
                                         selectedListIds = if (checked) selectedListIds + stats.list.id else selectedListIds - stats.list.id
                                     },
@@ -513,11 +532,20 @@ fun ListsScreen(
                                         ListRepository.setListCompleted(stats.list.id, !stats.isCompleted)
                                     },
                                     onClick = {
-                                        selectedListId = stats.list.id
+                                        if (isLocked) {
+                                            pinTargetList = stats.list
+                                            pinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
+                                        } else {
+                                            selectedListId = stats.list.id
+                                        }
                                     },
                                     onDetails = { listForDetails = stats },
                                     onEdit = { listToEdit = stats.list },
                                     onAdjustParent = { listToAdjustParent = stats.list },
+                                    onToggleLock = {
+                                        pinTargetList = stats.list
+                                        pinDialogMode = if (hasPin) PinDialogMode.REMOVE_PIN else PinDialogMode.SET_PIN
+                                    },
                                     onDelete = { listToDelete = stats.list },
                                     modifier = Modifier.animateItem()
                                 )
@@ -544,6 +572,8 @@ fun ListsScreen(
 
                             if (completedExpanded) {
                                 itemsIndexed(searchCompletedLists, key = { _, stats -> "search_completed_${stats.list.id}" }) { _, stats ->
+                                    val isLocked = ListRepository.isListLocked(stats.list.id)
+                                    val hasPin = ListRepository.hasPin(stats.list.id)
                                     ListOverviewCard(
                                         stats = stats,
                                         isBeingDragged = false,
@@ -551,6 +581,8 @@ fun ListsScreen(
                                         dragHandleModifier = Modifier,
                                         isSelectionMode = isSelectionMode,
                                         isSelected = selectedListIds.contains(stats.list.id),
+                                        isLocked = isLocked,
+                                        hasPin = hasPin,
                                         onSelectionChange = { checked ->
                                              selectedListIds = if (checked) selectedListIds + stats.list.id else selectedListIds - stats.list.id
                                         },
@@ -558,11 +590,20 @@ fun ListsScreen(
                                             ListRepository.setListCompleted(stats.list.id, !stats.isCompleted)
                                         },
                                         onClick = {
-                                            selectedListId = stats.list.id
+                                            if (isLocked) {
+                                                pinTargetList = stats.list
+                                                pinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
+                                            } else {
+                                                selectedListId = stats.list.id
+                                            }
                                         },
                                         onDetails = { listForDetails = stats },
                                         onEdit = { listToEdit = stats.list },
                                         onAdjustParent = { listToAdjustParent = stats.list },
+                                        onToggleLock = {
+                                            pinTargetList = stats.list
+                                            pinDialogMode = if (hasPin) PinDialogMode.REMOVE_PIN else PinDialogMode.SET_PIN
+                                        },
                                         onDelete = { listToDelete = stats.list },
                                         modifier = Modifier.animateItem()
                                     )
@@ -707,6 +748,8 @@ fun ListsScreen(
                         if (displayActiveLists.isNotEmpty()) {
                             itemsIndexed(displayActiveLists, key = { _, stats -> stats.list.id }) { index, stats ->
                                 val isBeingDragged = (stats.list.id == draggingListId)
+                                val isLocked = ListRepository.isListLocked(stats.list.id)
+                                val hasPin = ListRepository.hasPin(stats.list.id)
                                 ListOverviewCard(
                                     stats = stats,
                                     isBeingDragged = isBeingDragged,
@@ -714,6 +757,8 @@ fun ListsScreen(
                                     dragHandleModifier = if (!isSelectionMode) buildListDragHandleModifier(stats, displayActiveLists) else Modifier,
                                     isSelectionMode = isSelectionMode,
                                     isSelected = selectedListIds.contains(stats.list.id),
+                                    isLocked = isLocked,
+                                    hasPin = hasPin,
                                     onSelectionChange = { checked ->
                                         selectedListIds = if (checked) selectedListIds + stats.list.id else selectedListIds - stats.list.id
                                     },
@@ -722,12 +767,21 @@ fun ListsScreen(
                                     },
                                     onClick = {
                                         if (draggingListId == null) {
-                                            selectedListId = stats.list.id
+                                            if (isLocked) {
+                                                pinTargetList = stats.list
+                                                pinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
+                                            } else {
+                                                selectedListId = stats.list.id
+                                            }
                                         }
                                     },
                                     onDetails = { listForDetails = stats },
                                     onEdit = { listToEdit = stats.list },
                                     onAdjustParent = { listToAdjustParent = stats.list },
+                                    onToggleLock = {
+                                        pinTargetList = stats.list
+                                        pinDialogMode = if (hasPin) PinDialogMode.REMOVE_PIN else PinDialogMode.SET_PIN
+                                    },
                                     onDelete = { listToDelete = stats.list },
                                     modifier = Modifier.animateItem()
                                 )
@@ -754,6 +808,8 @@ fun ListsScreen(
 
                             if (completedExpanded) {
                                 itemsIndexed(completedLists, key = { _, stats -> stats.list.id }) { _, stats ->
+                                    val isLocked = ListRepository.isListLocked(stats.list.id)
+                                    val hasPin = ListRepository.hasPin(stats.list.id)
                                     ListOverviewCard(
                                         stats = stats,
                                         isBeingDragged = false,
@@ -761,6 +817,8 @@ fun ListsScreen(
                                         dragHandleModifier = Modifier,
                                         isSelectionMode = isSelectionMode,
                                         isSelected = selectedListIds.contains(stats.list.id),
+                                        isLocked = isLocked,
+                                        hasPin = hasPin,
                                         onSelectionChange = { checked ->
                                             selectedListIds = if (checked) selectedListIds + stats.list.id else selectedListIds - stats.list.id
                                         },
@@ -768,11 +826,20 @@ fun ListsScreen(
                                             ListRepository.setListCompleted(stats.list.id, !stats.isCompleted)
                                         },
                                         onClick = {
-                                            selectedListId = stats.list.id
+                                            if (isLocked) {
+                                                pinTargetList = stats.list
+                                                pinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
+                                            } else {
+                                                selectedListId = stats.list.id
+                                            }
                                         },
                                         onDetails = { listForDetails = stats },
                                         onEdit = { listToEdit = stats.list },
                                         onAdjustParent = { listToAdjustParent = stats.list },
+                                        onToggleLock = {
+                                            pinTargetList = stats.list
+                                            pinDialogMode = if (hasPin) PinDialogMode.REMOVE_PIN else PinDialogMode.SET_PIN
+                                        },
                                         onDelete = { listToDelete = stats.list },
                                         modifier = Modifier.animateItem()
                                     )
@@ -1091,12 +1158,18 @@ fun ListsScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val count = selectedListIds.size
-                        ListRepository.deleteLists(selectedListIds)
+                        val lockedCount = selectedListIds.count { ListRepository.isListLocked(it) || ListRepository.hasPin(it) }
+                        val deletableIds = selectedListIds.filter { !ListRepository.isListLocked(it) && !ListRepository.hasPin(it) }.toSet()
+                        if (deletableIds.isNotEmpty()) {
+                            ListRepository.deleteLists(deletableIds)
+                            val msg = "${deletableIds.size} list(s) deleted" + if (lockedCount > 0) " ($lockedCount locked list(s) protected)" else ""
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        } else if (lockedCount > 0) {
+                            Toast.makeText(context, "Locked lists cannot be deleted", Toast.LENGTH_SHORT).show()
+                        }
                         isSelectionMode = false
                         selectedListIds = emptySet()
                         showDeleteWarningDialog = false
-                        Toast.makeText(context, "$count list(s) deleted", Toast.LENGTH_SHORT).show()
                     }
                 ) {
                     Text(
@@ -1170,6 +1243,53 @@ fun ListsScreen(
             shape = RoundedCornerShape(20.dp)
         )
     }
+
+    // PIN Lock / Unlock Dialog
+    if (pinDialogMode != null && pinTargetList != null) {
+        val target = pinTargetList!!
+        val mode = pinDialogMode!!
+        ListPinDialog(
+            listName = target.name,
+            mode = mode,
+            onDismiss = {
+                pinDialogMode = null
+                pinTargetList = null
+            },
+            onConfirm = { pin ->
+                when (mode) {
+                    PinDialogMode.SET_PIN -> {
+                        ListRepository.setListPin(target.id, pin)
+                        pinDialogMode = null
+                        pinTargetList = null
+                        Toast.makeText(context, "'${target.name}' locked with PIN", Toast.LENGTH_SHORT).show()
+                        true
+                    }
+                    PinDialogMode.UNLOCK_TEMPORARY -> {
+                        if (ListRepository.verifyPin(target.id, pin)) {
+                            ListRepository.unlockListTemporarily(target.id)
+                            selectedListId = target.id
+                            pinDialogMode = null
+                            pinTargetList = null
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    PinDialogMode.REMOVE_PIN -> {
+                        if (ListRepository.verifyPin(target.id, pin)) {
+                            ListRepository.removeListPin(target.id)
+                            pinDialogMode = null
+                            pinTargetList = null
+                            Toast.makeText(context, "Protection removed from '${target.name}'", Toast.LENGTH_SHORT).show()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -1180,12 +1300,15 @@ private fun ListOverviewCard(
     dragHandleModifier: Modifier = Modifier,
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
+    isLocked: Boolean = false,
+    hasPin: Boolean = false,
     onSelectionChange: (Boolean) -> Unit = {},
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
     onDetails: () -> Unit = {},
     onEdit: () -> Unit,
     onAdjustParent: () -> Unit,
+    onToggleLock: () -> Unit = {},
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1263,6 +1386,24 @@ private fun ListOverviewCard(
                             modifier = Modifier.size(22.dp),
                             emojiSize = 20.sp
                         )
+                        if (isLocked) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 2.dp, y = (-2).dp)
+                                    .size(14.dp)
+                                    .clip(CircleShape)
+                                    .background(KairoPrimary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Locked",
+                                    tint = Color(0xFF1E1F26),
+                                    modifier = Modifier.size(9.dp)
+                                )
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.width(10.dp))
@@ -1279,41 +1420,68 @@ private fun ListOverviewCard(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "${stats.completedCount}/${stats.totalCount} completed",
+                            text = if (isLocked) "Protected • Locked" else "${stats.completedCount}/${stats.totalCount} completed",
                             fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (isLocked) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    Surface(
-                        shape = RoundedCornerShape(100.dp),
-                        color = if (stats.progressPercentage == 100) Color(0xFF10B981).copy(alpha = 0.15f) else KairoPrimary.copy(alpha = 0.12f),
-                        border = BorderStroke(
-                            1.dp,
-                            if (stats.progressPercentage == 100) Color(0xFF10B981).copy(alpha = 0.4f) else KairoPrimary.copy(alpha = 0.35f)
-                        )
-                    ) {
-                        Text(
-                            text = "${stats.progressPercentage}%",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (stats.progressPercentage == 100) Color(0xFF10B981) else KairoPrimary,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                        )
+                    if (isLocked) {
+                        Surface(
+                            shape = RoundedCornerShape(100.dp),
+                            color = KairoPrimary.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, KairoPrimary.copy(alpha = 0.4f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = KairoPrimary,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    text = "PIN",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = KairoPrimary
+                                )
+                            }
+                        }
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(100.dp),
+                            color = if (stats.progressPercentage == 100) Color(0xFF10B981).copy(alpha = 0.15f) else KairoPrimary.copy(alpha = 0.12f),
+                            border = BorderStroke(
+                                1.dp,
+                                if (stats.progressPercentage == 100) Color(0xFF10B981).copy(alpha = 0.4f) else KairoPrimary.copy(alpha = 0.35f)
+                            )
+                        ) {
+                            Text(
+                                text = "${stats.progressPercentage}%",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (stats.progressPercentage == 100) Color(0xFF10B981) else KairoPrimary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 LinearProgressIndicator(
-                    progress = { progressFloat },
+                    progress = { if (isLocked) 1f else progressFloat },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(5.dp)
                         .clip(RoundedCornerShape(3.dp)),
-                    color = if (stats.progressPercentage == 100) Color(0xFF10B981) else KairoPrimary,
+                    color = if (isLocked) KairoPrimary.copy(alpha = 0.45f) else if (stats.progressPercentage == 100) Color(0xFF10B981) else KairoPrimary,
                     trackColor = KairoSurfaceContainerLow
                 )
             }
@@ -1368,13 +1536,30 @@ private fun ListOverviewCard(
                         )
 
                         DropdownMenuItem(
-                            text = { Text("Delete List", color = KairoHighUrgent) },
-                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = KairoHighUrgent) },
+                            text = { Text(if (hasPin) "Unlock Permanently" else "Lock List") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (hasPin) Icons.Default.LockOpen else Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = if (hasPin) KairoHighUrgent else KairoPrimary
+                                )
+                            },
                             onClick = {
                                 menuExpanded = false
-                                onDelete()
+                                onToggleLock()
                             }
                         )
+
+                        if (!hasPin) {
+                            DropdownMenuItem(
+                                text = { Text("Delete List", color = KairoHighUrgent) },
+                                leadingIcon = { Icon(Icons.Default.Delete, null, tint = KairoHighUrgent) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDelete()
+                                }
+                            )
+                        }
                     }
                 }
             }

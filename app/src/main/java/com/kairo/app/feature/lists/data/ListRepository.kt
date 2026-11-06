@@ -27,6 +27,7 @@ object ListRepository {
     private const val KEY_LISTS = "saved_task_lists"
     private const val KEY_ITEMS = "saved_list_items"
     private const val KEY_COMPLETED_EMPTY_LISTS = "saved_completed_empty_lists"
+    private const val KEY_LIST_PINS = "saved_list_pins"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _completedEmptyListIds = mutableSetOf<String>()
@@ -45,6 +46,14 @@ object ListRepository {
 
     private val _listsWithStats = MutableStateFlow<List<ListWithStats>>(emptyList())
     val listsWithStats: StateFlow<List<ListWithStats>> = _listsWithStats.asStateFlow()
+
+    // PIN lock management: Map of listId -> 4-digit PIN
+    private val _lockedListPins = MutableStateFlow<Map<String, String>>(emptyMap())
+    val lockedListPins: StateFlow<Map<String, String>> = _lockedListPins.asStateFlow()
+
+    // Session-based temporarily unlocked lists
+    private val _unlockedListIds = MutableStateFlow<Set<String>>(emptySet())
+    val unlockedListIds: StateFlow<Set<String>> = _unlockedListIds.asStateFlow()
 
     init {
         if (KairoApplication.isInitialized) {
@@ -150,6 +159,8 @@ object ListRepository {
                 recalculateStats()
                 saveToDisk()
             }
+
+            fetchPinsFromSupabase(userCode)
         }
     }
 
@@ -157,6 +168,18 @@ object ListRepository {
         try {
             val listsJson = prefs?.getString(KEY_LISTS, null)
             val itemsJson = prefs?.getString(KEY_ITEMS, null)
+            val pinsJson = prefs?.getString(KEY_LIST_PINS, null)
+
+            if (!pinsJson.isNullOrBlank()) {
+                val pinsMap = mutableMapOf<String, String>()
+                val pinsObj = JSONObject(pinsJson)
+                val keys = pinsObj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    pinsMap[k] = pinsObj.getString(k)
+                }
+                _lockedListPins.value = pinsMap
+            }
 
             val loadedLists = mutableListOf<TaskList>()
             if (!listsJson.isNullOrBlank()) {
@@ -261,10 +284,16 @@ object ListRepository {
                 val emptyArray = JSONArray()
                 _completedEmptyListIds.forEach { emptyArray.put(it) }
 
+                val pinsObj = JSONObject()
+                _lockedListPins.value.forEach { (k, v) ->
+                    pinsObj.put(k, v)
+                }
+
                 prefs?.edit()
                     ?.putString(KEY_LISTS, listsArray.toString())
                     ?.putString(KEY_ITEMS, itemsArray.toString())
                     ?.putString(KEY_COMPLETED_EMPTY_LISTS, emptyArray.toString())
+                    ?.putString(KEY_LIST_PINS, pinsObj.toString())
                     ?.apply()
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving lists to disk: ${e.message}", e)
@@ -381,9 +410,16 @@ object ListRepository {
     }
 
     fun deleteList(id: String) {
+        if (isListLocked(id)) {
+            Log.w(TAG, "Cannot delete locked list $id")
+            return
+        }
         _lists.value = _lists.value.filter { it.id != id }
         _items.value = _items.value.filter { it.listId != id }
         _completedEmptyListIds.remove(id)
+        if (_lockedListPins.value.containsKey(id)) {
+            removeListPin(id)
+        }
         recalculateStats()
         saveToDisk()
 
@@ -394,17 +430,118 @@ object ListRepository {
 
     fun deleteLists(listIds: Set<String>) {
         if (listIds.isEmpty()) return
-        _lists.value = _lists.value.filter { !listIds.contains(it.id) }
-        _items.value = _items.value.filter { !listIds.contains(it.listId) }
-        _completedEmptyListIds.removeAll(listIds)
+        // Do not allow deleting locked lists
+        val deletableIds = listIds.filter { !isListLocked(it) }.toSet()
+        if (deletableIds.isEmpty()) return
+
+        _lists.value = _lists.value.filter { !deletableIds.contains(it.id) }
+        _items.value = _items.value.filter { !deletableIds.contains(it.listId) }
+        _completedEmptyListIds.removeAll(deletableIds)
+        deletableIds.forEach { id ->
+            if (_lockedListPins.value.containsKey(id)) {
+                removeListPin(id)
+            }
+        }
         recalculateStats()
         saveToDisk()
 
         scope.launch {
-            listIds.forEach { id ->
+            deletableIds.forEach { id ->
                 SupabaseClient.deleteTaskList(id)
             }
         }
+    }
+
+    // ==========================================
+    // PIN LOCK OPERATIONS
+    // ==========================================
+
+    fun fetchPinsFromSupabase(userCode: String = getUserCodeSafe()) {
+        scope.launch {
+            val configId = "sys_kairo_list_pins_$userCode"
+            val result = SupabaseClient.getSystemTaskNotes(configId)
+            if (result.isSuccess) {
+                val notes = result.getOrNull()
+                if (!notes.isNullOrBlank()) {
+                    try {
+                        val obj = JSONObject(notes)
+                        val remotePins = mutableMapOf<String, String>()
+                        val keys = obj.keys()
+                        while (keys.hasNext()) {
+                            val k = keys.next()
+                            remotePins[k] = obj.getString(k)
+                        }
+                        _lockedListPins.value = remotePins
+                        saveToDisk()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error parsing cloud list pins: ${e.message}")
+                    }
+                }
+            }
+        }
+    }
+
+    fun setListPin(listId: String, pin: String) {
+        val current = _lockedListPins.value.toMutableMap()
+        current[listId] = pin
+        _lockedListPins.value = current
+        _unlockedListIds.value = _unlockedListIds.value - listId
+        saveToDisk()
+
+        val userCode = getUserCodeSafe()
+        scope.launch {
+            val configId = "sys_kairo_list_pins_$userCode"
+            val pinsObj = JSONObject()
+            current.forEach { (k, v) -> pinsObj.put(k, v) }
+            SupabaseClient.saveSystemTaskNotes(
+                taskId = configId,
+                userCode = userCode,
+                title = "__SYSTEM_LIST_PINS__",
+                notesJson = pinsObj.toString()
+            )
+        }
+    }
+
+    fun removeListPin(listId: String) {
+        val current = _lockedListPins.value.toMutableMap()
+        current.remove(listId)
+        _lockedListPins.value = current
+        _unlockedListIds.value = _unlockedListIds.value - listId
+        saveToDisk()
+
+        val userCode = getUserCodeSafe()
+        scope.launch {
+            val configId = "sys_kairo_list_pins_$userCode"
+            val pinsObj = JSONObject()
+            current.forEach { (k, v) -> pinsObj.put(k, v) }
+            SupabaseClient.saveSystemTaskNotes(
+                taskId = configId,
+                userCode = userCode,
+                title = "__SYSTEM_LIST_PINS__",
+                notesJson = pinsObj.toString()
+            )
+        }
+    }
+
+    fun unlockListTemporarily(listId: String) {
+        _unlockedListIds.value = _unlockedListIds.value + listId
+    }
+
+    fun lockListAgain(listId: String) {
+        _unlockedListIds.value = _unlockedListIds.value - listId
+    }
+
+    fun isListLocked(listId: String): Boolean {
+        val hasPin = _lockedListPins.value.containsKey(listId)
+        return hasPin && !_unlockedListIds.value.contains(listId)
+    }
+
+    fun hasPin(listId: String): Boolean {
+        return _lockedListPins.value.containsKey(listId)
+    }
+
+    fun verifyPin(listId: String, pin: String): Boolean {
+        return _lockedListPins.value[listId] == pin
     }
 
     fun reorderLists(newOrder: List<TaskList>) {

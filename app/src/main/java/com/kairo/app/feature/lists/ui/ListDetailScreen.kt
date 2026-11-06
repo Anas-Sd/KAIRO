@@ -48,6 +48,8 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
@@ -91,6 +93,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -124,6 +127,12 @@ fun ListDetailScreen(
 ) {
     val allListsWithStats by ListRepository.listsWithStats.collectAsState()
     val allItems by ListRepository.items.collectAsState()
+    val lockedListPins by ListRepository.lockedListPins.collectAsState()
+    val unlockedListIds by ListRepository.unlockedListIds.collectAsState()
+
+    val isListLocked = lockedListPins.containsKey(listId) && !unlockedListIds.contains(listId)
+    val hasPin = lockedListPins.containsKey(listId)
+    var detailPinDialogMode by remember { mutableStateOf<PinDialogMode?>(null) }
 
     val currentListStats = allListsWithStats.find { it.list.id == listId }
     val currentList = currentListStats?.list
@@ -470,31 +479,35 @@ fun ListDetailScreen(
                                 }
                             }
 
-                            // 1. Search toggle button
-                            IconButton(onClick = {
-                                isSearchActive = !isSearchActive
-                                if (!isSearchActive) searchQuery = ""
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = "Search",
-                                    tint = if (isSearchActive) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            // 1. Search toggle button (if not locked)
+                            if (!isListLocked) {
+                                IconButton(onClick = {
+                                    isSearchActive = !isSearchActive
+                                    if (!isSearchActive) searchQuery = ""
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "Search",
+                                        tint = if (isSearchActive) KairoPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
 
-                            // 2. Plus (+) button to add items/subtasks
-                            IconButton(onClick = {
-                                targetParentForMultiAdd = currentParent
-                                showMultiAddDialog = true
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = if (currentParent != null) "Add Subtasks" else "Add Items",
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
+                            // 2. Plus (+) button to add items/subtasks (hidden if locked)
+                            if (!isListLocked) {
+                                IconButton(onClick = {
+                                    targetParentForMultiAdd = currentParent
+                                    showMultiAddDialog = true
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = if (currentParent != null) "Add Subtasks" else "Add Items",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
                             }
 
-                            // 3. Header 3-dots Menu (Refresh + Select)
+                            // 3. Header 3-dots Menu
                             Box {
                                 IconButton(onClick = { headerMoreMenuExpanded = true }) {
                                     Icon(
@@ -509,6 +522,61 @@ fun ListDetailScreen(
                                     onDismissRequest = { headerMoreMenuExpanded = false },
                                     modifier = Modifier.background(KairoSurfaceContainerHigh)
                                 ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Details") },
+                                        leadingIcon = { Icon(Icons.Default.Info, null, tint = KairoPrimary) },
+                                        onClick = {
+                                            headerMoreMenuExpanded = false
+                                            showListDetailsSheet = true
+                                        }
+                                    )
+
+                                    DropdownMenuItem(
+                                        text = { Text("Adjust Parent") },
+                                        leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = KairoPrimary) },
+                                        onClick = {
+                                            headerMoreMenuExpanded = false
+                                            showAdjustParentListDialog = true
+                                        }
+                                    )
+
+                                    if (isListLocked) {
+                                        DropdownMenuItem(
+                                            text = { Text("Unlock List") },
+                                            leadingIcon = { Icon(Icons.Default.LockOpen, null, tint = KairoPrimary) },
+                                            onClick = {
+                                                headerMoreMenuExpanded = false
+                                                detailPinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
+                                            }
+                                        )
+                                    } else if (hasPin) {
+                                        DropdownMenuItem(
+                                            text = { Text("Lock Now") },
+                                            leadingIcon = { Icon(Icons.Default.Lock, null, tint = KairoPrimary) },
+                                            onClick = {
+                                                headerMoreMenuExpanded = false
+                                                ListRepository.lockListAgain(currentList.id)
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Unlock Permanently") },
+                                            leadingIcon = { Icon(Icons.Default.LockOpen, null, tint = KairoHighUrgent) },
+                                            onClick = {
+                                                headerMoreMenuExpanded = false
+                                                detailPinDialogMode = PinDialogMode.REMOVE_PIN
+                                            }
+                                        )
+                                    } else {
+                                        DropdownMenuItem(
+                                            text = { Text("Lock List") },
+                                            leadingIcon = { Icon(Icons.Default.Lock, null, tint = KairoPrimary) },
+                                            onClick = {
+                                                headerMoreMenuExpanded = false
+                                                detailPinDialogMode = PinDialogMode.SET_PIN
+                                            }
+                                        )
+                                    }
+
                                     DropdownMenuItem(
                                         text = { Text("Refresh") },
                                         leadingIcon = {
@@ -527,22 +595,36 @@ fun ListDetailScreen(
                                         }
                                     )
 
-                                    DropdownMenuItem(
-                                        text = { Text("Select") },
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = Icons.Default.SelectAll,
-                                                contentDescription = null,
-                                                tint = KairoPrimary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        },
-                                        onClick = {
-                                            headerMoreMenuExpanded = false
-                                            isSelectionMode = true
-                                            selectedItemIds = emptySet()
-                                        }
-                                    )
+                                    if (!isListLocked) {
+                                        DropdownMenuItem(
+                                            text = { Text("Select") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Default.SelectAll,
+                                                    contentDescription = null,
+                                                    tint = KairoPrimary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            },
+                                            onClick = {
+                                                headerMoreMenuExpanded = false
+                                                isSelectionMode = true
+                                                selectedItemIds = emptySet()
+                                            }
+                                        )
+                                    }
+
+                                    if (!hasPin) {
+                                        HorizontalDivider(color = KairoOutlineVariant.copy(alpha = 0.2f))
+                                        DropdownMenuItem(
+                                            text = { Text("Delete List", color = KairoHighUrgent) },
+                                            leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = KairoHighUrgent) },
+                                            onClick = {
+                                                headerMoreMenuExpanded = false
+                                                showDeleteListDialog = true
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -617,12 +699,68 @@ fun ListDetailScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .then(if (isSelectionMode) Modifier.padding(bottom = 76.dp) else Modifier)
-            ) {
+            if (isListLocked) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(KairoPrimary.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = KairoPrimary,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    Text(
+                        text = "${currentList.name} is Locked",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "Enter the list PIN to view subtasks and manage items in this list.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Button(
+                        onClick = {
+                            detailPinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = KairoPrimary),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Lock, null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Unlock List", fontWeight = FontWeight.Bold)
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .then(if (isSelectionMode) Modifier.padding(bottom = 76.dp) else Modifier)
+                ) {
             // Breadcrumbs Navigation Bar (shown when drilled into subtasks)
             if (breadcrumbStack.isNotEmpty()) {
                 ListBreadcrumbBar(
@@ -1118,6 +1256,7 @@ fun ListDetailScreen(
                     }
                 }
             }
+            }
         }
     }
 }
@@ -1453,6 +1592,54 @@ if (showDeleteConfirmDialog) {
                 )
                 leafItemForAddSubtasks = null
                 Toast.makeText(context, "Added ${subtasks.size} subtask(s)", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    // List Details View-Only Bottom Sheet
+    if (showListDetailsSheet) {
+        TaskListDetailsBottomSheet(
+            list = currentList,
+            listStats = currentListStats,
+            onDismiss = { showListDetailsSheet = false }
+        )
+    }
+
+    // PIN Dialog for lock / unlock operations
+    if (detailPinDialogMode != null) {
+        val mode = detailPinDialogMode!!
+        ListPinDialog(
+            listName = currentList.name,
+            mode = mode,
+            onDismiss = { detailPinDialogMode = null },
+            onConfirm = { pin ->
+                when (mode) {
+                    PinDialogMode.SET_PIN -> {
+                        ListRepository.setListPin(currentList.id, pin)
+                        detailPinDialogMode = null
+                        Toast.makeText(context, "'${currentList.name}' locked with PIN", Toast.LENGTH_SHORT).show()
+                        true
+                    }
+                    PinDialogMode.UNLOCK_TEMPORARY -> {
+                        if (ListRepository.verifyPin(currentList.id, pin)) {
+                            ListRepository.unlockListTemporarily(currentList.id)
+                            detailPinDialogMode = null
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    PinDialogMode.REMOVE_PIN -> {
+                        if (ListRepository.verifyPin(currentList.id, pin)) {
+                            ListRepository.removeListPin(currentList.id)
+                            detailPinDialogMode = null
+                            Toast.makeText(context, "Protection removed from '${currentList.name}'", Toast.LENGTH_SHORT).show()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                }
             }
         )
     }
