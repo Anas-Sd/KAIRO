@@ -2913,6 +2913,881 @@ def list_user_rules() -> str:
     rules_str = "\n".join([f"{i}. _{r}_" for i, r in enumerate(rules, 1)])
     return f"📋 Active Custom Rules:\n\n{rules_str}\n\nTo delete a rule, say: 'delete rule <number or text>'."
 
+# ==========================================
+# LISTS TAB DATA ACCESS & TOOLS
+# ==========================================
+
+def fetch_all_task_lists_for_user() -> list:
+    """Fetches all task_lists for the current user, ordered by position."""
+    user_code = current_user["user_code"]
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/task_lists?user_code=eq.{user_code}&select=*&order=position.asc,created_at.asc"
+        res = requests.get(url, headers=supabase_headers(), timeout=10)
+        if res.status_code == 200:
+            return res.json()
+    except Exception as e:
+        logger.error(f"Error fetching task_lists from Supabase: {e}")
+    return []
+
+def fetch_all_list_items_for_user(list_id: str = None) -> list:
+    """Fetches all list_items for the current user, optionally filtered by list_id."""
+    user_code = current_user["user_code"]
+    try:
+        if list_id:
+            url = f"{SUPABASE_URL}/rest/v1/list_items?user_code=eq.{user_code}&list_id=eq.{list_id}&select=*&order=position.asc,created_at.asc"
+        else:
+            url = f"{SUPABASE_URL}/rest/v1/list_items?user_code=eq.{user_code}&select=*&order=position.asc,created_at.asc"
+        res = requests.get(url, headers=supabase_headers(), timeout=10)
+        if res.status_code == 200:
+            return res.json()
+    except Exception as e:
+        logger.error(f"Error fetching list_items from Supabase: {e}")
+    return []
+
+def resolve_list_by_query(query: str, all_lists: list = None) -> tuple[dict | None, list]:
+    """Resolves a task list using fuzzy/semantic matching."""
+    if all_lists is None:
+        all_lists = fetch_all_task_lists_for_user()
+    if not all_lists or not query:
+        return None, []
+
+    q = query.strip()
+    # Check exact ID
+    for l in all_lists:
+        if l.get("id") == q:
+            return l, []
+
+    # Check exact match
+    for l in all_lists:
+        if l.get("name", "").strip().lower() == q.lower():
+            return l, []
+
+    scored = []
+    for l in all_lists:
+        s = score_match(q, l.get("name", ""))
+        scored.append((s, l))
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    if scored and scored[0][0] >= 0.50:
+        return scored[0][1], [item[1] for item in scored[1:4]]
+    return None, [item[1] for item in scored[:3]]
+
+def resolve_list_item_by_query(query: str, items_in_list: list) -> tuple[dict | None, list]:
+    """Resolves a list item inside a list using fuzzy matching."""
+    if not items_in_list or not query:
+        return None, []
+
+    q = query.strip()
+    for itm in items_in_list:
+        if itm.get("id") == q:
+            return itm, []
+
+    for itm in items_in_list:
+        if itm.get("title", "").strip().lower() == q.lower():
+            return itm, []
+
+    scored = []
+    for itm in items_in_list:
+        s = score_match(q, itm.get("title", ""))
+        scored.append((s, itm))
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    if scored and scored[0][0] >= 0.45:
+        return scored[0][1], [item[1] for item in scored[1:4]]
+    return None, [item[1] for item in scored[:3]]
+
+def get_list_item_descendant_ids(item_id: str, all_items: list) -> set[str]:
+    """Gets all recursive child ids under an item."""
+    descendants = set()
+    queue = [item_id]
+    while queue:
+        curr = queue.pop(0)
+        children = [i for i in all_items if i.get("parent_id") == curr]
+        for c in children:
+            cid = c.get("id")
+            if cid and cid not in descendants and cid != item_id:
+                descendants.add(cid)
+                queue.append(cid)
+    return descendants
+
+def get_list_item_ancestor_ids(item_id: str, all_items: list) -> list[str]:
+    """Gets parent and all ancestor ids up to root."""
+    by_id = {i.get("id"): i for i in all_items}
+    ancestors = []
+    curr = by_id.get(item_id, {}).get("parent_id")
+    visited = {item_id}
+    while curr and curr not in visited:
+        visited.add(curr)
+        ancestors.append(curr)
+        curr = by_id.get(curr, {}).get("parent_id")
+    return ancestors
+
+def compute_list_progress_stats(list_dict: dict, items: list) -> dict:
+    """Computes completion and progress stats matching Android ListRepository.kt."""
+    list_id = list_dict["id"]
+    items_in_list = [i for i in items if i.get("list_id") == list_id]
+    root_items = [i for i in items_in_list if not i.get("parent_id")]
+    total = len(root_items)
+    completed = sum(1 for i in root_items if i.get("is_completed"))
+    active = total - completed
+    total_all = len(items_in_list)
+    completed_all = sum(1 for i in items_in_list if i.get("is_completed"))
+
+    if total > 0:
+        pct = int((completed / total) * 100)
+        is_completed = (completed == total)
+    else:
+        # Check if empty list was marked done
+        is_completed = False
+        pct = 100 if is_completed else 0
+
+    return {
+        "total_root": total,
+        "completed_root": completed,
+        "active_root": active,
+        "total_all": total_all,
+        "completed_all": completed_all,
+        "percentage": pct,
+        "is_completed": is_completed,
+        "items": items_in_list
+    }
+
+def add_list(name: str, icon_name: str = "list", initial_subtasks: list[str] = None) -> str:
+    """
+    Creates a new task list in the Lists tab.
+    - name: Name or title of the list (e.g. 'Groceries', 'Vacation Packing', 'Project Alpha')
+    - icon_name: Icon name or emoji (e.g. 'list', 'checklist', 'shopping', 'work', 'study', 'fitness', 'travel', 'ideas', 'home', 'star', 'packing', 'code', 'favorite' or an emoji like '🛒', '💻', '🎯')
+    - initial_subtasks: Optional list of initial item/subtask names to populate directly into this list
+    """
+    clean_name = name.strip()
+    if not clean_name:
+        return "ERROR: List name cannot be empty."
+
+    user_code = current_user["user_code"]
+    existing_lists = fetch_all_task_lists_for_user()
+
+    # Check duplicate
+    for l in existing_lists:
+        if l.get("name", "").strip().lower() == clean_name.lower():
+            return f"⚠️ A list named '{clean_name}' already exists."
+
+    list_id = str(uuid.uuid4())
+    now_ms = int(time.time() * 1000)
+    pos = len(existing_lists)
+
+    new_list_row = {
+        "id": list_id,
+        "user_code": user_code,
+        "name": clean_name,
+        "icon_name": icon_name or "list",
+        "position": pos,
+        "created_at": now_ms,
+        "updated_at": now_ms
+    }
+
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/task_lists"
+        res = requests.post(url, headers=supabase_headers(), json=new_list_row, timeout=10)
+        if res.status_code not in (200, 201):
+            return f"Database error creating list: {res.text}"
+
+        created_subtasks_count = 0
+        if initial_subtasks:
+            clean_subtasks = [s.strip() for s in initial_subtasks if s and str(s).strip()]
+            item_rows = []
+            for idx, s_title in enumerate(clean_subtasks):
+                item_rows.append({
+                    "id": str(uuid.uuid4()),
+                    "user_code": user_code,
+                    "list_id": list_id,
+                    "parent_id": None,
+                    "title": s_title,
+                    "icon_name": "list",
+                    "notes": None,
+                    "target_date": None,
+                    "target_date_millis": None,
+                    "is_completed": False,
+                    "position": idx,
+                    "completed_at": None,
+                    "created_at": now_ms + idx,
+                    "updated_at": now_ms + idx
+                })
+            if item_rows:
+                items_url = f"{SUPABASE_URL}/rest/v1/list_items"
+                requests.post(items_url, headers=supabase_headers(), json=item_rows, timeout=10)
+                created_subtasks_count = len(item_rows)
+
+        dispatch_alarm_wakeup()
+        subtask_msg = f" with {created_subtasks_count} item(s)" if created_subtasks_count > 0 else ""
+        return (
+            f"✅ *Successfully created list!*\n\n"
+            f"📋 *List:* {clean_name}\n"
+            f"🎨 *Icon:* {icon_name}\n"
+            f"📦 *Items:* {created_subtasks_count} initial item(s)\n"
+            f"📊 *Progress:* 0% (0/{created_subtasks_count})"
+        )
+    except Exception as e:
+        return f"Error creating list: {e}"
+
+def delete_list(list_query: str) -> str:
+    """
+    Deletes a task list and all its nested items.
+    - list_query: Name or ID of the list to delete.
+    """
+    all_lists = fetch_all_task_lists_for_user()
+    target_list, candidates = resolve_list_by_query(list_query, all_lists)
+    if not target_list:
+        if candidates:
+            return f"Could not find list '{list_query}'. Did you mean: {', '.join(c.get('name') for c in candidates[:3])}?"
+        return f"Could not find list '{list_query}'."
+
+    list_id = target_list["id"]
+    list_name = target_list.get("name", "List")
+
+    try:
+        # Delete items first
+        items_url = f"{SUPABASE_URL}/rest/v1/list_items?list_id=eq.{list_id}"
+        requests.delete(items_url, headers=supabase_headers(), timeout=10)
+
+        # Delete list
+        list_url = f"{SUPABASE_URL}/rest/v1/task_lists?id=eq.{list_id}"
+        res = requests.delete(list_url, headers=supabase_headers(), timeout=10)
+        if res.status_code in (200, 204):
+            dispatch_alarm_wakeup()
+            return f"🗑️ List *'{list_name}'* and all its items have been deleted successfully."
+        return f"Database error deleting list: {res.text}"
+    except Exception as e:
+        return f"Error deleting list: {e}"
+
+def edit_list(list_query: str, new_name: str = None, new_icon_name: str = None) -> str:
+    """
+    Renames or changes the icon for an existing task list.
+    - list_query: Current name or ID of the list.
+    - new_name: New name for the list.
+    - new_icon_name: New icon or emoji.
+    """
+    all_lists = fetch_all_task_lists_for_user()
+    target_list, candidates = resolve_list_by_query(list_query, all_lists)
+    if not target_list:
+        if candidates:
+            return f"Could not find list '{list_query}'. Did you mean: {', '.join(c.get('name') for c in candidates[:3])}?"
+        return f"Could not find list '{list_query}'."
+
+    list_id = target_list["id"]
+    patch_data = {"updated_at": int(time.time() * 1000)}
+    changes = []
+
+    if new_name and new_name.strip():
+        patch_data["name"] = new_name.strip()
+        changes.append(f"Name: {patch_data['name']}")
+    if new_icon_name and new_icon_name.strip():
+        patch_data["icon_name"] = new_icon_name.strip()
+        changes.append(f"Icon: {patch_data['icon_name']}")
+
+    if len(patch_data) == 1:
+        return "ERROR: No changes provided for edit_list (provide new_name or new_icon_name)."
+
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/task_lists?id=eq.{list_id}"
+        res = requests.patch(url, headers=supabase_headers(), json=patch_data, timeout=10)
+        if res.status_code in (200, 204):
+            dispatch_alarm_wakeup()
+            return f"✏️ Successfully updated list *'{patch_data.get('name', target_list.get('name'))}'* ({', '.join(changes)})."
+        return f"Database error updating list: {res.text}"
+    except Exception as e:
+        return f"Error updating list: {e}"
+
+def add_subtask_to_list(
+    list_query: str,
+    title: str,
+    parent_item_query: str = None,
+    icon_name: str = "list",
+    notes: str = None,
+    target_date: str = None
+) -> str:
+    """
+    Adds a new item (or nested subtask) to a specific list.
+    - list_query: Name or ID of the destination list.
+    - title: Title of the item/subtask.
+    - parent_item_query: Optional title/query of an existing item in this list to nest this subtask under.
+    - icon_name: Optional icon or emoji (defaults to 'list').
+    - notes: Optional notes.
+    - target_date: Optional due date string (e.g. 'YYYY-MM-DD' or 'today').
+    """
+    clean_title = title.strip()
+    if not clean_title:
+        return "ERROR: Item title cannot be empty."
+
+    all_lists = fetch_all_task_lists_for_user()
+    target_list, candidates = resolve_list_by_query(list_query, all_lists)
+    if not target_list:
+        if candidates:
+            return f"Could not find list '{list_query}'. Did you mean: {', '.join(c.get('name') for c in candidates[:3])}?"
+        return f"Could not find list '{list_query}'."
+
+    list_id = target_list["id"]
+    items = fetch_all_list_items_for_user(list_id)
+
+    parent_id = None
+    parent_title = None
+    if parent_item_query and parent_item_query.strip().lower() not in ("none", "root", "null"):
+        p_item, p_cand = resolve_list_item_by_query(parent_item_query, items)
+        if not p_item:
+            return f"Could not find parent item '{parent_item_query}' inside list '{target_list.get('name')}'."
+        parent_id = p_item["id"]
+        parent_title = p_item.get("title")
+
+    user_code = current_user["user_code"]
+    item_id = str(uuid.uuid4())
+    now_ms = int(time.time() * 1000)
+    pos = len(items)
+
+    item_row = {
+        "id": item_id,
+        "user_code": user_code,
+        "list_id": list_id,
+        "parent_id": parent_id,
+        "title": clean_title,
+        "icon_name": icon_name or "list",
+        "notes": notes.strip() if notes else None,
+        "target_date": target_date.strip() if target_date else None,
+        "target_date_millis": None,
+        "is_completed": False,
+        "position": pos,
+        "completed_at": None,
+        "created_at": now_ms,
+        "updated_at": now_ms
+    }
+
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/list_items"
+        res = requests.post(url, headers=supabase_headers(), json=item_row, timeout=10)
+        if res.status_code not in (200, 201):
+            return f"Database error adding item to list: {res.text}"
+
+        # If added under a completed parent, reopen parent and ancestors (matching parity)
+        if parent_id:
+            p_item = next((i for i in items if i.get("id") == parent_id), None)
+            if p_item and p_item.get("is_completed"):
+                to_reopen = {parent_id}
+                to_reopen.update(get_list_item_ancestor_ids(parent_id, items))
+                for rid in to_reopen:
+                    requests.patch(
+                        f"{SUPABASE_URL}/rest/v1/list_items?id=eq.{rid}",
+                        headers=supabase_headers(),
+                        json={"is_completed": False, "completed_at": None, "updated_at": now_ms},
+                        timeout=10
+                    )
+
+        dispatch_alarm_wakeup()
+        parent_info = f"\n🌲 *Parent Item:* {parent_title}" if parent_title else ""
+        return (
+            f"✅ *Item added to list '{target_list.get('name')}'!*\n\n"
+            f"✨ *Item:* {clean_title}"
+            f"{parent_info}\n"
+            f"📋 *List:* {target_list.get('name')}\n"
+            f"⚡ *Status:* Not Done"
+        )
+    except Exception as e:
+        return f"Error adding item to list: {e}"
+
+def adjust_parent_for_list(
+    list_query: str,
+    target_list_query: str = None,
+    item_query: str = None,
+    new_parent_item_query: str = None,
+    move_subtasks: bool = True
+) -> str:
+    """
+    Adjust parent hierarchy for a list or items within a list:
+    1. MOVE A LIST INTO ANOTHER LIST: (Matches Android ListRepository.moveListIntoList).
+       Provide `list_query` (source list) and `target_list_query` (destination list).
+       The source list becomes a top-level parent item inside the target list, and all its items migrate under it.
+       If the source list or its items were recurring tasks or snapshots, they migrate cleanly without schedule loss.
+    2. REPARENT AN ITEM INSIDE A LIST:
+       Provide `list_query`, `item_query`, and `new_parent_item_query` (or 'root' to make top-level).
+       `move_subtasks`: If True (default), child subtasks stay attached. If False, children orphan to the item's previous parent.
+    """
+    all_lists = fetch_all_task_lists_for_user()
+    source_list, s_cand = resolve_list_by_query(list_query, all_lists)
+    if not source_list:
+        if s_cand:
+            return f"Could not find list '{list_query}'. Did you mean: {', '.join(c.get('name') for c in s_cand[:3])}?"
+        return f"Could not find list '{list_query}'."
+
+    user_code = current_user["user_code"]
+    now_ms = int(time.time() * 1000)
+
+    # CASE 1: Move List into another List
+    if target_list_query:
+        target_list, t_cand = resolve_list_by_query(target_list_query, all_lists)
+        if not target_list:
+            if t_cand:
+                return f"Could not find target list '{target_list_query}'. Did you mean: {', '.join(c.get('name') for c in t_cand[:3])}?"
+            return f"Could not find target list '{target_list_query}'."
+
+        if source_list["id"] == target_list["id"]:
+            return "ERROR: Cannot move a list into itself."
+
+        try:
+            source_list_id = source_list["id"]
+            target_list_id = target_list["id"]
+
+            source_items = fetch_all_list_items_for_user(source_list_id)
+            target_items = fetch_all_list_items_for_user(target_list_id)
+
+            # Create a parent item in target list representing the source list
+            new_parent_item_id = str(uuid.uuid4())
+            new_parent_row = {
+                "id": new_parent_item_id,
+                "user_code": user_code,
+                "list_id": target_list_id,
+                "parent_id": None,
+                "title": source_list.get("name"),
+                "icon_name": source_list.get("icon_name", "list"),
+                "notes": None,
+                "target_date": None,
+                "target_date_millis": None,
+                "is_completed": False,
+                "position": len(target_items),
+                "completed_at": None,
+                "created_at": now_ms,
+                "updated_at": now_ms
+            }
+
+            # Insert parent item into target list
+            r_parent = requests.post(
+                f"{SUPABASE_URL}/rest/v1/list_items",
+                headers=supabase_headers(),
+                json=new_parent_row,
+                timeout=10
+            )
+            if r_parent.status_code not in (200, 201):
+                return f"Database error creating parent item in target list: {r_parent.text}"
+
+            # Migrate all source items into target list:
+            # If an item had parent_id == None, its new parent_id is new_parent_item_id.
+            # If an item already had a parent within source_list, keep its parent_id!
+            for item in source_items:
+                new_pid = new_parent_item_id if not item.get("parent_id") else item.get("parent_id")
+                patch_item = {
+                    "list_id": target_list_id,
+                    "parent_id": new_pid,
+                    "updated_at": now_ms
+                }
+                requests.patch(
+                    f"{SUPABASE_URL}/rest/v1/list_items?id=eq.{item['id']}",
+                    headers=supabase_headers(),
+                    json=patch_item,
+                    timeout=10
+                )
+
+            # Delete the source task_list entry
+            requests.delete(
+                f"{SUPABASE_URL}/rest/v1/task_lists?id=eq.{source_list_id}",
+                headers=supabase_headers(),
+                timeout=10
+            )
+
+            dispatch_alarm_wakeup()
+            return (
+                f"🔀 *Successfully moved list into target list!*\n\n"
+                f"📁 *Moved List:* '{source_list.get('name')}' (now a parent group)\n"
+                f"🎯 *Target List:* '{target_list.get('name')}'\n"
+                f"📦 *Migrated Items:* {len(source_items)} subtask(s) preserved intact"
+            )
+        except Exception as e:
+            return f"Error moving list into list: {e}"
+
+    # CASE 2: Reparent Item inside List
+    elif item_query:
+        list_id = source_list["id"]
+        items = fetch_all_list_items_for_user(list_id)
+        target_item, i_cand = resolve_list_item_by_query(item_query, items)
+        if not target_item:
+            if i_cand:
+                return f"Could not find item '{item_query}' in list '{source_list.get('name')}'. Did you mean: {', '.join(c.get('title') for c in i_cand[:3])}?"
+            return f"Could not find item '{item_query}' in list '{source_list.get('name')}'."
+
+        item_id = target_item["id"]
+        old_parent_id = target_item.get("parent_id")
+        new_parent_id = None
+        new_parent_title = "Root of list (No parent)"
+
+        if new_parent_item_query and new_parent_item_query.strip().lower() not in ("none", "root", "remove", "null"):
+            p_item, p_cand = resolve_list_item_by_query(new_parent_item_query, items)
+            if not p_item:
+                return f"Could not find parent item '{new_parent_item_query}' in list '{source_list.get('name')}'."
+            if p_item["id"] == item_id:
+                return "ERROR: An item cannot be its own parent."
+            # Cycle detection
+            descendants = get_list_item_descendant_ids(item_id, items)
+            if p_item["id"] in descendants:
+                return "ERROR: Cannot move item inside its own subtasks (cycle detected)."
+            new_parent_id = p_item["id"]
+            new_parent_title = p_item.get("title", "Parent")
+
+        try:
+            if not move_subtasks:
+                # Direct children orphan to old_parent_id
+                direct_children = [i for i in items if i.get("parent_id") == item_id]
+                for child in direct_children:
+                    requests.patch(
+                        f"{SUPABASE_URL}/rest/v1/list_items?id=eq.{child['id']}",
+                        headers=supabase_headers(),
+                        json={"parent_id": old_parent_id, "updated_at": now_ms},
+                        timeout=10
+                    )
+
+            res = requests.patch(
+                f"{SUPABASE_URL}/rest/v1/list_items?id=eq.{item_id}",
+                headers=supabase_headers(),
+                json={"parent_id": new_parent_id, "updated_at": now_ms},
+                timeout=10
+            )
+            if res.status_code in (200, 204):
+                dispatch_alarm_wakeup()
+                return f"Successfully updated parent of item *'{target_item.get('title')}'* in list *'{source_list.get('name')}'* to: *{new_parent_title}*"
+            return f"Database error reparenting item: {res.text}"
+        except Exception as e:
+            return f"Error reparenting item: {e}"
+
+    return "ERROR: Specify either `target_list_query` to move the list under another list, or `item_query` & `new_parent_item_query` to reparent an item."
+
+def view_list_items(list_query: str) -> str:
+    """
+    Renders all items, subtasks, and hierarchical tree within a specified list.
+    - list_query: Name or ID of the list.
+    """
+    all_lists = fetch_all_task_lists_for_user()
+    target_list, candidates = resolve_list_by_query(list_query, all_lists)
+    if not target_list:
+        if candidates:
+            return f"Could not find list '{list_query}'. Did you mean: {', '.join(c.get('name') for c in candidates[:3])}?"
+        return f"Could not find list '{list_query}'."
+
+    list_id = target_list["id"]
+    items = fetch_all_list_items_for_user(list_id)
+    stats = compute_list_progress_stats(target_list, items)
+
+    if not items:
+        return (
+            f"📋 *{target_list.get('name')}* (Empty)\n\n"
+            f"Icon: {target_list.get('icon_name', 'list')}\n"
+            f"Status: No items yet. Add one with: `add item <name> to list {target_list.get('name')}`"
+        )
+
+    # Render hierarchical tree
+    by_parent = {}
+    for itm in items:
+        pid = itm.get("parent_id")
+        by_parent.setdefault(pid, []).append(itm)
+
+    lines = [
+        f"📋 *{target_list.get('name')}*",
+        f"📊 *Progress:* {stats['percentage']}% ({stats['completed_root']}/{stats['total_root']} root done, {stats['completed_all']}/{stats['total_all']} total)\n"
+    ]
+
+    def render_subtree(pid, depth=0):
+        sub_list = by_parent.get(pid, [])
+        for itm in sub_list:
+            indent = "  " * depth
+            icon_check = "✅" if itm.get("is_completed") else "⬜"
+            title = itm.get("title", "")
+            child_count = len(by_parent.get(itm.get("id"), []))
+            child_badge = f" [+{child_count} subtasks]" if child_count > 0 else ""
+            lines.append(f"{indent}{icon_check} *{title}*{child_badge}")
+            render_subtree(itm.get("id"), depth + 1)
+
+    render_subtree(None, 0)
+    return "\n".join(lines)
+
+def set_list_completion(list_query: str, is_completed: bool) -> str:
+    """
+    Marks an entire list and all its items as completed (done) or active (undone).
+    - list_query: Name or ID of the list.
+    - is_completed: True to mark all items done, False to mark all items undone.
+    """
+    all_lists = fetch_all_task_lists_for_user()
+    target_list, candidates = resolve_list_by_query(list_query, all_lists)
+    if not target_list:
+        if candidates:
+            return f"Could not find list '{list_query}'. Did you mean: {', '.join(c.get('name') for c in candidates[:3])}?"
+        return f"Could not find list '{list_query}'."
+
+    list_id = target_list["id"]
+    list_name = target_list.get("name", "List")
+    now_ms = int(time.time() * 1000)
+    completed_at = now_ms if is_completed else None
+
+    try:
+        items_url = f"{SUPABASE_URL}/rest/v1/list_items?list_id=eq.{list_id}"
+        patch_body = {
+            "is_completed": is_completed,
+            "completed_at": completed_at,
+            "updated_at": now_ms
+        }
+        res = requests.patch(items_url, headers=supabase_headers(), json=patch_body, timeout=10)
+        dispatch_alarm_wakeup()
+
+        action = "completed" if is_completed else "marked as active (undone)"
+        icon = "✅" if is_completed else "🔄"
+        return f"{icon} List *'{list_name}'* and all its items have been {action}."
+    except Exception as e:
+        return f"Error setting list completion: {e}"
+
+def set_list_item_completion(list_query: str, item_query: str, is_completed: bool) -> str:
+    """
+    Marks a single item within a list as completed (done) or active (undone) with bidirectional cascading.
+    - list_query: Name or ID of the list.
+    - item_query: Title or ID of the item.
+    - is_completed: True for completed, False for active.
+    """
+    all_lists = fetch_all_task_lists_for_user()
+    target_list, candidates = resolve_list_by_query(list_query, all_lists)
+    if not target_list:
+        if candidates:
+            return f"Could not find list '{list_query}'. Did you mean: {', '.join(c.get('name') for c in candidates[:3])}?"
+        return f"Could not find list '{list_query}'."
+
+    list_id = target_list["id"]
+    items = fetch_all_list_items_for_user(list_id)
+    target_item, i_cand = resolve_list_item_by_query(item_query, items)
+    if not target_item:
+        if i_cand:
+            return f"Could not find item '{item_query}' in list '{target_list.get('name')}'. Did you mean: {', '.join(c.get('title') for c in i_cand[:3])}?"
+        return f"Could not find item '{item_query}' in list '{target_list.get('name')}'."
+
+    item_id = target_item["id"]
+    now_ms = int(time.time() * 1000)
+    by_id = {i["id"]: dict(i) for i in items}
+    affected_ids = set()
+
+    if is_completed:
+        # 1. Target and all recursive descendants become completed
+        to_complete = {item_id}
+        to_complete.update(get_list_item_descendant_ids(item_id, items))
+        for cid in to_complete:
+            if cid in by_id:
+                by_id[cid]["is_completed"] = True
+                by_id[cid]["completed_at"] = now_ms
+
+        # 2. Cascade upward: A parent becomes completed if ALL its direct children are completed
+        curr_parent_id = target_item.get("parent_id")
+        visited = set()
+        while curr_parent_id and curr_parent_id not in visited:
+            visited.add(curr_parent_id)
+            parent_item = by_id.get(curr_parent_id)
+            if not parent_item:
+                break
+            siblings = [i for i in by_id.values() if i.get("parent_id") == curr_parent_id]
+            if siblings and all(s.get("is_completed") for s in siblings):
+                to_complete.add(curr_parent_id)
+                parent_item["is_completed"] = True
+                parent_item["completed_at"] = now_ms
+                curr_parent_id = parent_item.get("parent_id")
+            else:
+                break
+        affected_ids = to_complete
+    else:
+        # Unticking (Reopening)
+        to_reopen = {item_id}
+        to_reopen.update(get_list_item_descendant_ids(item_id, items))
+        to_reopen.update(get_list_item_ancestor_ids(item_id, items))
+        for rid in to_reopen:
+            if rid in by_id:
+                by_id[rid]["is_completed"] = False
+                by_id[rid]["completed_at"] = None
+        affected_ids = to_reopen
+
+    try:
+        for aid in affected_ids:
+            patch_data = {
+                "is_completed": by_id[aid]["is_completed"],
+                "completed_at": by_id[aid]["completed_at"],
+                "updated_at": now_ms
+            }
+            requests.patch(
+                f"{SUPABASE_URL}/rest/v1/list_items?id=eq.{aid}",
+                headers=supabase_headers(),
+                json=patch_data,
+                timeout=10
+            )
+
+        dispatch_alarm_wakeup()
+        status_word = "completed" if is_completed else "marked as active (undone)"
+        icon = "✅" if is_completed else "🔄"
+        return f"{icon} Item *'{target_item.get('title')}'* in list *'{target_list.get('name')}'* {status_word} ({len(affected_ids)} item(s) affected with cascade)."
+    except Exception as e:
+        return f"Error updating item completion: {e}"
+
+def get_list_details(list_query: str) -> str:
+    """
+    Returns full details, metadata, subtask count, and completion breakdown for a specific list.
+    - list_query: Name or ID of the list.
+    """
+    all_lists = fetch_all_task_lists_for_user()
+    target_list, candidates = resolve_list_by_query(list_query, all_lists)
+    if not target_list:
+        if candidates:
+            return f"Could not find list '{list_query}'. Did you mean: {', '.join(c.get('name') for c in candidates[:3])}?"
+        return f"Could not find list '{list_query}'."
+
+    list_id = target_list["id"]
+    items = fetch_all_list_items_for_user(list_id)
+    stats = compute_list_progress_stats(target_list, items)
+
+    created_at_dt = datetime.fromtimestamp(target_list.get("created_at", 0) / 1000.0, DEFAULT_TIMEZONE).strftime("%Y-%m-%d %H:%M")
+    updated_at_dt = datetime.fromtimestamp(target_list.get("updated_at", 0) / 1000.0, DEFAULT_TIMEZONE).strftime("%Y-%m-%d %H:%M")
+
+    return (
+        f"📄 *List Details: {target_list.get('name')}*\n\n"
+        f"✨ *Name:* {target_list.get('name')}\n"
+        f"🎨 *Icon:* {target_list.get('icon_name', 'list')}\n"
+        f"🆔 *ID:* `{target_list.get('id')}`\n"
+        f"📅 *Created:* {created_at_dt}\n"
+        f"🕒 *Last Updated:* {updated_at_dt}\n"
+        f"📊 *Progress:* {stats['percentage']}%\n"
+        f"📦 *Root Items:* {stats['total_root']} ({stats['completed_root']} done, {stats['active_root']} active)\n"
+        f"🌳 *Total Items & Subtasks:* {stats['total_all']} ({stats['completed_all']} done, {stats['total_all'] - stats['completed_all']} active)\n"
+        f"⚡ *Overall Status:* {'Completed ✅' if stats['is_completed'] else 'Active ⏳'}"
+    )
+
+def check_list_progress(list_query: str = None) -> str:
+    """
+    Checks progress percentage, completed vs active count for a list, or for all lists if list_query is omitted.
+    - list_query: Optional name or ID of a specific list. If None or 'all', displays progress summary for all lists.
+    """
+    all_lists = fetch_all_task_lists_for_user()
+    if not all_lists:
+        return "You don't have any task lists created yet. Create one with: `add list <name>`."
+
+    all_items = fetch_all_list_items_for_user()
+
+    if list_query and list_query.strip().lower() not in ("all", "every", "*"):
+        target_list, candidates = resolve_list_by_query(list_query, all_lists)
+        if not target_list:
+            if candidates:
+                return f"Could not find list '{list_query}'. Did you mean: {', '.join(c.get('name') for c in candidates[:3])}?"
+            return f"Could not find list '{list_query}'."
+
+        stats = compute_list_progress_stats(target_list, all_items)
+        bar_len = 10
+        filled = int((stats['percentage'] / 100.0) * bar_len)
+        bar = "█" * filled + "░" * (bar_len - filled)
+        return (
+            f"📊 *List Progress: {target_list.get('name')}*\n\n"
+            f"[{bar}] *{stats['percentage']}%*\n"
+            f"• Done: {stats['completed_root']}/{stats['total_root']} root tasks ({stats['completed_all']}/{stats['total_all']} total)\n"
+            f"• Active remaining: {stats['active_root']} root tasks\n"
+            f"• Status: {'Completed ✅' if stats['is_completed'] else 'In Progress ⏳'}"
+        )
+
+    # All lists overview
+    lines = ["📊 *Task Lists Progress Overview:*\n"]
+    for l in all_lists:
+        stats = compute_list_progress_stats(l, all_items)
+        status_icon = "✅" if stats['is_completed'] else "⏳"
+        lines.append(f"{status_icon} *{l.get('name')}*: {stats['percentage']}% ({stats['completed_root']}/{stats['total_root']} items)")
+
+    return "\n".join(lines)
+
+def list_task_lists() -> str:
+    """Lists all task lists in the Lists tab with quick counts and icons."""
+    all_lists = fetch_all_task_lists_for_user()
+    if not all_lists:
+        return "You have no task lists yet. Create one with `add list <name>` or `/lists`."
+
+    all_items = fetch_all_list_items_for_user()
+    lines = ["📁 *Your Task Lists:*\n"]
+    for idx, l in enumerate(all_lists, 1):
+        stats = compute_list_progress_stats(l, all_items)
+        status_icon = "✅" if stats['is_completed'] else "📝"
+        lines.append(f"{idx}. {status_icon} *{l.get('name')}* — {stats['percentage']}% ({stats['completed_root']}/{stats['total_root']} items)")
+    return "\n".join(lines)
+
+def bulk_manage_lists(
+    action: str,
+    list_queries: list[str] = None,
+    new_names: list[str] = None,
+    icon_names: list[str] = None,
+    target_list_query: str = None,
+    items_to_add: list[dict] = None
+) -> str:
+    """
+    Executes batch/bulk actions across multiple lists at once.
+    - action: 'add_multiple_lists', 'delete_multiple_lists', 'complete_multiple_lists', 'uncomplete_multiple_lists', 'add_multiple_subtasks'
+    - list_queries: List of names/IDs of existing lists to operate on.
+    - new_names: List of names when creating multiple lists ('add_multiple_lists').
+    - icon_names: Optional icons corresponding to new_names.
+    - target_list_query: Destination list when adding multiple subtasks ('add_multiple_subtasks').
+    - items_to_add: List of dictionaries [{'title': '...', 'parent_item_query': '...'}] when adding multiple subtasks.
+    """
+    act = action.strip().lower()
+
+    if act in ("add_multiple_lists", "create_multiple_lists"):
+        if not new_names:
+            return "ERROR: Provide `new_names` list of strings to create multiple lists."
+        created = []
+        icons = icon_names or []
+        for i, name in enumerate(new_names):
+            icon = icons[i] if i < len(icons) else "list"
+            res = add_list(name=name, icon_name=icon)
+            created.append(f"• {name}")
+        return f"✅ Created {len(created)} lists successfully:\n" + "\n".join(created)
+
+    elif act in ("delete_multiple_lists", "remove_multiple_lists"):
+        if not list_queries:
+            return "ERROR: Provide `list_queries` to delete multiple lists."
+        results = []
+        for q in list_queries:
+            r = delete_list(q)
+            results.append(f"• {r}")
+        return "🗑️ Bulk Delete Results:\n" + "\n".join(results)
+
+    elif act in ("complete_multiple_lists", "mark_done_multiple_lists"):
+        if not list_queries:
+            return "ERROR: Provide `list_queries` to complete multiple lists."
+        results = []
+        for q in list_queries:
+            r = set_list_completion(q, is_completed=True)
+            results.append(f"• {r}")
+        return "✅ Bulk Completion Results:\n" + "\n".join(results)
+
+    elif act in ("uncomplete_multiple_lists", "mark_undone_multiple_lists", "reopen_multiple_lists"):
+        if not list_queries:
+            return "ERROR: Provide `list_queries` to reopen multiple lists."
+        results = []
+        for q in list_queries:
+            r = set_list_completion(q, is_completed=False)
+            results.append(f"• {r}")
+        return "🔄 Bulk Reopen Results:\n" + "\n".join(results)
+
+    elif act in ("add_multiple_subtasks", "add_multiple_items"):
+        if not target_list_query:
+            return "ERROR: Provide `target_list_query` to specify destination list for multiple items."
+        if not items_to_add:
+            return "ERROR: Provide `items_to_add` (list of item dicts or list of titles)."
+        all_lists = fetch_all_task_lists_for_user()
+        target_list, candidates = resolve_list_by_query(target_list_query, all_lists)
+        if not target_list:
+            return f"Could not find target list '{target_list_query}'."
+
+        added = []
+        for itm in items_to_add:
+            if isinstance(itm, str):
+                t = itm
+                p = None
+            else:
+                t = itm.get("title", "")
+                p = itm.get("parent_item_query")
+            if t:
+                r = add_subtask_to_list(list_query=target_list_query, title=t, parent_item_query=p)
+                added.append(f"• {t}")
+        return f"✅ Added {len(added)} items to list *'{target_list.get('name')}'*:\n" + "\n".join(added)
+
+    return f"ERROR: Unknown action '{action}'. Supported actions: 'add_multiple_lists', 'delete_multiple_lists', 'complete_multiple_lists', 'uncomplete_multiple_lists', 'add_multiple_subtasks'."
+
 # Export tool list for Gemini API
 TOOLS = [
     # Task Tools
@@ -2945,7 +3820,20 @@ TOOLS = [
     # Rule Tools
     delete_rule,
     clear_all_rules,
-    list_user_rules
+    list_user_rules,
+    # Lists Tab Tools
+    add_list,
+    delete_list,
+    edit_list,
+    add_subtask_to_list,
+    adjust_parent_for_list,
+    view_list_items,
+    set_list_completion,
+    set_list_item_completion,
+    get_list_details,
+    check_list_progress,
+    list_task_lists,
+    bulk_manage_lists
 ]
 
 

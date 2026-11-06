@@ -301,6 +301,30 @@ CRITICAL RULES & PROTOCOLS:
      - The bot stores all recent tones permanently for all time.
      - A tone can ONLY be deleted if the user explicitly instructs the bot to delete it from memory (e.g. "delete tone loudest_alarm from memory" -> call `delete_tone_from_memory(tone_query)`).
 
+17. LISTS TAB POWERS & PROTOCOLS (EXHAUSTIVE):
+   - LIST CREATION, EDITING & DELETION:
+     - Use `add_list(name, icon_name="list", initial_subtasks=[...])` when the user asks to create, make, or add a new list. Icons can be names ('list', 'checklist', 'shopping', 'work', 'study', 'fitness', 'travel', 'ideas', 'home', 'star', 'packing', 'code', 'favorite') or emojis ('🛒', '💻', '🎯', etc.).
+     - Use `edit_list(list_query, new_name=..., new_icon_name=...)` to rename or change icon.
+     - Use `delete_list(list_query)` to delete a list and its items.
+   - ADDING ITEMS / SUBTASKS TO A LIST:
+     - Use `add_subtask_to_list(list_query, title, parent_item_query=None, icon_name="list", notes=None, target_date=None)` to add items. If `parent_item_query` is provided, it nests under that parent item in the list!
+   - ADJUST PARENT FOR LISTS & ITEMS (INCLUDING RECURRING / SNAPSHOT HANDLING):
+     - Moving a list under another list: Use `adjust_parent_for_list(list_query="source_list", target_list_query="target_list")`. The source list converts to a top-level parent group inside the destination list, and all its items migrate under it. Recurring tasks, snapshots, and timestamps are preserved cleanly!
+     - Reparenting an item within a list: Use `adjust_parent_for_list(list_query="my_list", item_query="sub_item", new_parent_item_query="parent_item" or "root", move_subtasks=True/False)`.
+   - VIEWING ITEMS, DETAILS & PROGRESS:
+     - Use `view_list_items(list_query)` to view the full indented hierarchical tree of a list with progress badges.
+     - Use `get_list_details(list_query)` to view list metadata, IDs, creation date, and breakdown.
+     - Use `check_list_progress(list_query)` to check progress bar and percentage of a specific list, or `check_list_progress("all")` or `list_task_lists()` for an overview of all lists.
+   - MARKING LISTS & ITEMS AS DONE / UNDONE:
+     - Entire list: Use `set_list_completion(list_query, is_completed=True/False)`.
+     - Single item inside a list: Use `set_list_item_completion(list_query, item_query, is_completed=True/False)`. Unticking cascades up and down; completing cascades children and checks parent completion.
+   - BULK ACTIONS ACROSS MULTIPLE LISTS:
+     - Use `bulk_manage_lists(action=..., ...)` for multi-list operations:
+       • `add_multiple_lists`: pass `new_names=[...]` and optional `icon_names=[...]`.
+       • `delete_multiple_lists`: pass `list_queries=[...]`.
+       • `complete_multiple_lists` / `uncomplete_multiple_lists`: pass `list_queries=[...]`.
+       • `add_multiple_subtasks`: pass `target_list_query=...` and `items_to_add=[...]`.
+
 Keep replies concise, professional, helpful, and formatted in clean Markdown."""
 
 # Config with Kairo tools
@@ -965,6 +989,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• Phone Push: {fcm_status}\n\n"
         f"📱 *Commands:*\n"
         f"• `/tasks` — View tasks (or ask for overdue, today, upcoming, completed)\n"
+        f"• `/lists` — View task lists & progress overview\n"
         f"• `/habits` — View habits & track progress\n"
         f"• `/token <token>` — Link or update your phone's FCM token\n"
         f"• `/test` — Test waking your phone right now\n"
@@ -1083,6 +1108,23 @@ async def cmd_habits(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kairo_tools.set_context(user_code=session["user_code"], fcm_token=session.get("fcm_token"), chat_id=chat_id)
     habits_text = kairo_tools.list_habits()
     await safe_reply(message, habits_text)
+
+async def cmd_lists(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    chat_id = message.chat_id
+    session = get_user_session(chat_id)
+
+    if not session.get("logged_in"):
+        await safe_reply(message, AUTH_PROMPT_MESSAGE)
+        return
+
+    kairo_tools.set_context(user_code=session["user_code"], fcm_token=session.get("fcm_token"), chat_id=chat_id)
+    if context.args:
+        list_query = " ".join(context.args)
+        lists_text = kairo_tools.view_list_items(list_query)
+    else:
+        lists_text = kairo_tools.list_task_lists()
+    await safe_reply(message, lists_text)
 
 async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
@@ -1250,7 +1292,7 @@ def main():
     app.add_handler(CommandHandler("token", cmd_token))
     app.add_handler(CommandHandler("test", cmd_test))
     app.add_handler(CommandHandler("tasks", cmd_tasks))
-    app.add_handler(CommandHandler("list", cmd_tasks))
+    app.add_handler(CommandHandler("lists", cmd_lists))
     app.add_handler(CommandHandler("habits", cmd_habits))
     app.add_handler(CommandHandler("export", cmd_export))
     app.add_handler(CommandHandler("rule", cmd_rules))
