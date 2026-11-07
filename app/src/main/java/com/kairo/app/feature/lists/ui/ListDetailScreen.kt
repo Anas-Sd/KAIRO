@@ -151,11 +151,13 @@ fun ListDetailScreen(
 
     // Keep breadcrumb stack synchronized with updated items state
     LaunchedEffect(listItems) {
-        val validIds = listItems.map { it.id }.toSet()
-        val iter = breadcrumbStack.listIterator()
-        while (iter.hasNext()) {
-            if (!validIds.contains(iter.next().id)) {
-                iter.remove()
+        if (listItems.isNotEmpty()) {
+            val validIds = listItems.map { it.id }.toSet()
+            val iter = breadcrumbStack.listIterator()
+            while (iter.hasNext()) {
+                if (!validIds.contains(iter.next().id)) {
+                    iter.remove()
+                }
             }
         }
     }

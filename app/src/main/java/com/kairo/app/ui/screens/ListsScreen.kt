@@ -558,6 +558,7 @@ fun ListsScreen(
                                                 if (target != null) {
                                                     pinTargetList = target
                                                     pinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
+                                                    initialDrillDownItemId = item.id
                                                 }
                                             } else {
                                                 selectedListId = item.listId
