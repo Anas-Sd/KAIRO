@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -501,137 +502,43 @@ fun ListsScreen(
                         }
                     }
                 } else if (isSearching) {
-                    // Search Results: Active Lists + Completed Lists (collapsed section) + Items with breadcrumbs
-                    val searchActiveLists = matchingLists.filter { !it.isCompleted }
-                    val searchCompletedLists = matchingLists.filter { it.isCompleted }
-
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        if (searchActiveLists.isNotEmpty()) {
-                            item {
-                                Text(
-                                    text = "Lists (${searchActiveLists.size})",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(vertical = 4.dp)
+                    // Search Results: ONLY items with breadcrumb paths
+                    if (matchingItems.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(48.dp)
                                 )
-                            }
-                            itemsIndexed(searchActiveLists, key = { _, stats -> "search_active_${stats.list.id}" }) { _, stats ->
-                                val isLocked = ListRepository.isListLocked(stats.list.id)
-                                val hasPin = ListRepository.hasPin(stats.list.id)
-                                ListOverviewCard(
-                                    stats = stats,
-                                    isBeingDragged = false,
-                                    dragOffsetY = 0f,
-                                    dragHandleModifier = Modifier,
-                                    isSelectionMode = isSelectionMode,
-                                    isSelected = selectedListIds.contains(stats.list.id),
-                                    isLocked = isLocked,
-                                    hasPin = hasPin,
-                                    onSelectionChange = { checked ->
-                                        selectedListIds = if (checked) selectedListIds + stats.list.id else selectedListIds - stats.list.id
-                                    },
-                                    onToggleComplete = {
-                                        ListRepository.setListCompleted(stats.list.id, !stats.isCompleted)
-                                    },
-                                    onClick = {
-                                        if (isLocked) {
-                                            pinTargetList = stats.list
-                                            pinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
-                                        } else {
-                                            selectedListId = stats.list.id
-                                        }
-                                    },
-                                    onDetails = { listForDetails = stats },
-                                    onEdit = { listToEdit = stats.list },
-                                    onAdjustParent = { listToAdjustParent = stats.list },
-                                    onToggleLock = {
-                                        pinTargetList = stats.list
-                                        pinDialogMode = if (hasPin) PinDialogMode.REMOVE_PIN else PinDialogMode.SET_PIN
-                                    },
-                                    onDelete = { listToDelete = stats.list },
-                                    modifier = Modifier.animateItem()
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "No items matching \"$searchQuery\"",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Try searching with a different term",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
-
-                        if (searchCompletedLists.isNotEmpty()) {
-                            val isSearchCompletedAllSelected = searchCompletedLists.all { selectedListIds.contains(it.list.id) }
-                            item(key = "search_section_completed_lists_header") {
-                                SectionHeader(
-                                    title = "Completed",
-                                    countText = "${searchCompletedLists.size} completed",
-                                    sectionType = SectionType.COMPLETED,
-                                    isExpanded = completedExpanded,
-                                    onToggle = { completedExpanded = !completedExpanded },
-                                    showCheckbox = isSelectionMode,
-                                    isChecked = isSearchCompletedAllSelected,
-                                    onCheckedChange = { checked ->
-                                        val ids = searchCompletedLists.map { it.list.id }.toSet()
-                                        selectedListIds = if (checked) selectedListIds + ids else selectedListIds - ids
-                                    }
-                                )
-                            }
-
-                            if (completedExpanded) {
-                                itemsIndexed(searchCompletedLists, key = { _, stats -> "search_completed_${stats.list.id}" }) { _, stats ->
-                                    val isLocked = ListRepository.isListLocked(stats.list.id)
-                                    val hasPin = ListRepository.hasPin(stats.list.id)
-                                    ListOverviewCard(
-                                        stats = stats,
-                                        isBeingDragged = false,
-                                        dragOffsetY = 0f,
-                                        dragHandleModifier = Modifier,
-                                        isSelectionMode = isSelectionMode,
-                                        isSelected = selectedListIds.contains(stats.list.id),
-                                        isLocked = isLocked,
-                                        hasPin = hasPin,
-                                        onSelectionChange = { checked ->
-                                             selectedListIds = if (checked) selectedListIds + stats.list.id else selectedListIds - stats.list.id
-                                        },
-                                        onToggleComplete = {
-                                            ListRepository.setListCompleted(stats.list.id, !stats.isCompleted)
-                                        },
-                                        onClick = {
-                                            if (isLocked) {
-                                                pinTargetList = stats.list
-                                                pinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
-                                            } else {
-                                                selectedListId = stats.list.id
-                                            }
-                                        },
-                                        onDetails = { listForDetails = stats },
-                                        onEdit = { listToEdit = stats.list },
-                                        onAdjustParent = { listToAdjustParent = stats.list },
-                                        onToggleLock = {
-                                            pinTargetList = stats.list
-                                            pinDialogMode = if (hasPin) PinDialogMode.REMOVE_PIN else PinDialogMode.SET_PIN
-                                        },
-                                        onDelete = { listToDelete = stats.list },
-                                        modifier = Modifier.animateItem()
-                                    )
-                                }
-                            }
-                        }
-
-                        if (matchingItems.isNotEmpty()) {
-                            item {
-                                if (matchingLists.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                }
-                                Text(
-                                    text = "Items (${matchingItems.size})",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(vertical = 4.dp)
-                                )
-                            }
-
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
                             itemsIndexed(matchingItems, key = { _, item -> "item_${item.id}" }) { _, item ->
                                 val breadcrumbPath = remember(item.id, allItems) {
                                     ListRepository.getBreadcrumbPath(item.id, allItems)
@@ -744,10 +651,10 @@ fun ListsScreen(
                                     }
                                 }
                             }
-                        }
 
-                        item {
-                            Spacer(modifier = Modifier.height(72.dp))
+                            item {
+                                Spacer(modifier = Modifier.height(72.dp))
+                            }
                         }
                     }
                 } else {
