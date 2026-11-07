@@ -933,11 +933,12 @@ fun ListDetailScreen(
 
                     // 5. COMPLETED ITEMS SECTION (Collapsed by default)
                     if (displayCompletedItems.isNotEmpty()) {
+                        val shouldExpandCompleted = isCompletedSectionExpanded || searchQuery.isNotBlank()
                         item {
                             Spacer(modifier = Modifier.height(10.dp))
 
                             val chevronRotation by animateFloatAsState(
-                                targetValue = if (isCompletedSectionExpanded) 180f else 0f,
+                                targetValue = if (shouldExpandCompleted) 180f else 0f,
                                 animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
                                 label = "completed_chevron"
                             )
@@ -950,7 +951,7 @@ fun ListDetailScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .clickable { isCompletedSectionExpanded = !isCompletedSectionExpanded }
+                                    .clickable { isCompletedSectionExpanded = !shouldExpandCompleted }
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -989,7 +990,7 @@ fun ListDetailScreen(
                             }
                         }
 
-                        if (isCompletedSectionExpanded) {
+                        if (shouldExpandCompleted) {
                             itemsIndexed(displayCompletedItems, key = { _, completedItem -> completedItem.id }) { index, completedItem ->
                                 val isBeingDragged = (completedItem.id == draggingItemId)
                                 val childSubtasks = listItems.filter { it.parentId == completedItem.id }

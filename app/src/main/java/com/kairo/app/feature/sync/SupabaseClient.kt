@@ -526,8 +526,8 @@ object SupabaseClient {
     suspend fun getTaskLists(userCode: String? = com.kairo.app.data.auth.AuthManager.getUserCode()): Result<List<TaskListDto>> = withContext(Dispatchers.IO) {
         runCatching {
             val url = if (!userCode.isNullOrBlank()) {
-                val encoded = java.net.URLEncoder.encode(userCode, "UTF-8")
-                "$SUPABASE_URL/rest/v1/task_lists?user_code=eq.$encoded&select=*&order=position.asc"
+                val encoded = java.net.URLEncoder.encode(userCode.trim(), "UTF-8")
+                "$SUPABASE_URL/rest/v1/task_lists?user_code=ilike.$encoded&select=*&order=position.asc"
             } else {
                 "$SUPABASE_URL/rest/v1/task_lists?select=*&order=position.asc"
             }
@@ -588,8 +588,8 @@ object SupabaseClient {
     suspend fun getListItems(userCode: String? = com.kairo.app.data.auth.AuthManager.getUserCode()): Result<List<ListItemDto>> = withContext(Dispatchers.IO) {
         runCatching {
             val url = if (!userCode.isNullOrBlank()) {
-                val encoded = java.net.URLEncoder.encode(userCode, "UTF-8")
-                "$SUPABASE_URL/rest/v1/list_items?user_code=eq.$encoded&select=*&order=position.asc"
+                val encoded = java.net.URLEncoder.encode(userCode.trim(), "UTF-8")
+                "$SUPABASE_URL/rest/v1/list_items?user_code=ilike.$encoded&select=*&order=position.asc"
             } else {
                 "$SUPABASE_URL/rest/v1/list_items?select=*&order=position.asc"
             }

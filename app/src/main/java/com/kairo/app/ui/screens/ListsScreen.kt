@@ -191,12 +191,19 @@ fun ListsScreen(
         return
     }
 
-    val matchingLists = remember(allListsWithStats, searchQuery) {
+    val matchingLists = remember(allListsWithStats, allItems, searchQuery) {
         if (searchQuery.isBlank()) {
             allListsWithStats
         } else {
+            val q = searchQuery.trim()
+            val listIdsWithMatchingItems = allItems.filter {
+                it.title.contains(q, ignoreCase = true) ||
+                    (it.notes?.contains(q, ignoreCase = true) == true)
+            }.map { it.listId }.toSet()
+
             allListsWithStats.filter { stats ->
-                stats.list.name.contains(searchQuery, ignoreCase = true)
+                stats.list.name.contains(q, ignoreCase = true) ||
+                    listIdsWithMatchingItems.contains(stats.list.id)
             }
         }
     }
@@ -638,8 +645,17 @@ fun ListsScreen(
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(12.dp))
                                         .clickable {
-                                            selectedListId = item.listId
-                                            initialDrillDownItemId = item.id
+                                            val isLocked = ListRepository.isListLocked(item.listId)
+                                            if (isLocked) {
+                                                val target = allListsWithStats.find { it.list.id == item.listId }?.list
+                                                if (target != null) {
+                                                    pinTargetList = target
+                                                    pinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
+                                                }
+                                            } else {
+                                                selectedListId = item.listId
+                                                initialDrillDownItemId = item.id
+                                            }
                                         }
                                 ) {
                                     Row(
