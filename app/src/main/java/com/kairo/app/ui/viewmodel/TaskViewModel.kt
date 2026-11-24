@@ -81,12 +81,8 @@ class TaskViewModel(
     init {
         viewModelScope.launch {
             repository.tasks.collect { taskList ->
-                val now = System.currentTimeMillis()
-                taskList.filter { !it.isCompleted }.forEach { task ->
-                    val trigger = AlarmScheduler.calculateTriggerMillis(task.dueDate, task.dueTime, task.dueDateMillis)
-                    if (trigger != null && trigger > now) {
-                        AlarmScheduler.scheduleAlarm(KairoApplication.instance, task, trigger)
-                    }
+                taskList.filter { !it.isCompleted && !it.id.startsWith("snapshot_") }.forEach { task ->
+                    AlarmScheduler.scheduleAlarm(KairoApplication.instance, task)
                 }
             }
         }
@@ -270,14 +266,15 @@ class TaskViewModel(
                 criteria.selectedPriorities.isNotEmpty() ||
                 criteria.selectedDate != null
 
-        // Hierarchy scoping:
+        // Hierarchy scoping (excluding historical snapshots from main task lists):
+        val activeTasks = tasks.filter { !it.id.startsWith("snapshot_") }
         val scopedTasks = if (toggles.breadcrumbStack.isNotEmpty()) {
             val currentParent = toggles.breadcrumbStack.last()
-            tasks.filter { it.parentId == currentParent.id }
+            activeTasks.filter { it.parentId == currentParent.id }
         } else if (isSearchingOrFiltering) {
-            tasks // Show all matching tasks across hierarchy when searching or filtering
+            activeTasks // Show all matching tasks across hierarchy when searching or filtering
         } else {
-            tasks.filter { it.parentId == null } // Root view: show only top-level tasks
+            activeTasks.filter { it.parentId == null } // Root view: show only top-level tasks
         }
 
         var list = scopedTasks

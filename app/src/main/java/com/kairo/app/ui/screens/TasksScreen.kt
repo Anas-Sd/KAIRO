@@ -920,7 +920,7 @@ fun TasksScreen(
                 val tasksToExport = if (isFiltered) {
                     (uiState.snoozedTasks + uiState.overdueTasks + uiState.todayTasks + uiState.tomorrowTasks + uiState.upcomingTasks + uiState.completedTasks).distinctBy { it.id }
                 } else {
-                    uiState.allTasks
+                    uiState.allTasks.filter { !it.id.startsWith("snapshot_") }
                 }
 
                 TaskExportBottomSheet(

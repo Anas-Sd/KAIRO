@@ -969,11 +969,17 @@ object TaskRepository {
         }.timeInMillis
 
         val overdueRecurring = allTasks.filter { task ->
-            !task.isCompleted &&
-            !task.id.startsWith("snapshot_") &&
-            !task.repeatType.isNullOrBlank() &&
-            !task.repeatType.equals("NONE", ignoreCase = true) &&
-            ((task.dueDateMillis ?: com.kairo.app.ui.utils.DateUtils.parseDueDateMillis(task.dueDate)) < todayStart)
+            if (task.isCompleted || task.id.startsWith("snapshot_") ||
+                task.repeatType.isNullOrBlank() || task.repeatType.equals("NONE", ignoreCase = true)) {
+                return@filter false
+            }
+            val dueMillis = task.dueDateMillis ?: com.kairo.app.ui.utils.DateUtils.parseDueDateMillis(task.dueDate)
+            val dueCal = Calendar.getInstance().apply { timeInMillis = dueMillis }
+            val isDayMatching = com.kairo.app.feature.tasks.alarm.AlarmScheduler.isCalendarDayMatchingRecurrence(
+                dueCal, task.repeatType, task.repeatDays, task.repeatDates
+            )
+            val trigger = com.kairo.app.feature.tasks.alarm.AlarmScheduler.calculateTriggerMillis(task.dueDate, task.dueTime, task.dueDateMillis)
+            dueMillis < todayStart || (trigger != null && trigger < now) || !isDayMatching
         }
 
         if (overdueRecurring.isEmpty()) return 0
@@ -984,23 +990,30 @@ object TaskRepository {
 
         for (target in overdueRecurring) {
             val pastMillis = target.dueDateMillis ?: com.kairo.app.ui.utils.DateUtils.parseDueDateMillis(target.dueDate)
+            val dueCal = Calendar.getInstance().apply { timeInMillis = pastMillis }
+            val isDayMatching = com.kairo.app.feature.tasks.alarm.AlarmScheduler.isCalendarDayMatchingRecurrence(
+                dueCal, target.repeatType, target.repeatDays, target.repeatDates
+            )
+            val pastTrigger = com.kairo.app.feature.tasks.alarm.AlarmScheduler.calculateTriggerMillis(target.dueDate, target.dueTime, target.dueDateMillis)
             val snapshotId = "snapshot_${target.id}_$pastMillis"
 
-            // 1. Snapshot as MISSED if not already recorded
-            if (allTasks.none { it.id == snapshotId } && newSnapshots.none { it.id == snapshotId }) {
-                val missedSnapshot = target.copy(
-                    id = snapshotId,
-                    isCompleted = false,
-                    completedAt = null,
-                    dueDate = if (target.dueDate.equals("SNOOZED", ignoreCase = true)) {
-                        com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, pastMillis)
-                    } else target.dueDate,
-                    section = TaskSection.COMPLETED,
-                    repeatType = null,
-                    notes = if (target.notes.isNullOrBlank()) "[MISSED]" else "[MISSED] ${target.notes}",
-                    updatedAt = now
-                )
-                newSnapshots.add(missedSnapshot)
+            // 1. Snapshot as MISSED only if it was actually a scheduled occurrence day that passed
+            if (isDayMatching && (pastMillis < todayStart || (pastTrigger != null && pastTrigger < now))) {
+                if (allTasks.none { it.id == snapshotId } && newSnapshots.none { it.id == snapshotId }) {
+                    val missedSnapshot = target.copy(
+                        id = snapshotId,
+                        isCompleted = false,
+                        completedAt = null,
+                        dueDate = if (target.dueDate.equals("SNOOZED", ignoreCase = true)) {
+                            com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, pastMillis)
+                        } else target.dueDate,
+                        section = TaskSection.COMPLETED,
+                        repeatType = null,
+                        notes = if (target.notes.isNullOrBlank()) "[MISSED]" else "[MISSED] ${target.notes}",
+                        updatedAt = now
+                    )
+                    newSnapshots.add(missedSnapshot)
+                }
             }
 
             // 2. Advance active target task to its NEXT recurring occurrence (NOT today!)

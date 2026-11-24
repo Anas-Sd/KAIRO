@@ -134,38 +134,45 @@ internal object AlarmScheduler {
 
         var datesMatch = false
         if (hasDates && !repeatDates.isNullOrBlank()) {
-            val isMonthly = type.contains("MONTHLY")
             val rawDateList = repeatDates.split(",").map { it.trim() }.filter { it.isNotBlank() }
+            val currentDayOfMonth = cal.get(Calendar.DAY_OF_MONTH)
+            val currentMonth = cal.get(Calendar.MONTH)
+            val currentYear = cal.get(Calendar.YEAR)
 
-            if (isMonthly) {
-                // Match against day-of-month number (e.g. "5", "19", "Oct 24" -> 24)
-                val currentDayOfMonth = cal.get(Calendar.DAY_OF_MONTH)
-                for (dateStr in rawDateList) {
-                    val dayNum = dateStr.filter { it.isDigit() }.toIntOrNull()
+            val formats = listOf(
+                SimpleDateFormat("MMM d, yyyy", Locale.US),
+                SimpleDateFormat("MMM d, yyyy", Locale.getDefault()),
+                SimpleDateFormat("MMM dd, yyyy", Locale.US),
+                SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()),
+                SimpleDateFormat("MMM d", Locale.US),
+                SimpleDateFormat("MMM d", Locale.getDefault()),
+                SimpleDateFormat("MMM dd", Locale.US),
+                SimpleDateFormat("MMM dd", Locale.getDefault()),
+                SimpleDateFormat("yyyy-MM-dd", Locale.US),
+                SimpleDateFormat("dd/MM/yyyy", Locale.US)
+            )
+
+            val targetCal = Calendar.getInstance()
+            for (dateStr in rawDateList) {
+                // If it's purely a day-of-month number (e.g. "5", "19", "24")
+                if (dateStr.all { it.isDigit() }) {
+                    val dayNum = dateStr.toIntOrNull()
                     if (dayNum != null && dayNum == currentDayOfMonth) {
                         datesMatch = true
                         break
                     }
-                }
-            } else {
-                // Match specific dates (e.g. "Oct 24", "Nov 7", "2026-10-24")
-                val formats = listOf(
-                    SimpleDateFormat("MMM d", Locale.US),
-                    SimpleDateFormat("MMM d", Locale.getDefault()),
-                    SimpleDateFormat("MMM dd", Locale.US),
-                    SimpleDateFormat("MMM dd", Locale.getDefault()),
-                    SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                )
-                val targetCal = Calendar.getInstance()
-                for (dateStr in rawDateList) {
+                } else {
+                    // Specific date with month (e.g. "Oct 24", "Nov 7", "2026-10-24")
                     for (fmt in formats) {
                         try {
                             val parsed = fmt.parse(dateStr)
                             if (parsed != null) {
                                 targetCal.time = parsed
-                                val sameMonth = targetCal.get(Calendar.MONTH) == cal.get(Calendar.MONTH)
-                                val sameDay = targetCal.get(Calendar.DAY_OF_MONTH) == cal.get(Calendar.DAY_OF_MONTH)
-                                if (sameMonth && sameDay) {
+                                val hasYearInStr = dateStr.contains(Regex("\\b20\\d\\d\\b"))
+                                val yearMatch = !hasYearInStr || targetCal.get(Calendar.YEAR) == currentYear
+                                val sameMonth = targetCal.get(Calendar.MONTH) == currentMonth
+                                val sameDay = targetCal.get(Calendar.DAY_OF_MONTH) == currentDayOfMonth
+                                if (yearMatch && sameMonth && sameDay) {
                                     datesMatch = true
                                     break
                                 }
