@@ -59,15 +59,14 @@ fun MainScreen() {
                 onNavigateToRoute = { route ->
                     val targetIndex = bottomNavItems.indexOfFirst { it.route == route }
                     if (targetIndex != -1) {
-                        if (targetIndex == pagerState.currentPage) {
-                            when (route) {
-                                Screen.Tasks.route -> tasksResetTrigger++
-                                Screen.Lists.route -> listsResetTrigger++
-                                Screen.Habits.route -> habitsResetTrigger++
-                                Screen.Calendar.route -> calendarResetTrigger++
-                                Screen.Analytics.route -> analyticsResetTrigger++
-                            }
-                        } else {
+                        when (route) {
+                            Screen.Tasks.route -> tasksResetTrigger++
+                            Screen.Lists.route -> listsResetTrigger++
+                            Screen.Habits.route -> habitsResetTrigger++
+                            Screen.Calendar.route -> calendarResetTrigger++
+                            Screen.Analytics.route -> analyticsResetTrigger++
+                        }
+                        if (targetIndex != pagerState.currentPage) {
                             coroutineScope.launch {
                                 val distance = kotlin.math.abs(targetIndex - pagerState.currentPage)
                                 if (distance > 1) {

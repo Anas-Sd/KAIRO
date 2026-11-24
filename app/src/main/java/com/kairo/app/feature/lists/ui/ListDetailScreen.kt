@@ -1799,11 +1799,18 @@ private fun ParentListItemCard(
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            var isLocallyCompleted by remember(item.isCompleted) { mutableStateOf(item.isCompleted) }
+
             // Left Column: 6-dots Drag Indicator on top + Squircle Checkbox below it
             ListCardLeadingControl(
-                isCompleted = if (isSelectionMode) isSelected else item.isCompleted,
+                isCompleted = if (isSelectionMode) isSelected else isLocallyCompleted,
                 onToggleCompleted = {
-                    if (isSelectionMode) onToggleSelect() else onToggleCompleted(item.id)
+                    if (isSelectionMode) {
+                        onToggleSelect()
+                    } else {
+                        isLocallyCompleted = !isLocallyCompleted
+                        onToggleCompleted(item.id)
+                    }
                 },
                 isBeingDragged = isBeingDragged,
                 dragHandleModifier = if (isSelectionMode) Modifier else dragHandleModifier
@@ -1839,8 +1846,8 @@ private fun ParentListItemCard(
                             text = item.title,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (item.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                            textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                            color = if (isLocallyCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                            textDecoration = if (isLocallyCompleted) TextDecoration.LineThrough else TextDecoration.None,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -2053,11 +2060,18 @@ private fun LeafListItemCard(
                 .padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            var isLocallyCompleted by remember(item.isCompleted) { mutableStateOf(item.isCompleted) }
+
             // Left Column: 6-dots Drag Indicator on top + Squircle Checkbox below it
             ListCardLeadingControl(
-                isCompleted = if (isSelectionMode) isSelected else item.isCompleted,
+                isCompleted = if (isSelectionMode) isSelected else isLocallyCompleted,
                 onToggleCompleted = {
-                    if (isSelectionMode) onToggleSelect() else onToggleCompleted(item.id)
+                    if (isSelectionMode) {
+                        onToggleSelect()
+                    } else {
+                        isLocallyCompleted = !isLocallyCompleted
+                        onToggleCompleted(item.id)
+                    }
                 },
                 isBeingDragged = isBeingDragged,
                 dragHandleModifier = if (isSelectionMode) Modifier else dragHandleModifier
@@ -2068,8 +2082,8 @@ private fun LeafListItemCard(
                     text = item.title,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
-                    color = if (item.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                    textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                    color = if (isLocallyCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                    textDecoration = if (isLocallyCompleted) TextDecoration.LineThrough else TextDecoration.None,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
