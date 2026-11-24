@@ -217,19 +217,13 @@ fun ListsScreen(
         return
     }
 
-    val matchingLists = remember(allListsWithStats, allItems, searchQuery) {
+    val matchingLists = remember(allListsWithStats, searchQuery) {
         if (searchQuery.isBlank()) {
             allListsWithStats
         } else {
             val q = searchQuery.trim()
-            val listIdsWithMatchingItems = allItems.filter {
-                it.title.contains(q, ignoreCase = true) ||
-                    (it.notes?.contains(q, ignoreCase = true) == true)
-            }.map { it.listId }.toSet()
-
             allListsWithStats.filter { stats ->
-                stats.list.name.contains(q, ignoreCase = true) ||
-                    listIdsWithMatchingItems.contains(stats.list.id)
+                stats.list.name.contains(q, ignoreCase = true)
             }
         }
     }
