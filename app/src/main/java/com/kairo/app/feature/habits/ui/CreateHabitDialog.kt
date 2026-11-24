@@ -115,7 +115,18 @@ fun CreateHabitDialog(
     var startDateText by remember {
         mutableStateOf(
             initialHabit?.startDate?.takeIf { it.isNotBlank() }
-                ?: LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+                ?: (if (initialHabit != null && initialHabit.createdAt > 0) {
+                    try {
+                        java.time.Instant.ofEpochMilli(initialHabit.createdAt)
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toLocalDate()
+                            .format(DateTimeFormatter.ISO_LOCAL_DATE)
+                    } catch (_: Exception) {
+                        LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+                    }
+                } else {
+                    LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+                })
         )
     }
     var notePrompt by remember { mutableStateOf(initialHabit?.notePrompt ?: HabitNotePrompt.BOTH) }

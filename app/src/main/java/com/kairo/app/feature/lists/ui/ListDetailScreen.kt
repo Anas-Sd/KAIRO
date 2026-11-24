@@ -264,7 +264,7 @@ fun ListDetailScreen(
                     val currentId = draggingItemId
                     if (current != null && currentId != null) {
                         val currentIndex = current.indexOfFirst { it.id == currentId }
-                        val itemThreshold = 140f
+                        val itemThreshold = 100f
                         if (dragOffsetY > itemThreshold && currentIndex in 0 until current.lastIndex) {
                             val mutable = current.toMutableList()
                             val targetIndex = currentIndex + 1

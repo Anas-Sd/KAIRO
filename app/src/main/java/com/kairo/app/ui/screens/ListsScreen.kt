@@ -107,6 +107,31 @@ import com.kairo.app.ui.theme.KairoSurfaceContainerHigh
 import com.kairo.app.ui.theme.KairoSurfaceContainerLow
 
 @Composable
+private fun SearchSectionHeader(title: String, count: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = title.uppercase(),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 0.8.sp
+        )
+        Text(
+            text = "$count found",
+            fontSize = 12.sp,
+            color = KairoPrimary,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
 fun ListsScreen(
     resetTrigger: Int = 0,
     modifier: Modifier = Modifier
@@ -240,7 +265,7 @@ fun ListsScreen(
                     val currentId = draggingListId
                     if (current != null && currentId != null) {
                         val currentIndex = current.indexOfFirst { it.list.id == currentId }
-                        val itemThreshold = 140f
+                        val itemThreshold = 100f
                         if (dragOffsetY > itemThreshold && currentIndex in 0 until current.lastIndex) {
                             val mutable = current.toMutableList()
                             val targetIndex = currentIndex + 1
@@ -502,8 +527,8 @@ fun ListsScreen(
                         }
                     }
                 } else if (isSearching) {
-                    // Search Results: ONLY items with breadcrumb paths
-                    if (matchingItems.isEmpty()) {
+                    // Search Results: Both matching lists and matching items
+                    if (matchingLists.isEmpty() && matchingItems.isEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -520,7 +545,7 @@ fun ListsScreen(
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    text = "No items matching \"$searchQuery\"",
+                                    text = "No lists or items matching \"$searchQuery\"",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -539,116 +564,167 @@ fun ListsScreen(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            itemsIndexed(matchingItems, key = { _, item -> "item_${item.id}" }) { _, item ->
-                                val breadcrumbPath = remember(item.id, allItems) {
-                                    ListRepository.getBreadcrumbPath(item.id, allItems)
+                            if (matchingLists.isNotEmpty()) {
+                                item(key = "section_search_lists_header") {
+                                    SearchSectionHeader(
+                                        title = "Lists",
+                                        count = matchingLists.size
+                                    )
                                 }
-
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = KairoSurfaceContainer,
-                                    border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f)),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .clickable {
-                                            val isLocked = ListRepository.isListLocked(item.listId)
+                                itemsIndexed(matchingLists, key = { _, stats -> "search_list_${stats.list.id}" }) { _, stats ->
+                                    val isLocked = ListRepository.isListLocked(stats.list.id)
+                                    val hasPin = ListRepository.hasPin(stats.list.id)
+                                    ListOverviewCard(
+                                        stats = stats,
+                                        isBeingDragged = false,
+                                        dragOffsetY = 0f,
+                                        dragHandleModifier = Modifier,
+                                        isSelectionMode = false,
+                                        isSelected = false,
+                                        isLocked = isLocked,
+                                        hasPin = hasPin,
+                                        onSelectionChange = {},
+                                        onToggleComplete = {
+                                            ListRepository.setListCompleted(stats.list.id, !stats.isCompleted)
+                                        },
+                                        onClick = {
                                             if (isLocked) {
-                                                val target = allListsWithStats.find { it.list.id == item.listId }?.list
-                                                if (target != null) {
-                                                    pinTargetList = target
-                                                    pinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
-                                                    initialDrillDownItemId = item.id
-                                                }
+                                                pinTargetList = stats.list
+                                                pinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
                                             } else {
-                                                selectedListId = item.listId
-                                                initialDrillDownItemId = item.id
+                                                selectedListId = stats.list.id
                                             }
-                                        }
-                                ) {
-                                    Row(
+                                        },
+                                        onDetails = { listForDetails = stats },
+                                        onEdit = { listToEdit = stats.list },
+                                        onAdjustParent = { listToAdjustParent = stats.list },
+                                        onToggleLock = {
+                                            pinTargetList = stats.list
+                                            pinDialogMode = if (hasPin) PinDialogMode.REMOVE_PIN else PinDialogMode.SET_PIN
+                                        },
+                                        onDelete = { listToDelete = stats.list }
+                                    )
+                                }
+                            }
+
+                            if (matchingItems.isNotEmpty()) {
+                                item(key = "section_search_items_header") {
+                                    SearchSectionHeader(
+                                        title = "Items",
+                                        count = matchingItems.size
+                                    )
+                                }
+                                itemsIndexed(matchingItems, key = { _, item -> "search_item_${item.id}" }) { _, item ->
+                                    val breadcrumbPath = remember(item.id, allItems) {
+                                        ListRepository.getBreadcrumbPath(item.id, allItems)
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = KairoSurfaceContainer,
+                                        border = BorderStroke(1.dp, KairoOutlineVariant.copy(alpha = 0.2f)),
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // Squircle Checkbox
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = if (item.isCompleted) Color(0xFF10B981) else Color.Transparent,
-                                            border = BorderStroke(
-                                                1.5.dp,
-                                                if (item.isCompleted) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                            ),
-                                            modifier = Modifier
-                                                .size(20.dp)
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .clickable { ListRepository.toggleItemCompleted(item.id) }
-                                        ) {
-                                            if (item.isCompleted) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Check,
-                                                    contentDescription = null,
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable {
+                                                val isLocked = ListRepository.isListLocked(item.listId)
+                                                if (isLocked) {
+                                                    val target = allListsWithStats.find { it.list.id == item.listId }?.list
+                                                    if (target != null) {
+                                                        pinTargetList = target
+                                                        pinDialogMode = PinDialogMode.UNLOCK_TEMPORARY
+                                                        initialDrillDownItemId = item.id
+                                                    }
+                                                } else {
+                                                    selectedListId = item.listId
+                                                    initialDrillDownItemId = item.id
+                                                }
                                             }
-                                        }
-
-                                        Spacer(modifier = Modifier.width(10.dp))
-
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = item.title,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = if (item.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                                                textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-
-                                            if (breadcrumbPath.isNotEmpty()) {
-                                                Spacer(modifier = Modifier.height(3.dp))
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                 ) {
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // Squircle Checkbox
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = if (item.isCompleted) Color(0xFF10B981) else Color.Transparent,
+                                                border = BorderStroke(
+                                                    1.5.dp,
+                                                    if (item.isCompleted) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                                ),
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .clickable { ListRepository.toggleItemCompleted(item.id) }
+                                            ) {
+                                                if (item.isCompleted) {
                                                     Icon(
-                                                        imageVector = Icons.Default.AccountTree,
+                                                        imageVector = Icons.Default.Check,
                                                         contentDescription = null,
-                                                        tint = KairoPrimary,
-                                                        modifier = Modifier.size(11.dp)
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(14.dp)
                                                     )
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.width(10.dp))
+
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = item.title,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = if (item.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                                                    textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+
+                                                if (breadcrumbPath.isNotEmpty()) {
+                                                    Spacer(modifier = Modifier.height(3.dp))
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.AccountTree,
+                                                            contentDescription = null,
+                                                            tint = KairoPrimary,
+                                                            modifier = Modifier.size(11.dp)
+                                                        )
+                                                        Text(
+                                                            text = breadcrumbPath.joinToString("  ›  "),
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = KairoPrimary,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+
+                                                if (!item.notes.isNullOrBlank()) {
+                                                    Spacer(modifier = Modifier.height(2.dp))
                                                     Text(
-                                                        text = breadcrumbPath.joinToString("  ›  "),
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Medium,
-                                                        color = KairoPrimary,
+                                                        text = item.notes,
+                                                        fontSize = 12.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                         maxLines = 1,
                                                         overflow = TextOverflow.Ellipsis
                                                     )
                                                 }
                                             }
 
-                                            if (!item.notes.isNullOrBlank()) {
-                                                Spacer(modifier = Modifier.height(2.dp))
-                                                Text(
-                                                    text = item.notes,
-                                                    fontSize = 12.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
+                                            Icon(
+                                                imageVector = Icons.Default.ChevronRight,
+                                                contentDescription = "Go to item",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp)
+                                            )
                                         }
-
-                                        Icon(
-                                            imageVector = Icons.Default.ChevronRight,
-                                            contentDescription = "Go to item",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(18.dp)
-                                        )
                                     }
                                 }
                             }

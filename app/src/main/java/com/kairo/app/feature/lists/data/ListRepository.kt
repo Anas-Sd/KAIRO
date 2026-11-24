@@ -545,13 +545,20 @@ object ListRepository {
     }
 
     fun reorderLists(newOrder: List<TaskList>) {
-        val updated = newOrder.mapIndexed { index, list -> list.copy(position = index) }
+        val updatedMap = newOrder.mapIndexed { index, list -> list.id to index }.toMap()
+        val currentLists = _lists.value
+        val updated = currentLists.map { list ->
+            if (updatedMap.containsKey(list.id)) {
+                list.copy(position = updatedMap[list.id]!!)
+            } else list
+        }.sortedBy { it.position }
         _lists.value = updated
         recalculateStats()
         saveToDisk()
 
         scope.launch {
-            updated.forEach { SupabaseClient.upsertTaskList(it.toDto()) }
+            val touched = updated.filter { updatedMap.containsKey(it.id) }
+            touched.forEach { SupabaseClient.upsertTaskList(it.toDto()) }
         }
     }
 

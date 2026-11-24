@@ -101,7 +101,7 @@ fun ListCardLeadingControl(
         if (!isSelectionMode) {
             Box(
                 modifier = Modifier
-                    .size(22.dp)
+                    .size(36.dp)
                     .then(dragHandleModifier),
                 contentAlignment = Alignment.Center
             ) {
