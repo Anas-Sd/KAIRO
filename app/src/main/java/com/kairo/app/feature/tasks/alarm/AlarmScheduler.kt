@@ -93,8 +93,101 @@ internal object AlarmScheduler {
     }
 
     /**
-     * Calculates the next upcoming occurrence in the future for a recurring task.
-     * Prevents recurring task alarms from being dropped when previous occurrences were not marked complete.
+     * Determines whether a specific calendar day matches a task's recurrence definition.
+     * Supports: EVERYDAY, DAILY, DAYS (specific weekdays), DATES (specific dates),
+     * MONTHLY_DATES (dates repeated every month), BOTH (weekdays + specific dates),
+     * and BOTH_MONTHLY (weekdays + monthly dates).
+     */
+    fun isCalendarDayMatchingRecurrence(
+        cal: Calendar,
+        repeatType: String?,
+        repeatDays: String?,
+        repeatDates: String?
+    ): Boolean {
+        if (repeatType.isNullOrBlank() || repeatType.equals("NONE", ignoreCase = true)) return false
+
+        val type = repeatType.trim().uppercase(Locale.US)
+        if (type == "EVERYDAY" || type == "DAILY") return true
+
+        val hasDays = type.contains("DAYS") || type.contains("BOTH") || !repeatDays.isNullOrBlank()
+        val hasDates = type.contains("DATES") || type.contains("BOTH") || !repeatDates.isNullOrBlank()
+
+        var daysMatch = false
+        if (hasDays && !repeatDays.isNullOrBlank()) {
+            val dayMap = mapOf(
+                "SUN" to Calendar.SUNDAY,
+                "MON" to Calendar.MONDAY,
+                "TUE" to Calendar.TUESDAY,
+                "WED" to Calendar.WEDNESDAY,
+                "THU" to Calendar.THURSDAY,
+                "FRI" to Calendar.FRIDAY,
+                "SAT" to Calendar.SATURDAY
+            )
+            val targetDays = repeatDays.split(",")
+                .map { it.trim().uppercase(Locale.US) }
+                .mapNotNull { dayMap[it] }
+                .toSet()
+            if (targetDays.contains(cal.get(Calendar.DAY_OF_WEEK))) {
+                daysMatch = true
+            }
+        }
+
+        var datesMatch = false
+        if (hasDates && !repeatDates.isNullOrBlank()) {
+            val isMonthly = type.contains("MONTHLY")
+            val rawDateList = repeatDates.split(",").map { it.trim() }.filter { it.isNotBlank() }
+
+            if (isMonthly) {
+                // Match against day-of-month number (e.g. "5", "19", "Oct 24" -> 24)
+                val currentDayOfMonth = cal.get(Calendar.DAY_OF_MONTH)
+                for (dateStr in rawDateList) {
+                    val dayNum = dateStr.filter { it.isDigit() }.toIntOrNull()
+                    if (dayNum != null && dayNum == currentDayOfMonth) {
+                        datesMatch = true
+                        break
+                    }
+                }
+            } else {
+                // Match specific dates (e.g. "Oct 24", "Nov 7", "2026-10-24")
+                val formats = listOf(
+                    SimpleDateFormat("MMM d", Locale.US),
+                    SimpleDateFormat("MMM d", Locale.getDefault()),
+                    SimpleDateFormat("MMM dd", Locale.US),
+                    SimpleDateFormat("MMM dd", Locale.getDefault()),
+                    SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                )
+                val targetCal = Calendar.getInstance()
+                for (dateStr in rawDateList) {
+                    for (fmt in formats) {
+                        try {
+                            val parsed = fmt.parse(dateStr)
+                            if (parsed != null) {
+                                targetCal.time = parsed
+                                val sameMonth = targetCal.get(Calendar.MONTH) == cal.get(Calendar.MONTH)
+                                val sameDay = targetCal.get(Calendar.DAY_OF_MONTH) == cal.get(Calendar.DAY_OF_MONTH)
+                                if (sameMonth && sameDay) {
+                                    datesMatch = true
+                                    break
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    if (datesMatch) break
+                }
+            }
+        }
+
+        return when {
+            hasDays && hasDates -> daysMatch || datesMatch
+            hasDays -> daysMatch
+            hasDates -> datesMatch
+            else -> false
+        }
+    }
+
+    /**
+     * Calculates the next upcoming occurrence strictly in the future for a recurring task.
+     * Searches day-by-day up to 366 days for the earliest valid occurrence day matching the pattern.
      */
     fun calculateNextFutureTriggerMillis(
         dueTime: String?,
@@ -107,7 +200,7 @@ internal object AlarmScheduler {
 
         val (targetHour, targetMinute) = parseTimeHourMinute(dueTime)
 
-        val cal = Calendar.getInstance().apply {
+        val candidate = Calendar.getInstance().apply {
             timeInMillis = now
             set(Calendar.HOUR_OF_DAY, targetHour)
             set(Calendar.MINUTE, targetMinute)
@@ -116,54 +209,19 @@ internal object AlarmScheduler {
         }
 
         // If today's scheduled time has already elapsed, start checking from tomorrow
-        val startCandidate = if (cal.timeInMillis <= now) {
-            Calendar.getInstance().apply {
-                timeInMillis = cal.timeInMillis
-                add(Calendar.DAY_OF_YEAR, 1)
-            }
-        } else {
-            cal
+        if (candidate.timeInMillis <= now) {
+            candidate.add(Calendar.DAY_OF_YEAR, 1)
         }
 
-        when (repeatType.uppercase(Locale.US)) {
-            "EVERYDAY", "DAILY" -> {
-                return startCandidate.timeInMillis
+        // Search day-by-day up to 366 days forward for the next valid occurrence
+        for (i in 0..366) {
+            if (isCalendarDayMatchingRecurrence(candidate, repeatType, repeatDays, repeatDates)) {
+                return candidate.timeInMillis
             }
-            "DAYS" -> {
-                val dayMap = mapOf(
-                    "SUN" to Calendar.SUNDAY,
-                    "MON" to Calendar.MONDAY,
-                    "TUE" to Calendar.TUESDAY,
-                    "WED" to Calendar.WEDNESDAY,
-                    "THU" to Calendar.THURSDAY,
-                    "FRI" to Calendar.FRIDAY,
-                    "SAT" to Calendar.SATURDAY
-                )
-                val targetDays = repeatDays?.split(",")
-                    ?.map { it.trim().uppercase(Locale.US) }
-                    ?.mapNotNull { dayMap[it] }
-                    ?.toSet()
-
-                if (targetDays.isNullOrEmpty() || targetDays.size == 7) {
-                    return startCandidate.timeInMillis
-                }
-
-                val candidateCal = Calendar.getInstance().apply { timeInMillis = startCandidate.timeInMillis }
-                for (i in 0..14) {
-                    if (targetDays.contains(candidateCal.get(Calendar.DAY_OF_WEEK))) {
-                        return candidateCal.timeInMillis
-                    }
-                    candidateCal.add(Calendar.DAY_OF_YEAR, 1)
-                }
-                return startCandidate.timeInMillis
-            }
-            "MONTHLY_DATES", "BOTH_MONTHLY" -> {
-                return startCandidate.timeInMillis
-            }
-            else -> {
-                return startCandidate.timeInMillis
-            }
+            candidate.add(Calendar.DAY_OF_YEAR, 1)
         }
+
+        return null
     }
 
     fun scheduleAlarm(context: Context, task: Task, overrideTriggerMillis: Long? = null) {

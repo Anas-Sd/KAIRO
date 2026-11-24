@@ -222,7 +222,8 @@ object TaskRepository {
                 currentDueDateStr = target.dueDate,
                 repeatType = target.repeatType,
                 repeatDays = target.repeatDays,
-                repeatDates = target.repeatDates
+                repeatDates = target.repeatDates,
+                dueTime = target.dueTime
             )
         } else null
 
@@ -1002,19 +1003,30 @@ object TaskRepository {
                 newSnapshots.add(missedSnapshot)
             }
 
-            // 2. Advance active target task to Today
-            val targetDueDateStr = com.kairo.app.ui.utils.DateUtils.formatDisplayDate(null, todayStart)
-            val nextSection = determineOpenSection(targetDueDateStr, todayStart, target.dueTime)
-            val rolledOver = target.copy(
-                dueDate = targetDueDateStr,
-                dueDateMillis = todayStart,
-                section = nextSection,
-                snoozeUntilMillis = null,
-                isCompleted = false,
-                completedAt = null,
-                updatedAt = now
+            // 2. Advance active target task to its NEXT recurring occurrence (NOT today!)
+            val nextOccurrence = com.kairo.app.ui.utils.DateUtils.calculateNextRepeatDueDate(
+                currentDueDateMillis = target.dueDateMillis,
+                currentDueDateStr = target.dueDate,
+                repeatType = target.repeatType,
+                repeatDays = target.repeatDays,
+                repeatDates = target.repeatDates,
+                dueTime = target.dueTime
             )
-            updatedMasters.add(rolledOver)
+
+            if (nextOccurrence != null) {
+                val (nextDueDateStr, nextDueDateMillis) = nextOccurrence
+                val nextSection = determineOpenSection(nextDueDateStr, nextDueDateMillis, target.dueTime)
+                val rolledOver = target.copy(
+                    dueDate = nextDueDateStr,
+                    dueDateMillis = nextDueDateMillis,
+                    section = nextSection,
+                    snoozeUntilMillis = null,
+                    isCompleted = false,
+                    completedAt = null,
+                    updatedAt = now
+                )
+                updatedMasters.add(rolledOver)
+            }
         }
 
         val masterMap = updatedMasters.associateBy { it.id }

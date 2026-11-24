@@ -18,6 +18,11 @@ object DateUtils {
         val raw = dueDateStr?.trim().orEmpty()
         if (raw.isBlank()) return fallback
 
+        // Strip any appended time portions, e.g. "Nov 24 at 19:56", "Nov 24 @ 7:00 PM"
+        val clean = raw.split(" at ", ignoreCase = true).first()
+            .split("@").first()
+            .trim()
+
         val cal = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 12)
             set(Calendar.MINUTE, 0)
@@ -26,16 +31,16 @@ object DateUtils {
         }
 
         return when {
-            raw.contains("Today", ignoreCase = true) -> cal.timeInMillis
-            raw.contains("Tomorrow", ignoreCase = true) -> {
+            clean.contains("Today", ignoreCase = true) -> cal.timeInMillis
+            clean.contains("Tomorrow", ignoreCase = true) -> {
                 cal.add(Calendar.DAY_OF_YEAR, 1)
                 cal.timeInMillis
             }
-            raw.contains("Yesterday", ignoreCase = true) -> {
+            clean.contains("Yesterday", ignoreCase = true) -> {
                 cal.add(Calendar.DAY_OF_YEAR, -1)
                 cal.timeInMillis
             }
-            raw.contains("day after tomorrow", ignoreCase = true) -> {
+            clean.contains("day after tomorrow", ignoreCase = true) -> {
                 cal.add(Calendar.DAY_OF_YEAR, 2)
                 cal.timeInMillis
             }
@@ -50,7 +55,7 @@ object DateUtils {
                     "friday" to Calendar.FRIDAY,
                     "saturday" to Calendar.SATURDAY
                 )
-                val targetDay = daysOfWeek.entries.find { raw.contains(it.key, ignoreCase = true) }?.value
+                val targetDay = daysOfWeek.entries.find { clean.contains(it.key, ignoreCase = true) }?.value
                 if (targetDay != null) {
                     val currentDay = cal.get(Calendar.DAY_OF_WEEK)
                     var daysToAdd = targetDay - currentDay
@@ -60,24 +65,26 @@ object DateUtils {
                 }
 
                 val formats = arrayOf(
-                    "MMM d", "MMM dd", "yyyy-MM-dd", "dd/MM/yyyy",
-                    "MMM dd, yyyy", "dd MMM yyyy", "EEE, MMM d", "d MMM"
+                    "MMM d", "MMM dd", "MMMM d", "yyyy-MM-dd", "dd/MM/yyyy", "dd-MM-yyyy",
+                    "MMM dd, yyyy", "dd MMM yyyy", "EEE, MMM d", "d MMM", "d/M/yyyy"
                 )
                 for (fmt in formats) {
-                    try {
-                        val parsed = SimpleDateFormat(fmt, Locale.getDefault()).parse(raw)
-                        if (parsed != null) {
-                            val pCal = Calendar.getInstance().apply { time = parsed }
-                            if (pCal.get(Calendar.YEAR) <= 1970) {
-                                pCal.set(Calendar.YEAR, Calendar.getInstance().get(Calendar.YEAR))
+                    for (loc in listOf(Locale.US, Locale.getDefault())) {
+                        try {
+                            val parsed = SimpleDateFormat(fmt, loc).parse(clean)
+                            if (parsed != null) {
+                                val pCal = Calendar.getInstance().apply { time = parsed }
+                                if (pCal.get(Calendar.YEAR) <= 1970) {
+                                    pCal.set(Calendar.YEAR, Calendar.getInstance().get(Calendar.YEAR))
+                                }
+                                pCal.set(Calendar.HOUR_OF_DAY, 12)
+                                pCal.set(Calendar.MINUTE, 0)
+                                pCal.set(Calendar.SECOND, 0)
+                                pCal.set(Calendar.MILLISECOND, 0)
+                                return pCal.timeInMillis
                             }
-                            pCal.set(Calendar.HOUR_OF_DAY, 12)
-                            pCal.set(Calendar.MINUTE, 0)
-                            pCal.set(Calendar.SECOND, 0)
-                            pCal.set(Calendar.MILLISECOND, 0)
-                            return pCal.timeInMillis
-                        }
-                    } catch (_: Exception) {}
+                        } catch (_: Exception) {}
+                    }
                 }
                 fallback
             }
@@ -112,72 +119,50 @@ object DateUtils {
         currentDueDateStr: String?,
         repeatType: String?,
         repeatDays: String?,
-        repeatDates: String?
+        repeatDates: String?,
+        dueTime: String? = null
     ): Pair<String, Long>? {
         if (repeatType.isNullOrBlank() || repeatType.equals("NONE", ignoreCase = true)) {
             return null
         }
 
         val baseMillis = currentDueDateMillis ?: parseDueDateMillis(currentDueDateStr)
-        val cal = Calendar.getInstance().apply { timeInMillis = baseMillis }
+        val (targetHour, targetMinute) = com.kairo.app.feature.tasks.alarm.AlarmScheduler.parseTimeHourMinute(dueTime)
 
-        // Search relative to today if the base due date is in the past
-        val todayStart = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
+        val candidate = Calendar.getInstance().apply {
+            timeInMillis = baseMillis
+            set(Calendar.HOUR_OF_DAY, targetHour)
+            set(Calendar.MINUTE, targetMinute)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }
-        if (cal.before(todayStart)) {
-            cal.timeInMillis = todayStart.timeInMillis
+
+        val now = System.currentTimeMillis()
+        if (candidate.timeInMillis <= now) {
+            candidate.timeInMillis = now
+            candidate.set(Calendar.HOUR_OF_DAY, targetHour)
+            candidate.set(Calendar.MINUTE, targetMinute)
+            candidate.set(Calendar.SECOND, 0)
+            candidate.set(Calendar.MILLISECOND, 0)
+            if (candidate.timeInMillis <= now) {
+                candidate.add(Calendar.DAY_OF_YEAR, 1)
+            }
+        } else {
+            candidate.add(Calendar.DAY_OF_YEAR, 1)
         }
 
-        when (repeatType.uppercase(Locale.US)) {
-            "EVERYDAY", "DAILY" -> {
-                cal.add(Calendar.DAY_OF_YEAR, 1)
-                val nextMillis = cal.timeInMillis
-                return Pair(formatDisplayDate(null, nextMillis), nextMillis)
-            }
-            "DAYS" -> {
-                val dayMap = mapOf(
-                    "SUN" to Calendar.SUNDAY,
-                    "MON" to Calendar.MONDAY,
-                    "TUE" to Calendar.TUESDAY,
-                    "WED" to Calendar.WEDNESDAY,
-                    "THU" to Calendar.THURSDAY,
-                    "FRI" to Calendar.FRIDAY,
-                    "SAT" to Calendar.SATURDAY
+        for (i in 0..366) {
+            if (com.kairo.app.feature.tasks.alarm.AlarmScheduler.isCalendarDayMatchingRecurrence(
+                    candidate, repeatType, repeatDays, repeatDates
                 )
-                val targetDays = repeatDays?.split(",")?.map { it.trim().uppercase(Locale.US) }?.mapNotNull { dayMap[it] }?.toSet()
-                if (targetDays.isNullOrEmpty() || targetDays.size == 7) {
-                    cal.add(Calendar.DAY_OF_YEAR, 1)
-                    val nextMillis = cal.timeInMillis
-                    return Pair(formatDisplayDate(null, nextMillis), nextMillis)
-                }
-
-                // Advance day-by-day up to 14 days to find next scheduled day
-                for (i in 1..14) {
-                    cal.add(Calendar.DAY_OF_YEAR, 1)
-                    if (targetDays.contains(cal.get(Calendar.DAY_OF_WEEK))) {
-                        val nextMillis = cal.timeInMillis
-                        return Pair(formatDisplayDate(null, nextMillis), nextMillis)
-                    }
-                }
-                cal.add(Calendar.DAY_OF_YEAR, 1)
-                val nextMillis = cal.timeInMillis
+            ) {
+                val nextMillis = candidate.timeInMillis
                 return Pair(formatDisplayDate(null, nextMillis), nextMillis)
             }
-            "MONTHLY_DATES", "BOTH_MONTHLY" -> {
-                cal.add(Calendar.MONTH, 1)
-                val nextMillis = cal.timeInMillis
-                return Pair(formatDisplayDate(null, nextMillis), nextMillis)
-            }
-            else -> {
-                cal.add(Calendar.DAY_OF_YEAR, 1)
-                val nextMillis = cal.timeInMillis
-                return Pair(formatDisplayDate(null, nextMillis), nextMillis)
-            }
+            candidate.add(Calendar.DAY_OF_YEAR, 1)
         }
+
+        return null
     }
 
     /**

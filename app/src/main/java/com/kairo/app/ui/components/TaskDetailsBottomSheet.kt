@@ -424,7 +424,8 @@ fun TaskDetailsBottomSheet(
                             currentDueDateStr = task.dueDate,
                             repeatType = task.repeatType,
                             repeatDays = task.repeatDays,
-                            repeatDates = task.repeatDates
+                            repeatDates = task.repeatDates,
+                            dueTime = task.dueTime
                         )
                         if (nextOccurrence != null) {
                             val nextTimeStr = com.kairo.app.ui.utils.DateUtils.formatDisplayTime(task.dueTime)?.let { " at $it" } ?: ""

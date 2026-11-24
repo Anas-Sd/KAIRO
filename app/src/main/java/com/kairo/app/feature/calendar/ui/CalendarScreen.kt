@@ -106,7 +106,9 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
+import java.util.Calendar
 import java.util.Locale
+import com.kairo.app.feature.tasks.alarm.AlarmScheduler
 
 private enum class CalendarViewFilter {
     ALL, TASKS, LISTS, HABITS
@@ -1656,30 +1658,22 @@ private fun QuickAddTaskForDateDialog(
 private fun isTaskScheduledForDate(task: Task, date: LocalDate): Boolean {
     // 1. Check repeat type
     val repeatType = task.repeatType
-    if (!repeatType.isNullOrBlank() && repeatType != "NONE") {
-        when {
-            repeatType.equals("DAILY", ignoreCase = true) -> return true
-            repeatType.contains("DAYS", ignoreCase = true) || !task.repeatDays.isNullOrBlank() -> {
-                val dayCode = when (date.dayOfWeek) {
-                    DayOfWeek.MONDAY -> "MON"
-                    DayOfWeek.TUESDAY -> "TUE"
-                    DayOfWeek.WEDNESDAY -> "WED"
-                    DayOfWeek.THURSDAY -> "THU"
-                    DayOfWeek.FRIDAY -> "FRI"
-                    DayOfWeek.SATURDAY -> "SAT"
-                    DayOfWeek.SUNDAY -> "SUN"
-                }
-                val daysList = task.repeatDays?.split(",")?.map { it.trim().uppercase() } ?: emptyList()
-                if (daysList.contains(dayCode)) return true
-            }
-            repeatType.contains("DATES", ignoreCase = true) || !task.repeatDates.isNullOrBlank() -> {
-                val dateOfMonthStr = date.dayOfMonth.toString()
-                val datesList = task.repeatDates?.split(",")?.map { it.trim() } ?: emptyList()
-                if (datesList.contains(dateOfMonthStr)) return true
-
-                if (datesList.any { it.equals(date.format(FORMATTER_MMM_D), ignoreCase = true) }) return true
-            }
+    if (!repeatType.isNullOrBlank() && !repeatType.equals("NONE", ignoreCase = true)) {
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.YEAR, date.year)
+            set(Calendar.MONTH, date.monthValue - 1)
+            set(Calendar.DAY_OF_MONTH, date.dayOfMonth)
+            set(Calendar.HOUR_OF_DAY, 12)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
         }
+        return AlarmScheduler.isCalendarDayMatchingRecurrence(
+            cal = cal,
+            repeatType = task.repeatType,
+            repeatDays = task.repeatDays,
+            repeatDates = task.repeatDates
+        )
     }
 
     // 2. Exact dueDateMillis
